@@ -1,0 +1,14 @@
+.cache/
+.idea/
+.vs/
+.vscode/
+Build/
+
+*~
+.dir-locals.el
+.DS_Store
+*.dll
+*.exe
+*.lib
+*.o
+*.pdb
