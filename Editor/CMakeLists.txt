@@ -1,4 +1,5 @@
 add_executable(Editor)
+target_link_libraries(Editor PRIVATE Luna)
 
 target_sources(Editor PRIVATE
 	Editor.cpp)
