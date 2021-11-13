@@ -10,5 +10,6 @@ Build/
 *.dll
 *.exe
 *.lib
+*.log
 *.o
 *.pdb
