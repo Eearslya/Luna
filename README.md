@@ -8,6 +8,10 @@ This repository contains the combined efforts of the past few years of study, ex
 
 As this is a learning project meant for my benefit only, I will not accept pull requests.
 
+## Building
+
+Luna is built with CMake. Ensure you have the latest CMake installed, as Luna requires at least version 3.21.
+
 ## Credits
 
 My journey has been long and hard, and it would not be possible without the inspiration and help of others in the game development community. Below, in no particular order, are just a few of the people I would like to extend thanks to, or credit for code I've used along the way in this project.
