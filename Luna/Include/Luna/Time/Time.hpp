@@ -23,10 +23,8 @@ class Time {
 		tm localTime     = {};
 #ifdef _MSC_VER
 		_localtime64_s(&localTime, &timeT);
-#elif defined(__APPLE__)
-		localtime_r(&timeT, &localTime);
 #else
-		localtime_s(&timeT, &localTime);
+		localtime_r(&timeT, &localTime);
 #endif
 		std::ostringstream oss;
 		oss << std::put_time(&localTime, format.c_str());
