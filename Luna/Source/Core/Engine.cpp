@@ -56,6 +56,21 @@ Engine::~Engine() noexcept {
 }
 
 int Engine::Run() {
+	const auto UpdateStage = [this](Module::Stage stage) {
+		for (auto& [stageIndex, module] : _modules) {
+			if (stageIndex.first == stage) { module->Update(); }
+		}
+	};
+
+	_running = true;
+	while (_running) {
+		UpdateStage(Module::Stage::Always);
+		UpdateStage(Module::Stage::Pre);
+		UpdateStage(Module::Stage::Normal);
+		UpdateStage(Module::Stage::Post);
+		UpdateStage(Module::Stage::Render);
+	}
+
 	return EXIT_SUCCESS;
 }
 }  // namespace Luna

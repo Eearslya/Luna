@@ -20,5 +20,6 @@ class Engine final : NonCopyable {
 	static Engine* _instance;
 
 	std::multimap<Module::StageIndex, std::unique_ptr<Module>> _modules;
+	bool _running = false;
 };
 }  // namespace Luna
