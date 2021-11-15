@@ -45,6 +45,8 @@ class ModuleFactory {
 			                                                                      name,
 			                                                                      stage,
 			                                                                      dependencies.Get()};
+
+			return true;
 		}
 
 		static inline T* _instance = nullptr;

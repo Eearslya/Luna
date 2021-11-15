@@ -1,9 +1,10 @@
 #pragma once
 
+#include <Luna/Utility/Delegate.hpp>
 #include <string>
 
 namespace Luna {
-class App {
+class App : public Observer {
 	friend class Engine;
 
  public:
