@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Luna/Core/Module.hpp>
 #include <Luna/Utility/NonCopyable.hpp>
+#include <map>
 
 namespace Luna {
 class Engine final : NonCopyable {
@@ -16,5 +18,7 @@ class Engine final : NonCopyable {
 
  private:
 	static Engine* _instance;
+
+	std::multimap<Module::StageIndex, std::unique_ptr<Module>> _modules;
 };
 }  // namespace Luna
