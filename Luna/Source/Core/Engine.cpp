@@ -48,6 +48,9 @@ Engine::Engine() {
 	}
 
 	Log::Debug("All engine modules initialized.");
+
+	SetFPSLimit(_fpsLimit);
+	SetUPSLimit(_upsLimit);
 }
 
 Engine::~Engine() noexcept {
@@ -65,12 +68,34 @@ int Engine::Run() {
 	_running = true;
 	while (_running) {
 		UpdateStage(Module::Stage::Always);
-		UpdateStage(Module::Stage::Pre);
-		UpdateStage(Module::Stage::Normal);
-		UpdateStage(Module::Stage::Post);
-		UpdateStage(Module::Stage::Render);
+
+		_updateLimiter.Update();
+		if (_updateLimiter.Get() > 0) {
+			_ups.Update();
+			_updateDelta.Update();
+			UpdateStage(Module::Stage::Pre);
+			UpdateStage(Module::Stage::Normal);
+			UpdateStage(Module::Stage::Post);
+		}
+
+		_frameLimiter.Update();
+		if (_frameLimiter.Get() > 0) {
+			_fps.Update();
+			_frameDelta.Update();
+			UpdateStage(Module::Stage::Render);
+		}
 	}
 
 	return EXIT_SUCCESS;
+}
+
+void Engine::SetFPSLimit(uint32_t limit) {
+	_fpsLimit = limit;
+	_frameLimiter.SetInterval(Time::Seconds(1.0f / limit));
+}
+
+void Engine::SetUPSLimit(uint32_t limit) {
+	_upsLimit = limit;
+	_updateLimiter.SetInterval(Time::Seconds(1.0f / limit));
 }
 }  // namespace Luna
