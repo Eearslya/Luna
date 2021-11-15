@@ -44,13 +44,13 @@ class Timer {
 };
 
 class Timers : public Module::Registrar<Timers> {
-	static inline const bool Registered = Register("Timers", Stage::Post);
+	static inline const bool Registered = Register("Timers", Stage::Never);
 
  public:
 	Timers();
 	~Timers() noexcept;
 
-	void Update() override;
+	virtual void Update() override {}
 
 	template <typename... Args>
 	Timer* Once(const Time& delay, std::function<void()>&& function, Args... args) {

@@ -19,8 +19,6 @@ Timers::~Timers() noexcept {
 	_workerThread.join();
 }
 
-void Timers::Update() {}
-
 void Timers::TimerThread() {
 	std::unique_lock<std::mutex> lock(_timerMutex);
 
