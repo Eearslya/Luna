@@ -8,6 +8,13 @@ class Engine final : NonCopyable {
 	Engine();
 	~Engine() noexcept;
 
+	static Engine* Get() {
+		return _instance;
+	}
+
 	int Run();
+
+ private:
+	static Engine* _instance;
 };
 }  // namespace Luna

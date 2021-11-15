@@ -3,7 +3,11 @@
 #include <cstdlib>
 
 namespace Luna {
+Engine* Engine::_instance = nullptr;
+
 Engine::Engine() {
+	_instance = this;
+
 	Log::Info("Initializing Luna engine.");
 }
 
