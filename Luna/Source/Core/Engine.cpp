@@ -1,3 +1,4 @@
+#include <Luna/Core/App.hpp>
 #include <Luna/Core/Engine.hpp>
 #include <Luna/Core/Log.hpp>
 #include <cstdlib>
@@ -73,6 +74,16 @@ int Engine::Run() {
 		if (_updateLimiter.Get() > 0) {
 			_ups.Update();
 			_updateDelta.Update();
+
+			if (_app) {
+				if (!_app->_started) {
+					_app->Start();
+					_app->_started = true;
+				}
+
+				_app->Update();
+			}
+
 			UpdateStage(Module::Stage::Pre);
 			UpdateStage(Module::Stage::Normal);
 			UpdateStage(Module::Stage::Post);
@@ -86,7 +97,20 @@ int Engine::Run() {
 		}
 	}
 
+	if (_app) {
+		_app->Stop();
+		_app->_started = false;
+	}
+
 	return EXIT_SUCCESS;
+}
+
+void Engine::SetApp(App* app) {
+	if (_app) {
+		_app->Stop();
+		_app->_started = false;
+	}
+	_app = app;
 }
 
 void Engine::SetFPSLimit(uint32_t limit) {

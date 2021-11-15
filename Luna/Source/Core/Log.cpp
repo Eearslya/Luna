@@ -9,14 +9,29 @@ namespace _Internal {
 static bool LoggerCreated = false;
 
 static void Create() {
+#ifdef _MSC_VER
+	auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+#else
 	auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>(spdlog::color_mode::always);
+#endif
+
 	consoleSink->set_pattern("%^[%T] %n-%L: %v%$");
+
+#ifdef _MSC_VER
+	consoleSink->set_color(spdlog::level::critical, 4);  // Red
+	consoleSink->set_color(spdlog::level::err, 4);       // Red
+	consoleSink->set_color(spdlog::level::warn, 14);     // Yellow
+	consoleSink->set_color(spdlog::level::info, 3);      // Cyan
+	consoleSink->set_color(spdlog::level::debug, 5);     // Magenta
+	consoleSink->set_color(spdlog::level::trace, 15);    // White
+#else
 	consoleSink->set_color(spdlog::level::critical, consoleSink->red_bold);
 	consoleSink->set_color(spdlog::level::err, consoleSink->red);
 	consoleSink->set_color(spdlog::level::warn, consoleSink->yellow);
 	consoleSink->set_color(spdlog::level::info, consoleSink->cyan);
 	consoleSink->set_color(spdlog::level::debug, consoleSink->magenta);
 	consoleSink->set_color(spdlog::level::trace, consoleSink->white);
+#endif
 
 	auto fileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("Luna.log", true);
 	fileSink->set_pattern("[%T] %n-%L: %v");

@@ -6,6 +6,8 @@
 #include <map>
 
 namespace Luna {
+class App;
+
 class Engine final : NonCopyable {
  public:
 	Engine();
@@ -15,6 +17,9 @@ class Engine final : NonCopyable {
 		return _instance;
 	}
 
+	App* GetApp() {
+		return _app;
+	}
 	Time GetFrameDelta() const {
 		return _frameDelta.Get();
 	}
@@ -36,12 +41,14 @@ class Engine final : NonCopyable {
 
 	int Run();
 
+	void SetApp(App* app);
 	void SetFPSLimit(uint32_t limit);
 	void SetUPSLimit(uint32_t limit);
 
  private:
 	static Engine* _instance;
 
+	App* _app = nullptr;
 	std::multimap<Module::StageIndex, std::unique_ptr<Module>> _modules;
 	bool _running = false;
 
