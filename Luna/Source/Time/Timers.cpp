@@ -25,14 +25,15 @@ void Timers::TimerThread() {
 	Log::Info("Timers thread started.");
 
 	while (!_stop) {
-		if (_timers.empty()) {
+		if (_activeTimers.empty()) {
 			_timerCondition.wait(lock, [this]() { return _timersDirty; });
 		} else {
 			_timersDirty = false;
 
-			std::sort(_timers.begin(), _timers.end(), [](const auto& a, const auto& b) { return a->_next < b->_next; });
+			std::sort(
+				_activeTimers.begin(), _activeTimers.end(), [](const auto& a, const auto& b) { return a->_next < b->_next; });
 
-			auto& timer    = _timers.front();
+			Timer* timer   = _activeTimers.front();
 			const auto now = Time::Now();
 
 			if (now >= timer->_next) {
@@ -44,7 +45,8 @@ void Timers::TimerThread() {
 
 				if (timer->_repeat) {
 					if (--*timer->_repeat == 0) {
-						_timers.erase(std::remove(_timers.begin(), _timers.end(), timer), _timers.end());
+						_activeTimers.erase(std::remove(_activeTimers.begin(), _activeTimers.end(), timer), _activeTimers.end());
+						_timerPool.Free(timer);
 					}
 				}
 			} else {

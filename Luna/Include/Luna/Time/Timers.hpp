@@ -3,6 +3,7 @@
 #include <Luna/Core/Module.hpp>
 #include <Luna/Time/Time.hpp>
 #include <Luna/Utility/Delegate.hpp>
+#include <Luna/Utility/ObjectPool.hpp>
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -56,45 +57,50 @@ class Timers : public Module::Registrar<Timers> {
 	Timer* Once(const Time& delay, std::function<void()>&& function, Args... args) {
 		std::lock_guard<std::mutex> lock(_timerMutex);
 
-		auto& timer = _timers.emplace_back(new Timer(delay, 1));
+		Timer* timer = _timerPool.Allocate(delay, 1);
 		timer->OnTick().Add(std::move(function), args...);
+		_activeTimers.push_back(timer);
 		_timersDirty = true;
 		_timerCondition.notify_all();
 
-		return timer.get();
+		return timer;
 	}
 
 	template <typename... Args>
 	Timer* Every(const Time& interval, std::function<void()>&& function, Args... args) {
 		std::lock_guard<std::mutex> lock(_timerMutex);
 
-		auto& timer = _timers.emplace_back(new Timer(interval));
+		Timer* timer = _timerPool.Allocate(interval);
 		timer->OnTick().Add(std::move(function), args...);
+		_activeTimers.push_back(timer);
 		_timersDirty = true;
 		_timerCondition.notify_all();
 
-		return timer.get();
+		return timer;
 	}
 
 	template <typename... Args>
 	Timer* Repeat(const Time& interval, uint32_t repeat, std::function<void()>&& function, Args... args) {
 		std::lock_guard<std::mutex> lock(_timerMutex);
 
-		auto& timer = _timers.emplace_back(new Timer(interval, repeat));
+		Timer* timer = _timerPool.Allocate(interval, repeat);
 		timer->OnTick().Add(std::move(function), args...);
+		_activeTimers.push_back(timer);
 		_timersDirty = true;
 		_timerCondition.notify_all();
 
-		return timer.get();
+		return timer;
 	}
 
  private:
 	void TimerThread();
 
+	ObjectPool<Timer> _timerPool;
+
 	std::atomic_bool _stop = false;
 	std::condition_variable _timerCondition;
 	std::mutex _timerMutex;
-	std::vector<std::unique_ptr<Timer>> _timers;
+	std::vector<Timer*> _activeTimers;
 	bool _timersDirty = false;
 	std::thread _workerThread;
 };
