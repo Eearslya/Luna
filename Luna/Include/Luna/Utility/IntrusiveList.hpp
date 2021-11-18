@@ -79,6 +79,10 @@ class IntrusiveList {
 		return Iterator();
 	}
 
+	void Clear() {
+		_head = nullptr;
+		_tail = nullptr;
+	}
 	bool Empty() const {
 		return _head == nullptr;
 	}
