@@ -48,7 +48,7 @@ class ObjectPool {
 };
 
 template <typename T>
-class ThreadSafeObjectPol : private ObjectPool<T> {
+class ThreadSafeObjectPool : private ObjectPool<T> {
  public:
 	template <typename... Args>
 	T* Allocate(Args&&... args) {
