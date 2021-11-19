@@ -101,8 +101,8 @@ class Delegate<ReturnT(Args...)> {
 	Delegate()                   = default;
 	virtual ~Delegate() noexcept = default;
 
-	template <typename... Observers>
-	void Add(FunctionT&& function, Observers... observers) {
+	template <typename... ObserverList>
+	void Add(FunctionT&& function, ObserverList... observers) {
 		std::lock_guard<std::mutex> lock(_mutex);
 
 		ObserversT observerList;
@@ -124,8 +124,8 @@ class Delegate<ReturnT(Args...)> {
 		                 _functions.end());
 	}
 
-	template <typename... Observers>
-	void RemoveObservers(Observers... observers) {
+	template <typename... ObserverList>
+	void RemoveObservers(ObserverList... observers) {
 		ObserversT removes;
 
 		if constexpr (sizeof...(observers) != 0) {
