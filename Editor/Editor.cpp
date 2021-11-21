@@ -10,6 +10,8 @@ class EditorApp : public App {
 
 	virtual void Start() override {
 		Log::Info("Starting Editor app.");
+
+		Filesystem::Get()->AddSearchPath("Assets");
 	}
 
 	virtual void Update() override {}
@@ -26,7 +28,7 @@ int main(int argc, const char** argv) {
 
 	std::unique_ptr<EditorApp> app = std::make_unique<EditorApp>();
 
-	std::unique_ptr<Engine> engine = std::make_unique<Engine>();
+	std::unique_ptr<Engine> engine = std::make_unique<Engine>(argv[0]);
 	engine->SetApp(app.get());
 
 	return engine->Run();

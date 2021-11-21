@@ -6,7 +6,7 @@
 namespace Luna {
 Engine* Engine::_instance = nullptr;
 
-Engine::Engine() {
+Engine::Engine(const char* argv0) : _argv0(argv0) {
 	_instance = this;
 
 	Log::Info("Initializing Luna engine.");

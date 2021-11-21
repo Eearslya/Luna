@@ -4,13 +4,14 @@
 #include <Luna/Time/Time.hpp>
 #include <Luna/Utility/NonCopyable.hpp>
 #include <map>
+#include <string>
 
 namespace Luna {
 class App;
 
 class Engine final : NonCopyable {
  public:
-	Engine();
+	Engine(const char* argv0);
 	~Engine() noexcept;
 
 	static Engine* Get() {
@@ -19,6 +20,9 @@ class Engine final : NonCopyable {
 
 	App* GetApp() {
 		return _app;
+	}
+	const std::string& GetArgv0() const {
+		return _argv0;
 	}
 	Time GetFrameDelta() const {
 		return _frameDelta.Get();
@@ -49,6 +53,7 @@ class Engine final : NonCopyable {
 	static Engine* _instance;
 
 	App* _app = nullptr;
+	std::string _argv0;
 	std::multimap<Module::StageIndex, std::unique_ptr<Module>> _modules;
 	bool _running = false;
 
