@@ -4,6 +4,7 @@
 #include <Luna/Devices/Monitor.hpp>
 #include <Luna/Math/Vec2.hpp>
 #include <Luna/Utility/Delegate.hpp>
+#include <Luna/Vulkan/Common.hpp>
 #include <memory>
 #include <string>
 #include <vector>
@@ -60,7 +61,9 @@ class Window : public Module::Registrar<Window> {
 
 	const Monitor* GetCurrentMonitor() const;
 	const Monitor* GetPrimaryMonitor() const;
+	std::vector<const char*> GetRequiredInstanceExtensions() const;
 
+	VkSurfaceKHR CreateSurface(VkInstance instance) const;
 	void SetBorderless(bool borderless);
 	void SetFloating(bool floating);
 	void SetFullscreen(bool fullscreen, const Monitor* monitor = nullptr);

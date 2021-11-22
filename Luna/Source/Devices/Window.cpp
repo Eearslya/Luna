@@ -160,6 +160,22 @@ const Monitor* Window::GetPrimaryMonitor() const {
 	return nullptr;
 }
 
+std::vector<const char*> Window::GetRequiredInstanceExtensions() const {
+	uint32_t extensionCount = 0;
+	const auto extensions   = glfwGetRequiredInstanceExtensions(&extensionCount);
+	return std::vector<const char*>(extensions, extensions + extensionCount);
+}
+
+VkSurfaceKHR Window::CreateSurface(VkInstance instance) const {
+	VkSurfaceKHR surface  = VK_NULL_HANDLE;
+	const VkResult result = glfwCreateWindowSurface(instance, _window, nullptr, &surface);
+	if (result == VK_SUCCESS) {
+		return surface;
+	} else {
+		throw std::runtime_error("Failed to create window surface!");
+	}
+}
+
 void Window::SetBorderless(bool borderless) {
 	if (borderless == _borderless) { return; }
 	_borderless = borderless;
