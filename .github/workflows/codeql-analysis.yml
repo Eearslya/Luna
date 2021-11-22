@@ -43,7 +43,7 @@ jobs:
         submodules: 'recursive'
 
     - name: Install dependencies
-      run: sudo apt-get install -y xorg-dev
+      run: sudo apt-get build-dep -y libglfw3
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
