@@ -43,7 +43,7 @@ jobs:
         submodules: 'recursive'
 
     - name: Install dependencies
-      run: sudo apt-get install -y libxcursor-dev libxi-dev libxinerama-dev libxrandr-dev
+      run: sudo apt-get install -y libgl1-mesa-dev libxcursor-dev libxi-dev libxinerama-dev libxrandr-dev
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
