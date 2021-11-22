@@ -91,6 +91,11 @@ Threading::Threading() {
 }
 
 Threading::~Threading() noexcept {
+	{
+		std::unique_lock<std::mutex> lock(_tasksMutex);
+		_running = false;
+	}
+	_tasksCondition.notify_all();
 	for (auto& thread : _workerThreads) { thread.join(); }
 }
 
