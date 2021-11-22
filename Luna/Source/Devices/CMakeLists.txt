@@ -1,2 +1,3 @@
 target_sources(Luna PRIVATE
-	Monitor.cpp)
+	Monitor.cpp
+	Window.cpp)

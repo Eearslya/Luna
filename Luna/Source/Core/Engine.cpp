@@ -105,6 +105,10 @@ int Engine::Run() {
 	return EXIT_SUCCESS;
 }
 
+void Engine::Shutdown() {
+	_running = false;
+}
+
 void Engine::SetApp(App* app) {
 	if (_app) {
 		_app->Stop();

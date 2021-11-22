@@ -44,6 +44,7 @@ class Engine final : NonCopyable {
 	}
 
 	int Run();
+	void Shutdown();
 
 	void SetApp(App* app);
 	void SetFPSLimit(uint32_t limit);
