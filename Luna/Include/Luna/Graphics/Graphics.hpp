@@ -3,6 +3,10 @@
 #include <Luna/Devices/Window.hpp>
 
 namespace Luna {
+namespace Vulkan {
+class Context;
+}
+
 class Graphics : public Module::Registrar<Graphics> {
 	static inline const bool Registered = Register("Graphics", Stage::Render, Depends<Window>());
 
@@ -13,5 +17,6 @@ class Graphics : public Module::Registrar<Graphics> {
 	virtual void Update() override;
 
  private:
+	std::unique_ptr<Vulkan::Context> _context;
 };
 }  // namespace Luna
