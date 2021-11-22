@@ -1,6 +1,7 @@
 add_subdirectory(Core)
 add_subdirectory(Devices)
 add_subdirectory(Filesystem)
+add_subdirectory(Input)
 add_subdirectory(Threading)
 add_subdirectory(Time)
 add_subdirectory(Utility)

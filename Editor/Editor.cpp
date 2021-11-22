@@ -12,6 +12,12 @@ class EditorApp : public App {
 		Log::Info("Starting Editor app.");
 
 		Filesystem::Get()->AddSearchPath("Assets");
+
+		Keyboard::Get()->OnKey().Add(
+			[](Key key, InputAction action, InputMods mods) {
+				if (key == Key::Escape && action == InputAction::Press) { Engine::Get()->Shutdown(); }
+			},
+			this);
 	}
 
 	virtual void Update() override {}
