@@ -8,6 +8,7 @@
 #include <Luna/Devices/Mouse.hpp>
 #include <Luna/Devices/Window.hpp>
 #include <Luna/Filesystem/Filesystem.hpp>
+#include <Luna/Graphics/Graphics.hpp>
 #include <Luna/Input/Input.hpp>
 #include <Luna/Threading/Threading.hpp>
 #include <Luna/Time/Time.hpp>
