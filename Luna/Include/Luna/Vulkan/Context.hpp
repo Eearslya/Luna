@@ -12,8 +12,11 @@ class Context : NonCopyable {
 
  private:
 	void CreateInstance(const std::vector<const char*>& requiredExtensions);
+	void SelectPhysicalDevice(const std::vector<const char*>& requiredDeviceExtensions);
+	void CreateDevice(const std::vector<const char*>& requiredExtensions);
 
 	void DumpInstanceInformation() const;
+	void DumpDeviceInformation() const;
 
 	vk::DynamicLoader _loader;
 	ExtensionInfo _extensions;
@@ -21,6 +24,10 @@ class Context : NonCopyable {
 #ifdef LUNA_DEBUG
 	vk::DebugUtilsMessengerEXT _debugMessenger;
 #endif
+	vk::SurfaceKHR _surface;
+	GPUInfo _gpuInfo  = {};
+	QueueInfo _queues = {};
+	vk::PhysicalDevice _gpu;
 };
 }  // namespace Vulkan
 }  // namespace Luna

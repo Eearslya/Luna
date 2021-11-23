@@ -1,4 +1,5 @@
 #include <Luna/Core/Log.hpp>
+#include <Luna/Devices/Window.hpp>
 #include <Luna/Vulkan/Context.hpp>
 #include <unordered_map>
 
@@ -31,12 +32,17 @@ Context::Context(const std::vector<const char*>& instanceExtensions, const std::
 	VULKAN_HPP_DEFAULT_DISPATCHER.init(_loader.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr"));
 
 	DumpInstanceInformation();
-
 	CreateInstance(instanceExtensions);
+
+	SelectPhysicalDevice(deviceExtensions);
+	DumpDeviceInformation();
+
+	CreateDevice(deviceExtensions);
 }
 
 Context::~Context() noexcept {
 	if (_instance) {
+		if (_surface) { _instance.destroySurfaceKHR(_surface); }
 #ifdef LUNA_DEBUG
 		if (_debugMessenger) { _instance.destroyDebugUtilsMessengerEXT(_debugMessenger); }
 #endif
@@ -165,7 +171,101 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 #ifdef LUNA_DEBUG
 	if (_extensions.DebugUtils) { _debugMessenger = _instance.createDebugUtilsMessengerEXT(debugCI); }
 #endif
+
+	_surface = Window::Get()->CreateSurface(_instance);
 }
+
+void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredDeviceExtensions) {
+	const auto gpus = _instance.enumeratePhysicalDevices();
+	for (const auto& gpu : gpus) {
+		GPUInfo gpuInfo;
+
+		// Enumerate basic information.
+		gpuInfo.AvailableExtensions = gpu.enumerateDeviceExtensionProperties(nullptr);
+		gpuInfo.Layers              = gpu.enumerateDeviceLayerProperties();
+		gpuInfo.Memory              = gpu.getMemoryProperties();
+		gpuInfo.QueueFamilies       = gpu.getQueueFamilyProperties();
+
+		// Find any extensions hidden within enabled layers.
+		for (const auto& layer : gpuInfo.Layers) {
+			const auto layerExtensions = gpu.enumerateDeviceExtensionProperties(std::string(layer.layerName));
+			for (const auto& ext : layerExtensions) {
+				auto it = std::find_if(gpuInfo.AvailableExtensions.begin(),
+				                       gpuInfo.AvailableExtensions.end(),
+				                       [ext](const vk::ExtensionProperties& props) -> bool {
+																 return strcmp(props.extensionName, ext.extensionName) == 0;
+															 });
+				if (it == gpuInfo.AvailableExtensions.end()) {
+					gpuInfo.AvailableExtensions.push_back(ext);
+				} else if (it->specVersion < ext.specVersion) {
+					it->specVersion = ext.specVersion;
+				}
+			}
+		}
+
+		const auto HasExtension = [&](const char* extensionName) -> bool {
+			return std::find_if(gpuInfo.AvailableExtensions.begin(),
+			                    gpuInfo.AvailableExtensions.end(),
+			                    [extensionName](const vk::ExtensionProperties& props) -> bool {
+														return strcmp(extensionName, props.extensionName) == 0;
+													}) != gpuInfo.AvailableExtensions.end();
+		};
+
+		// Enumerate all of the properties and features.
+		if (_extensions.GetPhysicalDeviceProperties2) {
+			vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceTimelineSemaphoreFeatures> features;
+			vk::StructureChain<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceTimelineSemaphoreProperties> properties;
+
+			if (!HasExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME)) {
+				features.unlink<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
+				properties.unlink<vk::PhysicalDeviceTimelineSemaphoreProperties>();
+			}
+
+			gpu.getFeatures2(&features.get());
+			gpu.getProperties2(&properties.get());
+
+			gpuInfo.AvailableFeatures.Features          = features.get().features;
+			gpuInfo.AvailableFeatures.TimelineSemaphore = features.get<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
+
+			gpuInfo.Properties.Properties        = properties.get().properties;
+			gpuInfo.Properties.TimelineSemaphore = properties.get<vk::PhysicalDeviceTimelineSemaphoreProperties>();
+		} else {
+			gpuInfo.AvailableFeatures.Features = gpu.getFeatures();
+			gpuInfo.Properties.Properties      = gpu.getProperties();
+		}
+
+		// Validate that the device meets requirements.
+		bool extensions = true;
+		for (const auto& ext : requiredDeviceExtensions) {
+			if (!HasExtension(ext)) {
+				extensions = false;
+				break;
+			}
+		}
+		if (!extensions) { continue; }
+
+		bool graphicsQueue = false;
+		for (size_t q = 0; q < gpuInfo.QueueFamilies.size(); ++q) {
+			const auto& family = gpuInfo.QueueFamilies[q];
+			const auto present = gpu.getSurfaceSupportKHR(q, _surface);
+			if (family.queueFlags & vk::QueueFlagBits::eGraphics && family.queueFlags & vk::QueueFlagBits::eCompute &&
+			    present) {
+				graphicsQueue = true;
+				break;
+			}
+		}
+		if (!graphicsQueue) { continue; }
+
+		// We have a winner!
+		_gpu     = gpu;
+		_gpuInfo = gpuInfo;
+		return;
+	}
+
+	throw std::runtime_error("Failed to find a compatible physical device!");
+}
+
+void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {}
 
 void Context::DumpInstanceInformation() const {
 	Log::Trace("----- Vulkan Global Information -----");
@@ -196,6 +296,57 @@ void Context::DumpInstanceInformation() const {
 	}
 
 	Log::Trace("----- End Vulkan Global Information -----");
+}
+
+void Context::DumpDeviceInformation() const {
+	Log::Trace("----- Vulkan Physical Device Info -----");
+
+	Log::Trace("- Device Name: {}", _gpuInfo.Properties.Properties.deviceName);
+	Log::Trace("- Device Type: {}", vk::to_string(_gpuInfo.Properties.Properties.deviceType));
+	Log::Trace("- Device Driver Version: {}.{}.{}",
+	           VK_API_VERSION_MAJOR(_gpuInfo.Properties.Properties.driverVersion),
+	           VK_API_VERSION_MINOR(_gpuInfo.Properties.Properties.driverVersion),
+	           VK_API_VERSION_PATCH(_gpuInfo.Properties.Properties.driverVersion));
+
+	Log::Trace("- Layers ({}):", _gpuInfo.Layers.size());
+	for (const auto& layer : _gpuInfo.Layers) {
+		Log::Trace(" - {} v{} (Vulkan {}.{}.{}) - {}",
+		           layer.layerName,
+		           layer.implementationVersion,
+		           VK_API_VERSION_MAJOR(layer.specVersion),
+		           VK_API_VERSION_MINOR(layer.specVersion),
+		           VK_API_VERSION_PATCH(layer.specVersion),
+		           layer.description);
+	}
+
+	Log::Trace("- Device Extensions ({}):", _gpuInfo.AvailableExtensions.size());
+	for (const auto& ext : _gpuInfo.AvailableExtensions) { Log::Trace("  - {} v{}", ext.extensionName, ext.specVersion); }
+
+	Log::Trace("- Memory Heaps ({}):", _gpuInfo.Memory.memoryHeapCount);
+	for (size_t i = 0; i < _gpuInfo.Memory.memoryHeapCount; ++i) {
+		const auto& heap = _gpuInfo.Memory.memoryHeaps[i];
+		Log::Trace("  - {} {}", FormatSize(heap.size), vk::to_string(heap.flags));
+	}
+	Log::Trace("- Memory Types ({}):", _gpuInfo.Memory.memoryTypeCount);
+	for (size_t i = 0; i < _gpuInfo.Memory.memoryTypeCount; ++i) {
+		const auto& type = _gpuInfo.Memory.memoryTypes[i];
+		Log::Trace("  - Heap {} {}", type.heapIndex, vk::to_string(type.propertyFlags));
+	}
+
+	Log::Trace("- Queue Families ({}):", _gpuInfo.QueueFamilies.size());
+	for (size_t i = 0; i < _gpuInfo.QueueFamilies.size(); ++i) {
+		const auto& family = _gpuInfo.QueueFamilies[i];
+		Log::Trace("  - Family {}: {} Queues {} Granularity {}x{}x{} TimestampBits {}",
+		           i,
+		           family.queueCount,
+		           vk::to_string(family.queueFlags),
+		           family.minImageTransferGranularity.width,
+		           family.minImageTransferGranularity.height,
+		           family.minImageTransferGranularity.depth,
+		           family.timestampValidBits);
+	}
+
+	Log::Trace("----- End Vulkan Physical Device Info -----");
 }
 }  // namespace Vulkan
 }  // namespace Luna
