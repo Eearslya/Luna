@@ -41,6 +41,10 @@ Context::Context(const std::vector<const char*>& instanceExtensions, const std::
 }
 
 Context::~Context() noexcept {
+	if (_device) {
+		_device.waitIdle();
+		_device.destroy();
+	}
 	if (_instance) {
 		if (_surface) { _instance.destroySurfaceKHR(_surface); }
 #ifdef LUNA_DEBUG
@@ -127,7 +131,6 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 			}
 		}
 
-		TryExtension("VK_KHR_portability_subset");
 		_extensions.GetPhysicalDeviceProperties2 = TryExtension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 		_extensions.GetSurfaceCapabilities2      = TryExtension(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
 
@@ -265,7 +268,153 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredDevic
 	throw std::runtime_error("Failed to find a compatible physical device!");
 }
 
-void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {}
+void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
+	std::vector<const char*> enabledExtensions;
+	// Find and enable all required extensions, and any extensions we would like to have but are not required.
+	{
+		const auto HasExtension = [&](const char* extensionName) -> bool {
+			for (const auto& ext : _gpuInfo.AvailableExtensions) {
+				if (strcmp(ext.extensionName, extensionName) == 0) { return true; }
+			}
+			return false;
+		};
+		const auto TryExtension = [&](const char* extensionName) -> bool {
+			if (!HasExtension(extensionName)) { return false; }
+			for (const auto& name : enabledExtensions) {
+				if (strcmp(name, extensionName) == 0) { return true; }
+			}
+			Log::Debug("Enabling device extension '{}'.", extensionName);
+			enabledExtensions.push_back(extensionName);
+
+			return true;
+		};
+		for (const auto& name : requiredExtensions) {
+			if (!TryExtension(name)) {
+				throw vk::ExtensionNotPresentError("Extension " + std::string(name) + " was not available!");
+			}
+		}
+
+		// If this extension is available, it is REQUIRED to enable.
+		TryExtension("VK_KHR_portability_subset");
+
+		_extensions.TimelineSemaphore = TryExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+	}
+
+	// Find and assign all of our queues.
+	auto familyProps = _gpuInfo.QueueFamilies;
+	std::vector<std::vector<float>> familyPriorities(familyProps.size());
+	std::vector<vk::DeviceQueueCreateInfo> queueCIs(QueueTypeCount);
+	{
+		std::vector<uint32_t> nextFamilyIndex(familyProps.size(), 0);
+
+		// Assign each of our Graphics, Compute, and Transfer queues. Prefer finding separate queues for
+		// each if at all possible.
+		const auto AssignQueue = [&](QueueType type, vk::QueueFlags required, vk::QueueFlags ignored) -> bool {
+			for (size_t q = 0; q < familyProps.size(); ++q) {
+				auto& family = familyProps[q];
+				if (family.queueFlags & ignored || family.queueCount == 0) { continue; }
+
+				// Require presentation support for our graphics queue.
+				if (type == QueueType::Graphics) {
+					const auto present = _gpu.getSurfaceSupportKHR(q, _surface);
+					if (!present) { continue; }
+				}
+
+				_queues.Family(type) = q;
+				_queues.Index(type)  = nextFamilyIndex[q]++;
+				--family.queueCount;
+				familyPriorities[q].push_back(1.0f);
+
+				Log::Debug("Using queue {}.{} for {}.", _queues.Family(type), _queues.Index(type), QueueTypeName(type));
+
+				return true;
+			}
+
+			return false;
+		};
+
+		// First find our main Graphics queue.
+		if (!AssignQueue(QueueType::Graphics, vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute, {})) {
+			throw vk::IncompatibleDriverError("Could not find a suitable graphics/compute queue!");
+		}
+
+		// Then, attempt to find a dedicated compute queue, or any unused queue with compute. Fall back
+		// to sharing with graphics.
+		if (!AssignQueue(QueueType::Compute, vk::QueueFlagBits::eCompute, vk::QueueFlagBits::eGraphics) &&
+		    !AssignQueue(QueueType::Compute, vk::QueueFlagBits::eCompute, {})) {
+			_queues.Family(QueueType::Compute) = _queues.Family(QueueType::Graphics);
+			_queues.Index(QueueType::Compute)  = _queues.Index(QueueType::Graphics);
+			Log::Debug("Sharing Compute queue with Graphics.");
+		}
+
+		// Finally, attempt to find a dedicated transfer queue. Try to avoid graphics/compute, then
+		// compute, then just take what we can. Fall back to sharing with compute.
+		if (!AssignQueue(QueueType::Transfer,
+		                 vk::QueueFlagBits::eTransfer,
+		                 vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute) &&
+		    !AssignQueue(QueueType::Transfer, vk::QueueFlagBits::eTransfer, vk::QueueFlagBits::eCompute) &&
+		    !AssignQueue(QueueType::Transfer, vk::QueueFlagBits::eTransfer, {})) {
+			_queues.Family(QueueType::Transfer) = _queues.Family(QueueType::Compute);
+			_queues.Index(QueueType::Transfer)  = _queues.Index(QueueType::Compute);
+			Log::Debug("Sharing Transfer queue with Compute.");
+		}
+
+		uint32_t familyCount = 0;
+		uint32_t queueCount  = 0;
+		for (uint32_t i = 0; i < familyProps.size(); ++i) {
+			if (nextFamilyIndex[i] > 0) {
+				queueCount += nextFamilyIndex[i];
+				queueCIs[familyCount++] = vk::DeviceQueueCreateInfo({}, i, nextFamilyIndex[i], familyPriorities[i].data());
+			}
+		}
+		queueCIs.resize(familyCount);
+		Log::Trace("Creating {} queues on {} unique families.", queueCount, familyCount);
+	}
+
+	// Determine what features we want to enable.
+	vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceTimelineSemaphoreFeatures> enabledFeaturesChain;
+	{
+		auto& features = enabledFeaturesChain.get<vk::PhysicalDeviceFeatures2>().features;
+		if (_gpuInfo.AvailableFeatures.Features.samplerAnisotropy == VK_TRUE) {
+			Log::Trace("Enabling Sampler Anisotropy (x{}).", _gpuInfo.Properties.Properties.limits.maxSamplerAnisotropy);
+			features.samplerAnisotropy = VK_TRUE;
+		}
+
+		if (_extensions.TimelineSemaphore) {
+			auto& timelineSemaphore = enabledFeaturesChain.get<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
+			if (_gpuInfo.AvailableFeatures.TimelineSemaphore.timelineSemaphore == VK_TRUE) {
+				Log::Trace("Enabling Timeline Semaphores.");
+				timelineSemaphore.timelineSemaphore = VK_TRUE;
+			}
+		} else {
+			enabledFeaturesChain.unlink<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
+		}
+
+		_gpuInfo.EnabledFeatures.Features = features;
+		_gpuInfo.EnabledFeatures.TimelineSemaphore =
+			enabledFeaturesChain.get<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
+	}
+
+	// Create our device.
+	const vk::DeviceCreateInfo deviceCI(
+		{},
+		queueCIs,
+		nullptr,
+		enabledExtensions,
+		_extensions.GetPhysicalDeviceProperties2 ? nullptr : &_gpuInfo.EnabledFeatures.Features);
+	vk::StructureChain<vk::DeviceCreateInfo, vk::PhysicalDeviceFeatures2> chain(deviceCI, enabledFeaturesChain.get());
+	if (!_extensions.GetPhysicalDeviceProperties2) { chain.unlink<vk::PhysicalDeviceFeatures2>(); }
+
+	_device = _gpu.createDevice(chain.get());
+	VULKAN_HPP_DEFAULT_DISPATCHER.init(_device);
+
+	// Fetch our created queues.
+	for (int q = 0; q < QueueTypeCount; ++q) {
+		if (_queues.Families[q] != VK_QUEUE_FAMILY_IGNORED && _queues.Indices[q] != VK_QUEUE_FAMILY_IGNORED) {
+			_queues.Queues[q] = _device.getQueue(_queues.Families[q], _queues.Indices[q]);
+		}
+	}
+}
 
 void Context::DumpInstanceInformation() const {
 	Log::Trace("----- Vulkan Global Information -----");
@@ -345,6 +494,10 @@ void Context::DumpDeviceInformation() const {
 		           family.minImageTransferGranularity.depth,
 		           family.timestampValidBits);
 	}
+
+	Log::Trace("- Features:");
+	Log::Trace("  - Sampler Anisotropy: {}", _gpuInfo.AvailableFeatures.Features.samplerAnisotropy == VK_TRUE);
+	Log::Trace("  - Timeline Semaphores: {}", _gpuInfo.AvailableFeatures.TimelineSemaphore.timelineSemaphore == VK_TRUE);
 
 	Log::Trace("----- End Vulkan Physical Device Info -----");
 }
