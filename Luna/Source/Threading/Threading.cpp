@@ -2,6 +2,16 @@
 #include <Luna/Threading/Threading.hpp>
 
 namespace Luna {
+static thread_local uint32_t ThreadID = ~0u;
+
+void Threading::SetThreadID(uint32_t thread) {
+	ThreadID = thread;
+}
+
+uint32_t Threading::GetThreadID() {
+	return ThreadID;
+}
+
 void TaskDependenciesDeleter::operator()(TaskDependencies* deps) {
 	Threading::Get()->FreeTaskDependencies(deps);
 }
@@ -116,6 +126,10 @@ TaskGroupHandle Threading::CreateTaskGroup() {
 	return group;
 }
 
+uint32_t Threading::GetThreadCount() const {
+	return static_cast<uint32_t>(_workerThreads.size());
+}
+
 void Threading::Submit(TaskGroupHandle& group) {
 	group->Flush();
 	group.Reset();
@@ -152,6 +166,8 @@ void Threading::FreeTaskGroup(TaskGroup* group) {
 
 void Threading::WorkerThread(int threadID) {
 	Log::Trace("Starting worker thread {}.", threadID);
+
+	SetThreadID(threadID);
 
 	while (_running) {
 		Task* task = nullptr;

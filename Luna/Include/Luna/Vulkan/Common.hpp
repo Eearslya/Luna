@@ -2,15 +2,21 @@
 
 #include <Luna/Utility/NonCopyable.hpp>
 #include <array>
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
 #include <set>
 #include <unordered_map>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#define LUNA_VULKAN_MT
+
 namespace Luna {
 namespace Vulkan {
 // Forward declarations.
 class Context;
+class Device;
 
 // Enums and constants.
 enum class QueueType { Graphics, Transfer, Compute };

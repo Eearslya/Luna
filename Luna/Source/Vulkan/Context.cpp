@@ -452,6 +452,10 @@ void Context::DumpDeviceInformation() const {
 
 	Log::Trace("- Device Name: {}", _gpuInfo.Properties.Properties.deviceName);
 	Log::Trace("- Device Type: {}", vk::to_string(_gpuInfo.Properties.Properties.deviceType));
+	Log::Trace("- Device API Version: {}.{}.{}",
+	           VK_API_VERSION_MAJOR(_gpuInfo.Properties.Properties.apiVersion),
+	           VK_API_VERSION_MINOR(_gpuInfo.Properties.Properties.apiVersion),
+	           VK_API_VERSION_PATCH(_gpuInfo.Properties.Properties.apiVersion));
 	Log::Trace("- Device Driver Version: {}.{}.{}",
 	           VK_API_VERSION_MAJOR(_gpuInfo.Properties.Properties.driverVersion),
 	           VK_API_VERSION_MINOR(_gpuInfo.Properties.Properties.driverVersion),

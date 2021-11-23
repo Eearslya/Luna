@@ -82,9 +82,13 @@ class Threading : public Module::Registrar<Threading> {
 
 	void AddDependency(TaskGroup& dependee, TaskGroup& dependency);
 	TaskGroupHandle CreateTaskGroup();
+	uint32_t GetThreadCount() const;
 	void Submit(TaskGroupHandle& group);
 	void SubmitTasks(const std::vector<Task*>& tasks);
 	void WaitIdle();
+
+	static void SetThreadID(uint32_t thread);
+	static uint32_t GetThreadID();
 
  private:
 	void FreeTaskDependencies(TaskDependencies* dependencies);
