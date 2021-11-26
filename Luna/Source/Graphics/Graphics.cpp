@@ -11,5 +11,7 @@ Graphics::Graphics() {
 
 Graphics::~Graphics() noexcept {}
 
-void Graphics::Update() {}
+void Graphics::Update() {
+	_device->NextFrame();
+}
 }  // namespace Luna

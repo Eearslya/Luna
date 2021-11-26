@@ -54,6 +54,16 @@ Device::~Device() noexcept {
  * Public Methods
  * ********** */
 
+// ===== Frame management =====
+
+// Advance our frame context and get ready for new work submissions.
+void Device::NextFrame() {
+	WAIT_FOR_PENDING_COMMAND_BUFFERS();
+
+	_currentFrameContext = (_currentFrameContext + 1) % (_frameContexts.size());
+	Frame().Begin();
+}
+
 // ===== General Functionality =====
 
 // The great big "make it go slow" button. This function will wait for all work on the GPU to be completed and perform
@@ -66,6 +76,13 @@ void Device::WaitIdle() {
 /* **********
  * Private Methods
  * ********** */
+
+// ===== Frame management =====
+
+// Return our current frame context.
+Device::FrameContext& Device::Frame() {
+	return *_frameContexts[_currentFrameContext];
+}
 
 // ===== General Functionality =====
 

@@ -11,6 +11,9 @@ class Device final : NonCopyable {
 	Device(const Context& context);
 	~Device() noexcept;
 
+	// Frame management.
+	void NextFrame();
+
 	// General functionality.
 	void WaitIdle();
 
@@ -25,6 +28,9 @@ class Device final : NonCopyable {
 		Device& Parent;
 		uint32_t FrameIndex;
 	};
+
+	// Frame management.
+	FrameContext& Frame();
 
 	// General functionality.
 	void WaitIdleNoLock();
