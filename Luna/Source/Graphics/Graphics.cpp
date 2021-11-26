@@ -1,4 +1,5 @@
 #include <Luna/Graphics/Graphics.hpp>
+#include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Context.hpp>
 #include <Luna/Vulkan/Device.hpp>
 
@@ -12,6 +13,9 @@ Graphics::Graphics() {
 Graphics::~Graphics() noexcept {}
 
 void Graphics::Update() {
+	auto cmd = _device->RequestCommandBuffer();
+	_device->Submit(cmd);
+
 	_device->NextFrame();
 }
 }  // namespace Luna

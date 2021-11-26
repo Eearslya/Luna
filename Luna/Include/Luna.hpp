@@ -13,3 +13,7 @@
 #include <Luna/Threading/Threading.hpp>
 #include <Luna/Time/Time.hpp>
 #include <Luna/Time/Timers.hpp>
+#include <Luna/Vulkan/CommandBuffer.hpp>
+#include <Luna/Vulkan/Common.hpp>
+#include <Luna/Vulkan/Context.hpp>
+#include <Luna/Vulkan/Device.hpp>

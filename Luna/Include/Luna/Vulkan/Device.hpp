@@ -7,6 +7,8 @@ namespace Vulkan {
 class Context;
 
 class Device final : NonCopyable {
+	friend class CommandBuffer;
+	friend struct CommandBufferDeleter;
 	friend class CommandPool;
 
  public:
@@ -15,6 +17,8 @@ class Device final : NonCopyable {
 
 	// Frame management.
 	void NextFrame();
+	CommandBufferHandle RequestCommandBuffer(CommandBufferType type = CommandBufferType::Generic);
+	void Submit(CommandBufferHandle& cmd);
 
 	// General functionality.
 	void WaitIdle();
@@ -36,8 +40,11 @@ class Device final : NonCopyable {
 
 	// Frame management.
 	FrameContext& Frame();
+	CommandBufferHandle RequestCommandBufferNoLock(CommandBufferType type, uint32_t threadIndex);
+	void SubmitNoLock(CommandBufferHandle cmd);
 
 	// General functionality.
+	QueueType GetQueueType(CommandBufferType bufferType) const;
 	void WaitIdleNoLock();
 
 	// Internal setup and cleanup.
@@ -62,6 +69,9 @@ class Device final : NonCopyable {
 	// Frame contexts.
 	uint32_t _currentFrameContext = 0;
 	std::vector<std::unique_ptr<FrameContext>> _frameContexts;
+
+	// Vulkan object pools.
+	VulkanObjectPool<CommandBuffer> _commandBufferPool;
 };
 }  // namespace Vulkan
 }  // namespace Luna

@@ -1,5 +1,6 @@
 #include <Luna/Core/Log.hpp>
 #include <Luna/Threading/Threading.hpp>
+#include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/CommandPool.hpp>
 #include <Luna/Vulkan/Context.hpp>
 #include <Luna/Vulkan/Device.hpp>
@@ -65,6 +66,20 @@ void Device::NextFrame() {
 	Frame().Begin();
 }
 
+// Request a command buffer from the specified queue. The returned command buffer will be started and ready to record
+// immediately.
+CommandBufferHandle Device::RequestCommandBuffer(CommandBufferType type) {
+	LOCK();
+	return RequestCommandBufferNoLock(type, GetThreadID());
+}
+
+// Submit a command buffer for processing. All command buffers retrieved from the device must be submitted on the same
+// frame.
+void Device::Submit(CommandBufferHandle& cmd) {
+	LOCK();
+	SubmitNoLock(std::move(cmd));
+}
+
 // ===== General Functionality =====
 
 // The great big "make it go slow" button. This function will wait for all work on the GPU to be completed and perform
@@ -85,7 +100,48 @@ Device::FrameContext& Device::Frame() {
 	return *_frameContexts[_currentFrameContext];
 }
 
+// Private implementation of RequestCommandBuffer().
+CommandBufferHandle Device::RequestCommandBufferNoLock(CommandBufferType type, uint32_t threadIndex) {
+	const auto queueType = GetQueueType(type);
+	auto& pool           = Frame().CommandPools[static_cast<int>(queueType)][threadIndex];
+	auto buffer          = pool->RequestCommandBuffer();
+
+	CommandBufferHandle handle(_commandBufferPool.Allocate(*this, buffer, type, threadIndex));
+	handle->Begin();
+
+	_pendingCommandBuffers++;
+
+	return handle;
+}
+
+// Private implementation of Submit().
+void Device::SubmitNoLock(CommandBufferHandle cmd) {
+	const auto queueType = GetQueueType(cmd->GetType());
+
+	cmd->End();
+
+	--_pendingCommandBuffers;
+	_pendingCommandBuffersCondition.notify_all();
+}
+
 // ===== General Functionality =====
+
+// Helper function to determine the physical queue type to use for a command buffer.
+QueueType Device::GetQueueType(CommandBufferType bufferType) const {
+	if (bufferType == CommandBufferType::AsyncGraphics) {
+		// For async graphics, if our graphics and compute queues are the same family, but different queues, we give the
+		// compute queue. Otherwise, stick with the graphics queue.
+		if (_queues.SameFamily(QueueType::Graphics, QueueType::Compute) &&
+		    !_queues.SameIndex(QueueType::Graphics, QueueType::Compute)) {
+			return QueueType::Compute;
+		} else {
+			return QueueType::Graphics;
+		}
+	}
+
+	// For everything else, the CommandBufferType enum has the same values as the QueueType enum already.
+	return static_cast<QueueType>(bufferType);
+}
 
 // Private implementation of WaitIdle().
 void Device::WaitIdleNoLock() {

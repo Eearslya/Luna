@@ -81,19 +81,36 @@ int Engine::Run() {
 					_app->_started = true;
 				}
 
-				_app->Update();
+				try {
+					_app->Update();
+				} catch (const std::exception& e) {
+					Log::Fatal("Caught fatal error when updating application: {}", e.what());
+					_running = false;
+					break;
+				}
 			}
 
-			UpdateStage(Module::Stage::Pre);
-			UpdateStage(Module::Stage::Normal);
-			UpdateStage(Module::Stage::Post);
+			try {
+				UpdateStage(Module::Stage::Pre);
+				UpdateStage(Module::Stage::Normal);
+				UpdateStage(Module::Stage::Post);
+			} catch (const std::exception& e) {
+				Log::Fatal("Caught fatal error when updating engine modules: {}", e.what());
+				_running = false;
+				break;
+			}
 		}
 
 		_frameLimiter.Update();
 		if (_frameLimiter.Get() > 0) {
 			_fps.Update();
 			_frameDelta.Update();
-			UpdateStage(Module::Stage::Render);
+			try {
+				UpdateStage(Module::Stage::Render);
+			} catch (const std::exception& e) {
+				Log::Fatal("Caught fatal error when rendering: {}", e.what());
+				_running = false;
+			}
 		}
 	}
 

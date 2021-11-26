@@ -1,6 +1,10 @@
 #pragma once
 
+#include <Luna/Utility/IntrusiveHashMap.hpp>
+#include <Luna/Utility/IntrusivePtr.hpp>
 #include <Luna/Utility/NonCopyable.hpp>
+#include <Luna/Utility/ObjectPool.hpp>
+#include <Luna/Utility/TemporaryHashMap.hpp>
 #include <array>
 #include <atomic>
 #include <condition_variable>
@@ -15,13 +19,77 @@
 namespace Luna {
 namespace Vulkan {
 // Forward declarations.
+class CommandBuffer;
 class CommandPool;
 class Context;
 class Device;
 
+// Handle declarations.
+using CommandBufferHandle = IntrusivePtr<CommandBuffer>;
+
+// Typedefs.
+#ifdef LUNA_VULKAN_MT
+using HandleCounter = MultiThreadCounter;
+template <typename T>
+using VulkanCache = ThreadSafeIntrusiveHashMapReadCached<T>;
+template <typename T>
+using VulkanCacheReadWrite = ThreadSafeIntrusiveHashMap<T>;
+template <typename T>
+using VulkanObjectPool = ThreadSafeObjectPool<T>;
+#else
+using HandleCounter = SingleThreadCounter;
+template <typename T>
+using VulkanCache = IntrusiveHashMap<T>;
+template <typename T>
+using VulkanCacheReadWrite = IntrusiveHashMap<T>;
+template <typename T>
+using VulkanObjectPool = ObjectPool<T>;
+#endif
+
 // Enums and constants.
+template <typename T>
+static const char* VulkanEnumToString(const T value) {
+	return nullptr;
+}
+
 enum class QueueType { Graphics, Transfer, Compute };
 constexpr static const int QueueTypeCount = 3;
+template <>
+const char* VulkanEnumToString<QueueType>(const QueueType value) {
+	switch (value) {
+		case QueueType::Graphics:
+			return "Graphics";
+		case QueueType::Transfer:
+			return "Transfer";
+		case QueueType::Compute:
+			return "Compute";
+	}
+
+	return "Unknown";
+}
+
+enum class CommandBufferType {
+	Generic       = static_cast<int>(QueueType::Graphics),
+	AsyncTransfer = static_cast<int>(QueueType::Transfer),
+	AsyncCompute  = static_cast<int>(QueueType::Compute),
+	AsyncGraphics = QueueTypeCount
+};
+constexpr static const int CommandBufferTypeCount = 4;
+template <>
+const char* VulkanEnumToString<CommandBufferType>(const CommandBufferType value) {
+	switch (value) {
+		case CommandBufferType::Generic:
+			return "Generic";
+		case CommandBufferType::AsyncCompute:
+			return "AsyncCompute";
+		case CommandBufferType::AsyncTransfer:
+			return "AsyncTransfer";
+		case CommandBufferType::AsyncGraphics:
+			return "AsyncGraphics";
+	}
+
+	return "Unknown";
+}
 
 // Structures
 struct ExtensionInfo {
