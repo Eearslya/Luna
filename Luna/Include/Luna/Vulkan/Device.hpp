@@ -19,7 +19,7 @@ class Device final : NonCopyable {
 		std::mutex Mutex;
 		std::condition_variable Condition;
 #endif
-		uint32_t Counter = 0;
+		uint32_t PendingCommandBuffers = 0;
 	};
 
 	void WaitIdleNoLock();

@@ -7,17 +7,20 @@ static uint32_t GetThreadID() {
 	return ::Luna::Threading::GetThreadID();
 }
 #	define LOCK() std::lock_guard<std::mutex> _DeviceLock(_sync.Mutex)
-#	define DRAIN_FRAME_LOCK()                                                   \
-		do {                                                                       \
-			std::unique_lock<std::mutex> _DeviceLock(_sync.Mutex);                   \
-			_sync.Condition.wait(_DeviceLock, [&]() { return _sync.Counter == 0; }); \
+#	define WAIT_FOR_PENDING_COMMAND_BUFFERS()                                                                \
+		do {                                                                                                    \
+			using namespace std::chrono_literals;                                                                 \
+			std::unique_lock<std::mutex> _DeviceLock(_sync.Mutex);                                                \
+			if (!_sync.Condition.wait_for(_DeviceLock, 5s, [&]() { return _sync.PendingCommandBuffers == 0; })) { \
+				throw std::runtime_error("Timed out waiting for all requested command buffers to be submitted!");   \
+			}                                                                                                     \
 		} while (0)
 #else
 static uint32_t GetThreadID() {
 	return 0;
 }
-#	define LOCK()             ((void) 0)
-#	define DRAIN_FRAME_LOCK() assert(_sync.Counter == 0)
+#	define LOCK()                             ((void) 0)
+#	define WAIT_FOR_PENDING_COMMAND_BUFFERS() assert(_sync.PendingCommandBuffers == 0)
 #endif
 
 namespace Luna {
@@ -41,10 +44,18 @@ Device::~Device() noexcept {
 	WaitIdle();
 }
 
+/* **********
+ * Public Methods
+ * ********** */
+
 void Device::WaitIdle() {
-	DRAIN_FRAME_LOCK();
+	WAIT_FOR_PENDING_COMMAND_BUFFERS();
 	WaitIdleNoLock();
 }
+
+/* **********
+ * Private Methods
+ * ********** */
 
 void Device::WaitIdleNoLock() {
 	if (_device) { _device.waitIdle(); }
