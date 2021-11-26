@@ -131,6 +131,9 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 			}
 		}
 
+		// If we can't get the real sync2, see if we can get the fake compatibility extension.
+		TryLayer("VK_LAYER_KHRONOS_synchronization2");
+
 		_extensions.GetPhysicalDeviceProperties2 = TryExtension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 		_extensions.GetSurfaceCapabilities2      = TryExtension(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
 
@@ -154,7 +157,8 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 			vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
 		VulkanDebugCallback,
 		this);
-	const std::vector<vk::ValidationFeatureEnableEXT> validationEnable = {vk::ValidationFeatureEnableEXT::eBestPractices};
+	const std::vector<vk::ValidationFeatureEnableEXT> validationEnable = {
+		vk::ValidationFeatureEnableEXT::eBestPractices, vk::ValidationFeatureEnableEXT::eSynchronizationValidation};
 	const std::vector<vk::ValidationFeatureDisableEXT> validationDisable;
 	const vk::ValidationFeaturesEXT validationCI(validationEnable, validationDisable);
 
@@ -169,7 +173,11 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 	_instance = vk::createInstance(instanceCI);
 #endif
 
+	Log::Trace("Instance created.");
+
 	VULKAN_HPP_DEFAULT_DISPATCHER.init(_instance);
+
+	Log::Trace("Instance functions loaded.");
 
 #ifdef LUNA_DEBUG
 	if (_extensions.DebugUtils) { _debugMessenger = _instance.createDebugUtilsMessengerEXT(debugCI); }
@@ -220,6 +228,7 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredDevic
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 			                   vk::PhysicalDevicePortabilitySubsetFeaturesKHR,
 #endif
+			                   vk::PhysicalDeviceSynchronization2FeaturesKHR,
 			                   vk::PhysicalDeviceTimelineSemaphoreFeatures>
 				features;
 			vk::StructureChain<vk::PhysicalDeviceProperties2,
@@ -239,6 +248,9 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredDevic
 				properties.unlink<vk::PhysicalDevicePortabilitySubsetPropertiesKHR>();
 			}
 #endif
+			if (!HasExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)) {
+				features.unlink<vk::PhysicalDeviceSynchronization2FeaturesKHR>();
+			}
 			if (!HasExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME)) {
 				features.unlink<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
 				properties.unlink<vk::PhysicalDeviceTimelineSemaphoreProperties>();
@@ -251,6 +263,7 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredDevic
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 			gpuInfo.AvailableFeatures.PortabilitySubset = features.get<vk::PhysicalDevicePortabilitySubsetFeaturesKHR>();
 #endif
+			gpuInfo.AvailableFeatures.Synchronization2  = features.get<vk::PhysicalDeviceSynchronization2FeaturesKHR>();
 			gpuInfo.AvailableFeatures.TimelineSemaphore = features.get<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
 
 			gpuInfo.Properties.Properties = properties.get().properties;
@@ -326,6 +339,7 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 		TryExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
 #endif
 
+		_extensions.Synchronization2  = TryExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
 		_extensions.TimelineSemaphore = TryExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
 	}
 
@@ -550,6 +564,7 @@ void Context::DumpDeviceInformation() const {
 	Log::Trace("- Features:");
 	Log::Trace("  - Geometry Shader: {}", _gpuInfo.AvailableFeatures.Features.geometryShader == VK_TRUE);
 	Log::Trace("  - Sampler Anisotropy: {}", _gpuInfo.AvailableFeatures.Features.samplerAnisotropy == VK_TRUE);
+	Log::Trace("  - Synchronization 2: {}", _gpuInfo.AvailableFeatures.Synchronization2.synchronization2 == VK_TRUE);
 	Log::Trace("  - Tesselation Shader: {}", _gpuInfo.AvailableFeatures.Features.tessellationShader == VK_TRUE);
 	Log::Trace("  - Timeline Semaphores: {}", _gpuInfo.AvailableFeatures.TimelineSemaphore.timelineSemaphore == VK_TRUE);
 	Log::Trace("  - Wide Lines: {}", _gpuInfo.AvailableFeatures.Features.wideLines == VK_TRUE);

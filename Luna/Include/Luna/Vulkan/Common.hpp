@@ -27,6 +27,7 @@ struct ExtensionInfo {
 	bool DebugUtils                   = false;
 	bool GetPhysicalDeviceProperties2 = false;
 	bool GetSurfaceCapabilities2      = false;
+	bool Synchronization2             = false;
 	bool TimelineSemaphore            = false;
 	bool ValidationFeatures           = false;
 };
@@ -35,6 +36,7 @@ struct GPUFeatures {
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 	vk::PhysicalDevicePortabilitySubsetFeaturesKHR PortabilitySubset;
 #endif
+	vk::PhysicalDeviceSynchronization2FeaturesKHR Synchronization2;
 	vk::PhysicalDeviceTimelineSemaphoreFeatures TimelineSemaphore;
 };
 struct GPUProperties {
