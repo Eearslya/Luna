@@ -11,19 +11,14 @@ class Device final : NonCopyable {
 	Device(const Context& context);
 	~Device() noexcept;
 
+	// General functionality.
 	void WaitIdle();
 
  private:
-	struct SyncInfo {
-#ifdef LUNA_VULKAN_MT
-		std::mutex Mutex;
-		std::condition_variable Condition;
-#endif
-		uint32_t PendingCommandBuffers = 0;
-	};
-
+	// General functionality.
 	void WaitIdleNoLock();
 
+	// All of our Vulkan information/objects inherited from Context.
 	const ExtensionInfo& _extensions;
 	const vk::Instance& _instance;
 	const vk::SurfaceKHR& _surface;
@@ -32,12 +27,12 @@ class Device final : NonCopyable {
 	const vk::PhysicalDevice& _gpu;
 	const vk::Device& _device;
 
+	// Multithreading synchronization objects.
 #ifdef LUNA_VULKAN_MT
-	std::atomic_uint64_t _nextCookie;
-#else
-	uint64_t _nextCookie = 0;
+	std::mutex _mutex;
+	std::condition_variable _pendingCommandBuffersCondition;
 #endif
-	SyncInfo _sync;
+	uint32_t _pendingCommandBuffers = 0;
 };
 }  // namespace Vulkan
 }  // namespace Luna
