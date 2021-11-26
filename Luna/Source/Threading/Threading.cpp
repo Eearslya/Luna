@@ -181,7 +181,13 @@ void Threading::WorkerThread(int threadID) {
 			_tasks.pop();
 		}
 
-		if (task->Function) { task->Function(); }
+		if (task->Function) {
+			try {
+				task->Function();
+			} catch (const std::exception& e) {
+				Log::Error("[Threading] Exception encountered when running task: {}", e.what());
+			}
+		}
 
 		task->Dependencies->TaskCompleted();
 		_taskPool.Free(task);
