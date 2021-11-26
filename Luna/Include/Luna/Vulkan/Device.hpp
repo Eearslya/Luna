@@ -15,8 +15,22 @@ class Device final : NonCopyable {
 	void WaitIdle();
 
  private:
+	// A FrameContext contains all of the information needed to complete and clean up after a frame of work.
+	struct FrameContext {
+		FrameContext(Device& device, uint32_t frameIndex);
+		~FrameContext() noexcept;
+
+		void Begin();
+
+		Device& Parent;
+		uint32_t FrameIndex;
+	};
+
 	// General functionality.
 	void WaitIdleNoLock();
+
+	// Internal setup and cleanup.
+	void CreateFrameContexts(uint32_t count);
 
 	// All of our Vulkan information/objects inherited from Context.
 	const ExtensionInfo& _extensions;
@@ -33,6 +47,10 @@ class Device final : NonCopyable {
 	std::condition_variable _pendingCommandBuffersCondition;
 #endif
 	uint32_t _pendingCommandBuffers = 0;
+
+	// Frame contexts.
+	uint32_t _currentFrameContext = 0;
+	std::vector<std::unique_ptr<FrameContext>> _frameContexts;
 };
 }  // namespace Vulkan
 }  // namespace Luna

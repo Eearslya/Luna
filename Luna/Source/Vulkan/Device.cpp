@@ -1,3 +1,4 @@
+#include <Luna/Core/Log.hpp>
 #include <Luna/Threading/Threading.hpp>
 #include <Luna/Vulkan/Context.hpp>
 #include <Luna/Vulkan/Device.hpp>
@@ -41,6 +42,8 @@ Device::Device(const Context& context)
 			_gpu(context.GetGPU()),
 			_device(context.GetDevice()) {
 	Threading::SetThreadID(0);
+
+	CreateFrameContexts(2);
 }
 
 Device::~Device() noexcept {
@@ -51,7 +54,10 @@ Device::~Device() noexcept {
  * Public Methods
  * ********** */
 
-// Public interface to WaitIdleNoLock().
+// ===== General Functionality =====
+
+// The great big "make it go slow" button. This function will wait for all work on the GPU to be completed and perform
+// some tidying up.
 void Device::WaitIdle() {
 	WAIT_FOR_PENDING_COMMAND_BUFFERS();
 	WaitIdleNoLock();
@@ -61,10 +67,39 @@ void Device::WaitIdle() {
  * Private Methods
  * ********** */
 
-// The great big "make it go slow" button. This function will wait for all work on the GPU to be completed and perform
-// some tidying up.
+// ===== General Functionality =====
+
+// Private implementation of WaitIdle().
 void Device::WaitIdleNoLock() {
+	// First, wait on the actual device itself.
 	if (_device) { _device.waitIdle(); }
+
+	// Now that we know the device is doing nothing, we can go through all of our frame contexts and clean up all deferred
+	// deletions.
+	for (auto& context : _frameContexts) { context->Begin(); }
 }
+
+// ===== Internal setup and cleanup =====
+
+// Reset and create our internal frame context objects.
+void Device::CreateFrameContexts(uint32_t count) {
+	Log::Debug("[Vulkan::Device] Creating {} frame contexts.", count);
+
+	_currentFrameContext = 0;
+	_frameContexts.clear();
+	for (uint32_t i = 0; i < count; ++i) { _frameContexts.emplace_back(std::make_unique<FrameContext>(*this, i)); }
+}
+
+/* **********
+ * FrameContext Methods
+ * ********** */
+Device::FrameContext::FrameContext(Device& device, uint32_t frameIndex) : Parent(device), FrameIndex(frameIndex) {}
+
+Device::FrameContext::~FrameContext() noexcept {
+	Begin();
+}
+
+// Start our frame of work. Here, we perform cleanup of everything we know is no longer in use.
+void Device::FrameContext::Begin() {}
 }  // namespace Vulkan
 }  // namespace Luna
