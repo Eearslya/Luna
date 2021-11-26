@@ -32,10 +32,17 @@ struct ExtensionInfo {
 };
 struct GPUFeatures {
 	vk::PhysicalDeviceFeatures Features;
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+	vk::PhysicalDevicePortabilitySubsetFeaturesKHR PortabilitySubset;
+#endif
 	vk::PhysicalDeviceTimelineSemaphoreFeatures TimelineSemaphore;
 };
 struct GPUProperties {
 	vk::PhysicalDeviceProperties Properties;
+	vk::PhysicalDeviceDriverProperties Driver;
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+	vk::PhysicalDevicePortabilitySubsetPropertiesKHR PortabilitySubset;
+#endif
 	vk::PhysicalDeviceTimelineSemaphoreProperties TimelineSemaphore;
 };
 struct GPUInfo {

@@ -216,9 +216,29 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredDevic
 
 		// Enumerate all of the properties and features.
 		if (_extensions.GetPhysicalDeviceProperties2) {
-			vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceTimelineSemaphoreFeatures> features;
-			vk::StructureChain<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceTimelineSemaphoreProperties> properties;
+			vk::StructureChain<vk::PhysicalDeviceFeatures2,
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+			                   vk::PhysicalDevicePortabilitySubsetFeaturesKHR,
+#endif
+			                   vk::PhysicalDeviceTimelineSemaphoreFeatures>
+				features;
+			vk::StructureChain<vk::PhysicalDeviceProperties2,
+			                   vk::PhysicalDeviceDriverProperties,
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+			                   vk::PhysicalDevicePortabilitySubsetPropertiesKHR,
+#endif
+			                   vk::PhysicalDeviceTimelineSemaphoreProperties>
+				properties;
 
+			if (!HasExtension(VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME)) {
+				properties.unlink<vk::PhysicalDeviceDriverProperties>();
+			}
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+			if (!HasExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) {
+				features.unlink<vk::PhysicalDevicePortabilitySubsetFeaturesKHR>();
+				properties.unlink<vk::PhysicalDevicePortabilitySubsetPropertiesKHR>();
+			}
+#endif
 			if (!HasExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME)) {
 				features.unlink<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
 				properties.unlink<vk::PhysicalDeviceTimelineSemaphoreProperties>();
@@ -227,10 +247,17 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredDevic
 			gpu.getFeatures2(&features.get());
 			gpu.getProperties2(&properties.get());
 
-			gpuInfo.AvailableFeatures.Features          = features.get().features;
+			gpuInfo.AvailableFeatures.Features = features.get().features;
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+			gpuInfo.AvailableFeatures.PortabilitySubset = features.get<vk::PhysicalDevicePortabilitySubsetFeaturesKHR>();
+#endif
 			gpuInfo.AvailableFeatures.TimelineSemaphore = features.get<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
 
-			gpuInfo.Properties.Properties        = properties.get().properties;
+			gpuInfo.Properties.Properties = properties.get().properties;
+			gpuInfo.Properties.Driver     = properties.get<vk::PhysicalDeviceDriverProperties>();
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+			gpuInfo.Properties.PortabilitySubset = properties.get<vk::PhysicalDevicePortabilitySubsetPropertiesKHR>();
+#endif
 			gpuInfo.Properties.TimelineSemaphore = properties.get<vk::PhysicalDeviceTimelineSemaphoreProperties>();
 		} else {
 			gpuInfo.AvailableFeatures.Features = gpu.getFeatures();
@@ -294,8 +321,10 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 			}
 		}
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
 		// If this extension is available, it is REQUIRED to enable.
-		TryExtension("VK_KHR_portability_subset");
+		TryExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+#endif
 
 		_extensions.TimelineSemaphore = TryExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
 	}
@@ -448,6 +477,13 @@ void Context::DumpInstanceInformation() const {
 }
 
 void Context::DumpDeviceInformation() const {
+	const auto HasExtension = [&](const char* name) {
+		return std::find_if(_gpuInfo.AvailableExtensions.begin(),
+		                    _gpuInfo.AvailableExtensions.end(),
+		                    [&](const vk::ExtensionProperties& ext) { return strcmp(name, ext.extensionName) == 0; }) !=
+		       _gpuInfo.AvailableExtensions.end();
+	};
+
 	Log::Trace("----- Vulkan Physical Device Info -----");
 
 	Log::Trace("- Device Name: {}", _gpuInfo.Properties.Properties.deviceName);
@@ -499,9 +535,58 @@ void Context::DumpDeviceInformation() const {
 		           family.timestampValidBits);
 	}
 
+	if (static_cast<uint32_t>(_gpuInfo.Properties.Driver.driverID) != 0) {
+		Log::Trace("- Driver:");
+		Log::Trace("  - ID: {}", vk::to_string(_gpuInfo.Properties.Driver.driverID));
+		Log::Trace("  - Name: {}", _gpuInfo.Properties.Driver.driverName);
+		Log::Trace("  - Info: {}", _gpuInfo.Properties.Driver.driverInfo);
+		Log::Trace("  - Conformance Version: {}.{}.{}.{}",
+		           _gpuInfo.Properties.Driver.conformanceVersion.major,
+		           _gpuInfo.Properties.Driver.conformanceVersion.minor,
+		           _gpuInfo.Properties.Driver.conformanceVersion.patch,
+		           _gpuInfo.Properties.Driver.conformanceVersion.subminor);
+	}
+
 	Log::Trace("- Features:");
+	Log::Trace("  - Geometry Shader: {}", _gpuInfo.AvailableFeatures.Features.geometryShader == VK_TRUE);
 	Log::Trace("  - Sampler Anisotropy: {}", _gpuInfo.AvailableFeatures.Features.samplerAnisotropy == VK_TRUE);
+	Log::Trace("  - Tesselation Shader: {}", _gpuInfo.AvailableFeatures.Features.tessellationShader == VK_TRUE);
 	Log::Trace("  - Timeline Semaphores: {}", _gpuInfo.AvailableFeatures.TimelineSemaphore.timelineSemaphore == VK_TRUE);
+	Log::Trace("  - Wide Lines: {}", _gpuInfo.AvailableFeatures.Features.wideLines == VK_TRUE);
+
+	Log::Trace("- Properties:");
+	if (_gpuInfo.AvailableFeatures.Features.samplerAnisotropy) {
+		Log::Trace("  - Max Anisotropy: {}", _gpuInfo.Properties.Properties.limits.maxSamplerAnisotropy);
+	}
+
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+	if (HasExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) {
+		Log::Trace("- Portability Subset:");
+		Log::Trace("  - Minimum Vertex Binding Stride Alignment: {}",
+		           _gpuInfo.Properties.PortabilitySubset.minVertexInputBindingStrideAlignment);
+
+		Log::Trace("  - The following features are UNAVAILABLE:");
+#	define FEAT(flag, name)                                                                   \
+		do {                                                                                     \
+			if (!_gpuInfo.AvailableFeatures.PortabilitySubset.flag) { Log::Trace("    - " name); } \
+		} while (0)
+		FEAT(constantAlphaColorBlendFactors, "Constant Alpha Color Blend Factors");
+		FEAT(events, "Events");
+		FEAT(imageViewFormatReinterpretation, "Image View Format Reinterpretation");
+		FEAT(imageViewFormatSwizzle, "Image View Format Swizzle");
+		FEAT(imageView2DOn3DImage, "Image View 2D on 3D Image");
+		FEAT(multisampleArrayImage, "Multisample Array Image");
+		FEAT(mutableComparisonSamplers, "Mutable Comparison Samplers");
+		FEAT(pointPolygons, "Point Polygons");
+		FEAT(samplerMipLodBias, "Sampler Mip LOD Bias");
+		FEAT(separateStencilMaskRef, "Separate Stencil Mask Ref");
+		FEAT(shaderSampleRateInterpolationFunctions, "Shader Sample Rate Interpolation Functions");
+		FEAT(tessellationIsolines, "Tesselation Isolines");
+		FEAT(tessellationPointMode, "Tesselation Point Mode");
+		FEAT(vertexAttributeAccessBeyondStride, "Vertex Attribute Access Beyond Stride");
+#	undef FEAT
+	}
+#endif
 
 	Log::Trace("----- End Vulkan Physical Device Info -----");
 }
