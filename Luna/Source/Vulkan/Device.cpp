@@ -1,5 +1,6 @@
 #include <Luna/Core/Log.hpp>
 #include <Luna/Threading/Threading.hpp>
+#include <Luna/Vulkan/CommandPool.hpp>
 #include <Luna/Vulkan/Context.hpp>
 #include <Luna/Vulkan/Device.hpp>
 
@@ -110,13 +111,32 @@ void Device::CreateFrameContexts(uint32_t count) {
 /* **********
  * FrameContext Methods
  * ********** */
-Device::FrameContext::FrameContext(Device& device, uint32_t frameIndex) : Parent(device), FrameIndex(frameIndex) {}
+Device::FrameContext::FrameContext(Device& device, uint32_t frameIndex) : Parent(device), FrameIndex(frameIndex) {
+	const auto threadCount = Threading::Get()->GetThreadCount();
+	for (uint32_t type = 0; type < QueueTypeCount; ++type) {
+		const auto family = Parent._queues.Families[type];
+		for (uint32_t thread = 0; thread < threadCount; ++thread) {
+			CommandPools[type].emplace_back(std::make_unique<CommandPool>(Parent, family));
+		}
+	}
+}
 
 Device::FrameContext::~FrameContext() noexcept {
 	Begin();
 }
 
 // Start our frame of work. Here, we perform cleanup of everything we know is no longer in use.
-void Device::FrameContext::Begin() {}
+void Device::FrameContext::Begin() {
+	for (auto& queuePools : CommandPools) {
+		for (auto& pool : queuePools) { pool->Reset(); }
+	}
+}
+
+// Trim our command pools to free up any unused memory they might still be holding onto.
+void Device::FrameContext::TrimCommandPools() {
+	for (auto& queuePools : CommandPools) {
+		for (auto& pool : queuePools) { pool->Trim(); }
+	}
+}
 }  // namespace Vulkan
 }  // namespace Luna

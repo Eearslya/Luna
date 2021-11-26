@@ -7,6 +7,8 @@ namespace Vulkan {
 class Context;
 
 class Device final : NonCopyable {
+	friend class CommandPool;
+
  public:
 	Device(const Context& context);
 	~Device() noexcept;
@@ -24,9 +26,12 @@ class Device final : NonCopyable {
 		~FrameContext() noexcept;
 
 		void Begin();
+		void TrimCommandPools();
 
 		Device& Parent;
 		uint32_t FrameIndex;
+
+		std::array<std::vector<std::unique_ptr<CommandPool>>, QueueTypeCount> CommandPools;
 	};
 
 	// Frame management.

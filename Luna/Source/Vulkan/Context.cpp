@@ -339,6 +339,7 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 		TryExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
 #endif
 
+		_extensions.Maintenance1      = TryExtension(VK_KHR_MAINTENANCE1_EXTENSION_NAME);
 		_extensions.Synchronization2  = TryExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
 		_extensions.TimelineSemaphore = TryExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
 	}
@@ -495,7 +496,7 @@ void Context::DumpDeviceInformation() const {
 		return std::find_if(_gpuInfo.AvailableExtensions.begin(),
 		                    _gpuInfo.AvailableExtensions.end(),
 		                    [&](const vk::ExtensionProperties& ext) { return strcmp(name, ext.extensionName) == 0; }) !=
-		       _gpuInfo.AvailableExtensions.end();
+					 _gpuInfo.AvailableExtensions.end();
 	};
 
 	Log::Trace("----- Vulkan Physical Device Info -----");

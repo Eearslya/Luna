@@ -15,6 +15,7 @@
 namespace Luna {
 namespace Vulkan {
 // Forward declarations.
+class CommandPool;
 class Context;
 class Device;
 
@@ -27,6 +28,7 @@ struct ExtensionInfo {
 	bool DebugUtils                   = false;
 	bool GetPhysicalDeviceProperties2 = false;
 	bool GetSurfaceCapabilities2      = false;
+	bool Maintenance1                 = false;
 	bool Synchronization2             = false;
 	bool TimelineSemaphore            = false;
 	bool ValidationFeatures           = false;
