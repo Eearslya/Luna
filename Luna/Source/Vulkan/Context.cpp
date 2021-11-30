@@ -496,7 +496,7 @@ void Context::DumpDeviceInformation() const {
 		return std::find_if(_gpuInfo.AvailableExtensions.begin(),
 		                    _gpuInfo.AvailableExtensions.end(),
 		                    [&](const vk::ExtensionProperties& ext) { return strcmp(name, ext.extensionName) == 0; }) !=
-					 _gpuInfo.AvailableExtensions.end();
+		       _gpuInfo.AvailableExtensions.end();
 	};
 
 	Log::Trace("----- Vulkan Physical Device Info -----");

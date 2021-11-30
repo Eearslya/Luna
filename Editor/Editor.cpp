@@ -13,6 +13,13 @@ class EditorApp : public App {
 
 		Filesystem::Get()->AddSearchPath("Assets");
 
+		Timers::Get()->Every(Time::Seconds(1), []() {
+			const auto fps          = Engine::Get()->GetFPS();
+			const auto ups          = Engine::Get()->GetUPS();
+			const std::string title = fmt::format("Luna - {} FPS | {} UPS", fps, ups);
+			Window::Get()->SetTitle(title);
+		});
+
 		Keyboard::Get()->OnKey().Add(
 			[](Key key, InputAction action, InputMods mods) {
 				if (key == Key::Escape && action == InputAction::Press) { Engine::Get()->Shutdown(); }

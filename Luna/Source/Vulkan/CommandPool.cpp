@@ -7,20 +7,25 @@ namespace Vulkan {
 CommandPool::CommandPool(Device& device, uint32_t familyIndex) : _device(device) {
 	Log::Trace("[Vulkan::CommandPool] Creating new command pool on queue family {}.", familyIndex);
 
+	const auto dev = _device.GetDevice();
+
 	const vk::CommandPoolCreateInfo poolCI(vk::CommandPoolCreateFlagBits::eTransient, familyIndex);
-	_pool = _device._device.createCommandPool(poolCI);
+	_pool = dev.createCommandPool(poolCI);
 }
 
 CommandPool::~CommandPool() noexcept {
-	if (_pool) { _device._device.destroyCommandPool(_pool); }
+	const auto dev = _device.GetDevice();
+	if (dev && _pool) { dev.destroyCommandPool(_pool); }
 }
 
 vk::CommandBuffer CommandPool::RequestCommandBuffer() {
 	assert(_bufferIndex <= _commandBuffers.size());
 
+	const auto dev = _device.GetDevice();
+
 	if (_bufferIndex == _commandBuffers.size()) {
 		const vk::CommandBufferAllocateInfo bufferAI(_pool, vk::CommandBufferLevel::ePrimary, 1);
-		auto buffers = _device._device.allocateCommandBuffers(bufferAI);
+		auto buffers = dev.allocateCommandBuffers(bufferAI);
 		_commandBuffers.push_back(buffers[0]);
 	}
 
@@ -28,20 +33,26 @@ vk::CommandBuffer CommandPool::RequestCommandBuffer() {
 }
 
 void CommandPool::Reset() {
-	if (!_pool || _bufferIndex == 0) { return; }
+	const auto dev = _device.GetDevice();
+
+	if (!dev || !_pool || _bufferIndex == 0) { return; }
 
 	_bufferIndex = 0;
-	_device._device.resetCommandPool(_pool);
+	dev.resetCommandPool(_pool);
 }
 
 void CommandPool::Trim() {
-	if (!_pool) { return; }
+	const auto dev = _device.GetDevice();
 
-	_device._device.resetCommandPool(_pool, vk::CommandPoolResetFlagBits::eReleaseResources);
-	if (!_commandBuffers.empty()) { _device._device.freeCommandBuffers(_pool, _commandBuffers); }
+	if (!dev || !_pool) { return; }
+
+	const auto& extensions = _device.GetExtensionInfo();
+
+	dev.resetCommandPool(_pool, vk::CommandPoolResetFlagBits::eReleaseResources);
+	if (!_commandBuffers.empty()) { dev.freeCommandBuffers(_pool, _commandBuffers); }
 	_bufferIndex = 0;
 	_commandBuffers.clear();
-	if (_device._extensions.Maintenance1) { _device._device.trimCommandPoolKHR(_pool, {}); }
+	if (extensions.Maintenance1) { dev.trimCommandPoolKHR(_pool, {}); }
 }
 }  // namespace Vulkan
 }  // namespace Luna

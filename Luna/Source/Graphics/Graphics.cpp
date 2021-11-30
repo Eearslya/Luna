@@ -2,6 +2,7 @@
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Context.hpp>
 #include <Luna/Vulkan/Device.hpp>
+#include <Luna/Vulkan/Fence.hpp>
 
 namespace Luna {
 Graphics::Graphics() {
@@ -14,7 +15,10 @@ Graphics::~Graphics() noexcept {}
 
 void Graphics::Update() {
 	auto cmd = _device->RequestCommandBuffer();
-	_device->Submit(cmd);
+
+	Vulkan::FenceHandle fence;
+	_device->Submit(cmd, &fence);
+	fence->Wait();
 
 	_device->NextFrame();
 }

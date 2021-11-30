@@ -1,10 +1,12 @@
 #pragma once
 
+#include <Luna/Utility/Badge.hpp>
 #include <Luna/Utility/IntrusiveHashMap.hpp>
 #include <Luna/Utility/IntrusivePtr.hpp>
 #include <Luna/Utility/NonCopyable.hpp>
 #include <Luna/Utility/ObjectPool.hpp>
 #include <Luna/Utility/TemporaryHashMap.hpp>
+#include <Luna/Vulkan/Cookie.hpp>
 #include <array>
 #include <atomic>
 #include <condition_variable>
@@ -20,12 +22,19 @@ namespace Luna {
 namespace Vulkan {
 // Forward declarations.
 class CommandBuffer;
+struct CommandBufferDeleter;
 class CommandPool;
 class Context;
 class Device;
+class Fence;
+struct FenceDeleter;
+class Semaphore;
+struct SemaphoreDeleter;
 
 // Handle declarations.
 using CommandBufferHandle = IntrusivePtr<CommandBuffer>;
+using FenceHandle         = IntrusivePtr<Fence>;
+using SemaphoreHandle     = IntrusivePtr<Semaphore>;
 
 // Typedefs.
 #ifdef LUNA_VULKAN_MT

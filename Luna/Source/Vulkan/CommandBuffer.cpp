@@ -4,7 +4,7 @@
 namespace Luna {
 namespace Vulkan {
 void CommandBufferDeleter::operator()(CommandBuffer* buffer) {
-	buffer->_device._commandBufferPool.Free(buffer);
+	buffer->_device.ReleaseCommandBuffer({}, buffer);
 }
 
 CommandBuffer::CommandBuffer(Device& device,
