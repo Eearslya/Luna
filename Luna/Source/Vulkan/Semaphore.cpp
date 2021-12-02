@@ -15,7 +15,10 @@ Semaphore::Semaphore(Device& device, vk::Semaphore semaphore, bool signalled)
 Semaphore::Semaphore(Device& device, vk::Semaphore semaphore, uint64_t value)
 		: _device(device), _semaphore(semaphore), _value(value) {}
 
-Semaphore::~Semaphore() noexcept {}
+Semaphore::~Semaphore() noexcept {
+	_semaphore = nullptr;
+	_value     = 0;
+}
 
 vk::Semaphore Semaphore::Consume() {
 	assert(_semaphore);
@@ -30,6 +33,20 @@ vk::Semaphore Semaphore::Release() {
 	_signalled              = false;
 
 	return semaphore;
+}
+
+void Semaphore::SignalExternal() {
+	assert(_semaphore);
+	assert(!_signalled);
+
+	_signalled = true;
+}
+
+void Semaphore::WaitExternal() {
+	assert(_semaphore);
+	assert(_signalled);
+
+	_signalled = false;
 }
 }  // namespace Vulkan
 }  // namespace Luna

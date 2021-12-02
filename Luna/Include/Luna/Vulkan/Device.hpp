@@ -35,6 +35,7 @@ class Device final : NonCopyable {
 	}
 
 	// Frame management.
+	void EndFrame();
 	void NextFrame();
 	CommandBufferHandle RequestCommandBuffer(CommandBufferType type = CommandBufferType::Generic);
 	void Submit(CommandBufferHandle& cmd, FenceHandle* fence = nullptr);
@@ -42,11 +43,18 @@ class Device final : NonCopyable {
 	// General functionality.
 	void WaitIdle();
 
+	// Object management.
+	FenceHandle RequestFence();
+	SemaphoreHandle RequestSemaphore();
+
 	// Internal functions for other Vulkan classes.
 	uint64_t AllocateCookie(Badge<Cookie>);
+	SemaphoreHandle ConsumeReleaseSemaphore(Badge<Swapchain>);
+	void RecycleFence(Badge<FenceDeleter>, Fence* fence);
 	void RecycleSemaphore(Badge<SemaphoreDeleter>, Semaphore* semaphore);
 	void ReleaseCommandBuffer(Badge<CommandBufferDeleter>, CommandBuffer* cmdBuf);
-	void ResetFence(Badge<FenceDeleter>, Fence* fence);
+	void SetAcquireSemaphore(Badge<Swapchain>, uint32_t imageIndex, SemaphoreHandle& semaphore);
+	void SetupSwapchain(Badge<Swapchain>, Swapchain& swapchain);
 
  private:
 	// A FrameContext contains all of the information needed to complete and clean up after a frame of work.
@@ -63,9 +71,10 @@ class Device final : NonCopyable {
 		std::array<std::vector<std::unique_ptr<CommandPool>>, QueueTypeCount> CommandPools;
 		std::array<std::vector<CommandBufferHandle>, QueueTypeCount> Submissions;
 
-		std::vector<Fence*> FencesToRecycle;
-		std::vector<Semaphore*> SemaphoresToDestroy;
-		std::vector<Semaphore*> SemaphoresToRecycle;
+		std::vector<vk::Fence> FencesToAwait;
+		std::vector<vk::Fence> FencesToRecycle;
+		std::vector<vk::Semaphore> SemaphoresToDestroy;
+		std::vector<vk::Semaphore> SemaphoresToRecycle;
 	};
 
 	// A small structure to keep track of a "fence". An internal fence can be represented by an actual fence, or by a
@@ -85,6 +94,7 @@ class Device final : NonCopyable {
 	};
 
 	// Frame management.
+	void EndFrameNoLock();
 	FrameContext& Frame();
 	CommandBufferHandle RequestCommandBufferNoLock(CommandBufferType type, uint32_t threadIndex);
 	void SubmitNoLock(CommandBufferHandle cmd, FenceHandle* fence);
@@ -95,13 +105,13 @@ class Device final : NonCopyable {
 	void WaitIdleNoLock();
 
 	// Internal setup and cleanup.
+	vk::Fence AllocateFence();
+	vk::Semaphore AllocateSemaphore();
 	void CreateFrameContexts(uint32_t count);
 	void CreateTimelineSemaphores();
 	void DestroyTimelineSemaphores();
 	void ReleaseFence(vk::Fence fence);
 	void ReleaseSemaphore(vk::Semaphore semaphore);
-	vk::Fence RequestFence();
-	vk::Semaphore RequestSemaphore();
 
 	// All of our Vulkan information/objects inherited from Context.
 	const ExtensionInfo& _extensions;
@@ -128,6 +138,12 @@ class Device final : NonCopyable {
 	// Frame contexts.
 	uint32_t _currentFrameContext = 0;
 	std::vector<std::unique_ptr<FrameContext>> _frameContexts;
+
+	// Swapchain/WSI Sync Objects
+	SemaphoreHandle _swapchainAcquire;
+	bool _swapchainAcquireConsumed = false;
+	uint32_t _swapchainIndex;
+	SemaphoreHandle _swapchainRelease;
 
 	// Vulkan object pools.
 	VulkanObjectPool<CommandBuffer> _commandBufferPool;

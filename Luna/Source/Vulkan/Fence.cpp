@@ -4,7 +4,7 @@
 namespace Luna {
 namespace Vulkan {
 void FenceDeleter::operator()(Fence* fence) {
-	fence->_device.ResetFence({}, fence);
+	fence->_device.RecycleFence({}, fence);
 }
 
 Fence::Fence(Device& device, vk::Fence fence)
@@ -13,7 +13,12 @@ Fence::Fence(Device& device, vk::Fence fence)
 Fence::Fence(Device& device, vk::Semaphore timelineSemaphore, uint64_t timelineValue)
 		: _device(device), _fence(VK_NULL_HANDLE), _timelineSemaphore(timelineSemaphore), _timelineValue(timelineValue) {}
 
-Fence::~Fence() noexcept {}
+Fence::~Fence() noexcept {
+	_fence             = nullptr;
+	_observedWait      = false;
+	_timelineSemaphore = nullptr;
+	_timelineValue     = 0;
+}
 
 void Fence::Wait() {
 #ifdef LUNA_VULKAN_MT

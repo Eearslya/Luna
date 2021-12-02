@@ -6,6 +6,7 @@
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Fence.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
+#include <Luna/Vulkan/Swapchain.hpp>
 
 // Helper functions for dealing with multithreading.
 #ifdef LUNA_VULKAN_MT
@@ -60,6 +61,10 @@ Device::~Device() noexcept {
 	WaitIdle();
 
 	for (auto& fence : _availableFences) { _device.destroyFence(fence); }
+	for (auto& semaphore : _availableSemaphores) { _device.destroySemaphore(semaphore); }
+
+	_swapchainAcquire.Reset();
+	_swapchainRelease.Reset();
 
 	DestroyTimelineSemaphores();
 }
@@ -69,6 +74,11 @@ Device::~Device() noexcept {
  * ********** */
 
 // ===== Frame management =====
+
+void Device::EndFrame() {
+	WAIT_FOR_PENDING_COMMAND_BUFFERS();
+	EndFrameNoLock();
+}
 
 // Advance our frame context and get ready for new work submissions.
 void Device::NextFrame() {
@@ -101,6 +111,20 @@ void Device::WaitIdle() {
 	WaitIdleNoLock();
 }
 
+// ===== Object Management =====
+
+FenceHandle Device::RequestFence() {
+	LOCK();
+	auto fence = AllocateFence();
+	return FenceHandle(_fencePool.Allocate(*this, fence));
+}
+
+SemaphoreHandle Device::RequestSemaphore() {
+	LOCK();
+	auto semaphore = AllocateSemaphore();
+	return SemaphoreHandle(_semaphorePool.Allocate(*this, semaphore, false));
+}
+
 // ===== Internal functions for other Vulkan classes =====
 
 // Allocate a "cookie" to an object, which serves as a unique identifier for that object for the lifetime of the
@@ -114,16 +138,42 @@ uint64_t Device::AllocateCookie(Badge<Cookie>) {
 #endif
 }
 
+SemaphoreHandle Device::ConsumeReleaseSemaphore(Badge<Swapchain>) {
+	return std::move(_swapchainRelease);
+}
+
+void Device::RecycleFence(Badge<FenceDeleter>, Fence* fence) {
+	if (fence->GetFence()) {
+		MAYBE_LOCK(fence);
+
+		auto vkFence = fence->GetFence();
+
+		if (fence->HasObservedWait()) {
+			_device.resetFences(vkFence);
+			ReleaseFence(vkFence);
+		} else {
+			Frame().FencesToRecycle.push_back(vkFence);
+		}
+	}
+
+	_fencePool.Free(fence);
+}
+
 void Device::RecycleSemaphore(Badge<SemaphoreDeleter>, Semaphore* semaphore) {
-	if (semaphore->GetTimelineValue() == 0 && semaphore->GetSemaphore()) {
+	const auto vkSemaphore = semaphore->GetSemaphore();
+	const auto value       = semaphore->GetTimelineValue();
+
+	if (vkSemaphore && value == 0) {
 		MAYBE_LOCK(semaphore);
 
 		if (semaphore->IsSignalled()) {
-			Frame().SemaphoresToDestroy.push_back(semaphore);
+			Frame().SemaphoresToDestroy.push_back(vkSemaphore);
 		} else {
-			Frame().SemaphoresToRecycle.push_back(semaphore);
+			Frame().SemaphoresToRecycle.push_back(vkSemaphore);
 		}
 	}
+
+	_semaphorePool.Free(semaphore);
 }
 
 // Release a command buffer and return it to our pool.
@@ -131,18 +181,17 @@ void Device::ReleaseCommandBuffer(Badge<CommandBufferDeleter>, CommandBuffer* cm
 	_commandBufferPool.Free(cmdBuf);
 }
 
-void Device::ResetFence(Badge<FenceDeleter>, Fence* fence) {
-	const vk::Fence vkFence = fence->GetFence();
-	if (!vkFence) { return; }
+void Device::SetAcquireSemaphore(Badge<Swapchain>, uint32_t imageIndex, SemaphoreHandle& semaphore) {
+	_swapchainAcquire         = std::move(semaphore);
+	_swapchainAcquireConsumed = false;
+	_swapchainIndex           = imageIndex;
 
-	MAYBE_LOCK(fence);
+	if (_swapchainAcquire) { _swapchainAcquire->_internalSync = true; }
+}
 
-	if (fence->HasObservedWait()) {
-		_device.resetFences(vkFence);
-		ReleaseFence(vkFence);
-	} else {
-		Frame().FencesToRecycle.push_back(fence);
-	}
+void Device::SetupSwapchain(Badge<Swapchain>, Swapchain& swapchain) {
+	WAIT_FOR_PENDING_COMMAND_BUFFERS();
+	WaitIdleNoLock();
 }
 
 /* **********
@@ -150,6 +199,23 @@ void Device::ResetFence(Badge<FenceDeleter>, Fence* fence) {
  * ********** */
 
 // ===== Frame management =====
+
+void Device::EndFrameNoLock() {
+	constexpr static const QueueType flushOrder[] = {QueueType::Transfer, QueueType::Graphics, QueueType::Compute};
+	InternalFence submitFence;
+
+	for (auto& type : flushOrder) {
+		auto& queueData = _queueData[static_cast<int>(type)];
+		if (queueData.NeedsFence || !Frame().Submissions[static_cast<int>(type)].empty()) {
+			SubmitQueue(type, &submitFence);
+			if (submitFence.Fence) {
+				Frame().FencesToAwait.push_back(submitFence.Fence);
+				Frame().FencesToRecycle.push_back(submitFence.Fence);
+			}
+			queueData.NeedsFence = false;
+		}
+	}
+}
 
 // Return our current frame context.
 Device::FrameContext& Device::Frame() {
@@ -241,20 +307,43 @@ void Device::SubmitQueue(QueueType queueType, InternalFence* submitFence) {
 	queueData.WaitStages.clear();
 
 	// Add our command buffers.
+	bool firstBatch = true;
 	for (auto& cmdBufHandle : submissions) {
+		// FIXME: Until command buffers are more fleshed out, we simply add the WSI acquire to the first batch.
+		if (firstBatch) {
+			if (_swapchainAcquire && !_swapchainAcquireConsumed) {
+				batches[batch].WaitSemaphores.push_back(_swapchainAcquire->GetSemaphore());
+				batches[batch].WaitStages.push_back(vk::PipelineStageFlagBits::eColorAttachmentOutput);
+				batches[batch].WaitValues.push_back(_swapchainAcquire->GetTimelineValue());
+				Frame().SemaphoresToRecycle.push_back(_swapchainAcquire->Consume());
+				_swapchainAcquireConsumed = true;
+				_swapchainAcquire.Reset();
+			}
+		}
+
 		if (!batches[batch].SignalSemaphores.empty()) {
 			++batch;
 			assert(batch < MaxSubmissions);
 		}
 
 		batches[batch].CommandBuffers.push_back(cmdBufHandle->GetCommandBuffer());
+
+		if (firstBatch) {
+			vk::Semaphore release            = AllocateSemaphore();
+			_swapchainRelease                = SemaphoreHandle(_semaphorePool.Allocate(*this, release, true));
+			_swapchainRelease->_internalSync = true;
+			batches[batch].SignalSemaphores.push_back(release);
+			batches[batch].SignalValues.push_back(0);
+		}
+
+		firstBatch = false;
 	}
 	submissions.clear();
 
 	// Only use a fence if we have to. Prefer using the timeline semaphore for each queue.
 	vk::Fence fence = VK_NULL_HANDLE;
 	if (submitFence && !_gpuInfo.AvailableFeatures.TimelineSemaphore.timelineSemaphore) {
-		fence              = RequestFence();
+		fence              = AllocateFence();
 		submitFence->Fence = fence;
 	}
 
@@ -329,7 +418,10 @@ QueueType Device::GetQueueType(CommandBufferType bufferType) const {
 
 // Private implementation of WaitIdle().
 void Device::WaitIdleNoLock() {
-	// First, wait on the actual device itself.
+	// Make sure our current frame is completed.
+	if (!_frameContexts.empty()) { EndFrameNoLock(); }
+
+	// Wait on the actual device itself.
 	if (_device) { _device.waitIdle(); }
 
 	// Now that we know the device is doing nothing, we can go through all of our frame contexts and clean up all deferred
@@ -338,6 +430,38 @@ void Device::WaitIdleNoLock() {
 }
 
 // ===== Internal setup and cleanup =====
+
+vk::Fence Device::AllocateFence() {
+	if (_availableFences.empty()) {
+		Log::Trace("[Vulkan::Device] Creating new Fence.");
+
+		const vk::FenceCreateInfo fenceCI;
+		vk::Fence fence = _device.createFence(fenceCI);
+
+		return fence;
+	}
+
+	vk::Fence fence = _availableFences.back();
+	_availableFences.pop_back();
+
+	return fence;
+}
+
+vk::Semaphore Device::AllocateSemaphore() {
+	if (_availableSemaphores.empty()) {
+		Log::Trace("[Vulkan::Device] Creating new Semaphore.");
+
+		const vk::SemaphoreCreateInfo semaphoreCI;
+		vk::Semaphore semaphore = _device.createSemaphore(semaphoreCI);
+
+		return semaphore;
+	}
+
+	vk::Semaphore semaphore = _availableSemaphores.back();
+	_availableSemaphores.pop_back();
+
+	return semaphore;
+}
 
 // Reset and create our internal frame context objects.
 void Device::CreateFrameContexts(uint32_t count) {
@@ -381,38 +505,6 @@ void Device::ReleaseSemaphore(vk::Semaphore semaphore) {
 	_availableSemaphores.push_back(semaphore);
 }
 
-vk::Fence Device::RequestFence() {
-	if (_availableFences.empty()) {
-		Log::Trace("[Vulkan::Device] Creating new Fence.");
-
-		const vk::FenceCreateInfo fenceCI;
-		vk::Fence fence = _device.createFence(fenceCI);
-
-		return fence;
-	}
-
-	vk::Fence fence = _availableFences.back();
-	_availableFences.pop_back();
-
-	return fence;
-}
-
-vk::Semaphore Device::RequestSemaphore() {
-	if (_availableSemaphores.empty()) {
-		Log::Trace("[Vulkan::Device] Creating new Semaphore.");
-
-		const vk::SemaphoreCreateInfo semaphoreCI;
-		vk::Semaphore semaphore = _device.createSemaphore(semaphoreCI);
-
-		return semaphore;
-	}
-
-	vk::Semaphore semaphore = _availableSemaphores.back();
-	_availableSemaphores.pop_back();
-
-	return semaphore;
-}
-
 /* **********
  * FrameContext Methods
  * ********** */
@@ -434,56 +526,62 @@ Device::FrameContext::~FrameContext() noexcept {
 void Device::FrameContext::Begin() {
 	vk::Device device = Parent.GetDevice();
 
-	bool hasTimelineSemaphores = true;
-	for (auto& queue : Parent._queueData) {
-		if (!queue.TimelineSemaphore) {
-			hasTimelineSemaphores = false;
-			break;
-		}
-	}
-	if (hasTimelineSemaphores) {
-		uint32_t semaphoreCount = 0;
-		std::array<vk::Semaphore, QueueTypeCount> semaphores;
-		std::array<uint64_t, QueueTypeCount> values;
-		for (size_t i = 0; i < QueueTypeCount; ++i) {
-			if (Parent._queueData[i].TimelineValue) {
-				semaphores[semaphoreCount] = Parent._queueData[i].TimelineSemaphore;
-				values[semaphoreCount]     = Parent._queueData[i].TimelineValue;
-				++semaphoreCount;
+	// Wait on our timeline semaphores to ensure this frame context has completed all of its pending work.
+	{
+		bool hasTimelineSemaphores = true;
+		for (auto& queue : Parent._queueData) {
+			if (!queue.TimelineSemaphore) {
+				hasTimelineSemaphores = false;
+				break;
 			}
 		}
+		if (hasTimelineSemaphores) {
+			uint32_t semaphoreCount = 0;
+			std::array<vk::Semaphore, QueueTypeCount> semaphores;
+			std::array<uint64_t, QueueTypeCount> values;
+			for (size_t i = 0; i < QueueTypeCount; ++i) {
+				if (Parent._queueData[i].TimelineValue) {
+					semaphores[semaphoreCount] = Parent._queueData[i].TimelineSemaphore;
+					values[semaphoreCount]     = Parent._queueData[i].TimelineValue;
+					++semaphoreCount;
+				}
+			}
 
-		if (semaphoreCount) {
-			const vk::SemaphoreWaitInfo waitInfo({}, semaphoreCount, semaphores.data(), values.data());
-			const auto waitResult = device.waitSemaphoresKHR(waitInfo, std::numeric_limits<uint64_t>::max());
-			if (waitResult != vk::Result::eSuccess) { Log::Error("[Vulkan::Device] Failed to wait on timeline semaphores!"); }
+			if (semaphoreCount) {
+				const vk::SemaphoreWaitInfo waitInfo({}, semaphoreCount, semaphores.data(), values.data());
+				const auto waitResult = device.waitSemaphoresKHR(waitInfo, std::numeric_limits<uint64_t>::max());
+				if (waitResult != vk::Result::eSuccess) {
+					Log::Error("[Vulkan::Device] Failed to wait on timeline semaphores!");
+				}
+			}
 		}
 	}
 
+	// Wait on our fences to ensure this frame context has completed all of its pending work.
+	// If we are able to use timeline semaphores, this should never be needed.
+	if (!FencesToAwait.empty()) {
+		const auto waitResult = device.waitForFences(FencesToAwait, VK_TRUE, std::numeric_limits<uint64_t>::max());
+		if (waitResult != vk::Result::eSuccess) { Log::Error("[Vulkan::Device] Failed to wait on submit fences!"); }
+		FencesToAwait.clear();
+	}
+
+	// Reset all of the fences that we used this frame.
 	if (!FencesToRecycle.empty()) {
-		std::vector<vk::Fence> fences(FencesToRecycle.size());
-		for (size_t i = 0; i < FencesToRecycle.size(); ++i) {
-			vk::Fence vkFence = FencesToRecycle[i]->GetFence();
-			fences[i]         = vkFence;
-			Parent.ReleaseFence(vkFence);
-			Parent._fencePool.Free(FencesToRecycle[i]);
-		}
-		device.resetFences(fences);
+		device.resetFences(FencesToRecycle);
+		for (auto& fence : FencesToRecycle) { Parent.ReleaseFence(fence); }
 		FencesToRecycle.clear();
 	}
 
+	// Reset all of our command pools.
 	for (auto& queuePools : CommandPools) {
 		for (auto& pool : queuePools) { pool->Reset(); }
 	}
 
-	for (auto semaphore : SemaphoresToDestroy) {
-		device.destroySemaphore(semaphore->GetSemaphore());
-		Parent._semaphorePool.Free(semaphore);
-	}
-	for (auto semaphore : SemaphoresToRecycle) {
-		Parent.ReleaseSemaphore(semaphore->GetSemaphore());
-		Parent._semaphorePool.Free(semaphore);
-	}
+	// Destroy or recycle all of our other resources that are no longer in use.
+	for (auto& semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
+	for (auto& semaphore : SemaphoresToRecycle) { Parent.ReleaseSemaphore(semaphore); }
+	SemaphoresToDestroy.clear();
+	SemaphoresToRecycle.clear();
 }
 
 // Trim our command pools to free up any unused memory they might still be holding onto.

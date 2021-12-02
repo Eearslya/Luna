@@ -30,6 +30,7 @@ class Fence;
 struct FenceDeleter;
 class Semaphore;
 struct SemaphoreDeleter;
+class Swapchain;
 
 // Handle declarations.
 using CommandBufferHandle = IntrusivePtr<CommandBuffer>;

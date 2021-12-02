@@ -27,6 +27,8 @@ class Semaphore : public IntrusivePtrEnabled<Semaphore, SemaphoreDeleter, Handle
 
 	vk::Semaphore Consume();
 	vk::Semaphore Release();
+	void SignalExternal();
+	void WaitExternal();
 
  private:
 	Semaphore(Device& device);
