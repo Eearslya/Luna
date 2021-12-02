@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vk_mem_alloc.h>
+
 #include <Luna/Vulkan/Common.hpp>
 
 namespace Luna {
@@ -131,6 +133,9 @@ class Device final : NonCopyable {
 	const QueueInfo& _queues;
 	const vk::PhysicalDevice& _gpu;
 	const vk::Device& _device;
+
+	// Our main memory allocator.
+	VmaAllocator _allocator;
 
 	// Multithreading synchronization objects.
 	std::vector<vk::Fence> _availableFences;

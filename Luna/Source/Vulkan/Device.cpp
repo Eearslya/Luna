@@ -53,6 +53,38 @@ Device::Device(const Context& context)
 			_device(context.GetDevice()) {
 	Threading::SetThreadID(0);
 
+#define FN(name) .name                  = VULKAN_HPP_DEFAULT_DISPATCHER.name
+	const VmaVulkanFunctions vmaFunctions = {FN(vkGetInstanceProcAddr),
+	                                         FN(vkGetDeviceProcAddr),
+	                                         FN(vkGetPhysicalDeviceProperties),
+	                                         FN(vkGetPhysicalDeviceMemoryProperties),
+	                                         FN(vkAllocateMemory),
+	                                         FN(vkFreeMemory),
+	                                         FN(vkMapMemory),
+	                                         FN(vkUnmapMemory),
+	                                         FN(vkFlushMappedMemoryRanges),
+	                                         FN(vkInvalidateMappedMemoryRanges),
+	                                         FN(vkBindBufferMemory),
+	                                         FN(vkBindImageMemory),
+	                                         FN(vkGetBufferMemoryRequirements),
+	                                         FN(vkGetImageMemoryRequirements),
+	                                         FN(vkCreateBuffer),
+	                                         FN(vkDestroyBuffer),
+	                                         FN(vkCreateImage),
+	                                         FN(vkDestroyImage),
+	                                         FN(vkCmdCopyBuffer)};
+#undef FN
+	const VmaAllocatorCreateInfo allocatorCI = {.physicalDevice   = _gpu,
+	                                            .device           = _device,
+	                                            .frameInUseCount  = 1,
+	                                            .pVulkanFunctions = &vmaFunctions,
+	                                            .instance         = _instance,
+	                                            .vulkanApiVersion = VK_API_VERSION_1_0};
+	const auto allocatorResult               = vmaCreateAllocator(&allocatorCI, &_allocator);
+	if (allocatorResult != VK_SUCCESS) {
+		throw std::runtime_error("[Vulkan::Device] Failed to create memory allocator!");
+	}
+
 	CreateTimelineSemaphores();
 	CreateFrameContexts(2);
 }
@@ -65,6 +97,8 @@ Device::~Device() noexcept {
 
 	_swapchainAcquire.Reset();
 	_swapchainRelease.Reset();
+
+	vmaDestroyAllocator(_allocator);
 
 	DestroyTimelineSemaphores();
 }
