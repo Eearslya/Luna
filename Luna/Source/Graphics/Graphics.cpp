@@ -1,4 +1,5 @@
 #include <Luna/Graphics/Graphics.hpp>
+#include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Context.hpp>
 #include <Luna/Vulkan/Device.hpp>
@@ -12,6 +13,9 @@ Graphics::Graphics() {
 	_context   = std::make_unique<Vulkan::Context>(instanceExtensions, deviceExtensions);
 	_device    = std::make_unique<Vulkan::Device>(*_context);
 	_swapchain = std::make_unique<Vulkan::Swapchain>(*_device);
+
+	auto buffer = _device->CreateBuffer(
+		Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, 128, vk::BufferUsageFlagBits::eStorageBuffer));
 }
 
 Graphics::~Graphics() noexcept {}

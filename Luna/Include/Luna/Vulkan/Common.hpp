@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vk_mem_alloc.h>
+
 #include <Luna/Utility/Badge.hpp>
 #include <Luna/Utility/IntrusiveHashMap.hpp>
 #include <Luna/Utility/IntrusivePtr.hpp>
@@ -21,6 +23,9 @@
 namespace Luna {
 namespace Vulkan {
 // Forward declarations.
+class Buffer;
+struct BufferCreateInfo;
+struct BufferDeleter;
 class CommandBuffer;
 struct CommandBufferDeleter;
 class CommandPool;
@@ -33,6 +38,7 @@ struct SemaphoreDeleter;
 class Swapchain;
 
 // Handle declarations.
+using BufferHandle        = IntrusivePtr<Buffer>;
 using CommandBufferHandle = IntrusivePtr<CommandBuffer>;
 using FenceHandle         = IntrusivePtr<Fence>;
 using SemaphoreHandle     = IntrusivePtr<Semaphore>;

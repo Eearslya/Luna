@@ -14,6 +14,9 @@ class Device final : NonCopyable {
 	~Device() noexcept;
 
 	// Access to device handles and information.
+	VmaAllocator GetAllocator() const {
+		return _allocator;
+	}
 	const vk::Device& GetDevice() const {
 		return _device;
 	}
@@ -46,12 +49,14 @@ class Device final : NonCopyable {
 	void WaitIdle();
 
 	// Object management.
+	BufferHandle CreateBuffer(const BufferCreateInfo& createInfo);
 	FenceHandle RequestFence();
 	SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
 
 	// Internal functions for other Vulkan classes.
 	uint64_t AllocateCookie(Badge<Cookie>);
 	SemaphoreHandle ConsumeReleaseSemaphore(Badge<Swapchain>);
+	void DestroyBuffer(Badge<BufferDeleter>, Buffer* buffer);
 	void RecycleFence(Badge<FenceDeleter>, Fence* fence);
 	void RecycleSemaphore(Badge<SemaphoreDeleter>, Semaphore* semaphore);
 	void ReleaseCommandBuffer(Badge<CommandBufferDeleter>, CommandBuffer* cmdBuf);
@@ -80,6 +85,7 @@ class Device final : NonCopyable {
 		std::array<std::vector<std::unique_ptr<CommandPool>>, QueueTypeCount> CommandPools;
 		std::array<std::vector<CommandBufferHandle>, QueueTypeCount> Submissions;
 
+		std::vector<Buffer*> BuffersToDestroy;
 		std::vector<vk::Fence> FencesToAwait;
 		std::vector<vk::Fence> FencesToRecycle;
 		std::vector<vk::Semaphore> SemaphoresToDestroy;
@@ -161,6 +167,7 @@ class Device final : NonCopyable {
 	SemaphoreHandle _swapchainRelease;
 
 	// Vulkan object pools.
+	VulkanObjectPool<Buffer> _bufferPool;
 	VulkanObjectPool<CommandBuffer> _commandBufferPool;
 	VulkanObjectPool<Fence> _fencePool;
 	VulkanObjectPool<Semaphore> _semaphorePool;

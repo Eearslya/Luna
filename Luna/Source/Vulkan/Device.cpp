@@ -1,5 +1,6 @@
 #include <Luna/Core/Log.hpp>
 #include <Luna/Threading/Threading.hpp>
+#include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/CommandPool.hpp>
 #include <Luna/Vulkan/Context.hpp>
@@ -147,6 +148,10 @@ void Device::WaitIdle() {
 
 // ===== Object Management =====
 
+BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo) {
+	return BufferHandle(_bufferPool.Allocate(*this, createInfo));
+}
+
 FenceHandle Device::RequestFence() {
 	LOCK();
 	auto fence = AllocateFence();
@@ -174,6 +179,11 @@ uint64_t Device::AllocateCookie(Badge<Cookie>) {
 
 SemaphoreHandle Device::ConsumeReleaseSemaphore(Badge<Swapchain>) {
 	return std::move(_swapchainRelease);
+}
+
+void Device::DestroyBuffer(Badge<BufferDeleter>, Buffer* buffer) {
+	MAYBE_LOCK(buffer);
+	Frame().BuffersToDestroy.push_back(buffer);
 }
 
 void Device::RecycleFence(Badge<FenceDeleter>, Fence* fence) {
@@ -621,8 +631,10 @@ void Device::FrameContext::Begin() {
 	}
 
 	// Destroy or recycle all of our other resources that are no longer in use.
+	for (auto& buffer : BuffersToDestroy) { Parent._bufferPool.Free(buffer); }
 	for (auto& semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
 	for (auto& semaphore : SemaphoresToRecycle) { Parent.ReleaseSemaphore(semaphore); }
+	BuffersToDestroy.clear();
 	SemaphoresToDestroy.clear();
 	SemaphoresToRecycle.clear();
 }
