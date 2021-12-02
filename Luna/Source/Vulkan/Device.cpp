@@ -119,10 +119,10 @@ FenceHandle Device::RequestFence() {
 	return FenceHandle(_fencePool.Allocate(*this, fence));
 }
 
-SemaphoreHandle Device::RequestSemaphore() {
+SemaphoreHandle Device::RequestSemaphore(const std::string& debugName) {
 	LOCK();
 	auto semaphore = AllocateSemaphore();
-	return SemaphoreHandle(_semaphorePool.Allocate(*this, semaphore, false));
+	return SemaphoreHandle(_semaphorePool.Allocate(*this, semaphore, false, debugName));
 }
 
 // ===== Internal functions for other Vulkan classes =====
@@ -329,8 +329,9 @@ void Device::SubmitQueue(QueueType queueType, InternalFence* submitFence) {
 		batches[batch].CommandBuffers.push_back(cmdBufHandle->GetCommandBuffer());
 
 		if (firstBatch) {
+			const auto releaseName           = fmt::format("Swapchain Image {} Release", _swapchainIndex);
 			vk::Semaphore release            = AllocateSemaphore();
-			_swapchainRelease                = SemaphoreHandle(_semaphorePool.Allocate(*this, release, true));
+			_swapchainRelease                = SemaphoreHandle(_semaphorePool.Allocate(*this, release, true, releaseName));
 			_swapchainRelease->_internalSync = true;
 			batches[batch].SignalSemaphores.push_back(release);
 			batches[batch].SignalValues.push_back(0);
@@ -504,6 +505,15 @@ void Device::ReleaseFence(vk::Fence fence) {
 void Device::ReleaseSemaphore(vk::Semaphore semaphore) {
 	_availableSemaphores.push_back(semaphore);
 }
+
+#ifdef LUNA_DEBUG
+void Device::SetObjectNameImpl(vk::ObjectType type, uint64_t handle, const std::string& name) {
+	if (!_extensions.DebugUtils) { return; }
+
+	const vk::DebugUtilsObjectNameInfoEXT nameInfo(type, handle, name.c_str());
+	_device.setDebugUtilsObjectNameEXT(nameInfo);
+}
+#endif
 
 /* **********
  * FrameContext Methods

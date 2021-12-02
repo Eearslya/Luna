@@ -23,6 +23,22 @@ void Graphics::Update() {
 
 	auto cmd = _device->RequestCommandBuffer();
 
+	// FIXME: Temporary patch to transition the swapchain image until we have render passes.
+	{
+		auto cmdBuf = cmd->GetCommandBuffer();
+		auto image  = _swapchain->GetImage(swapchainImage);
+		const vk::ImageMemoryBarrier barrier({},
+		                                     {},
+		                                     vk::ImageLayout::eUndefined,
+		                                     vk::ImageLayout::ePresentSrcKHR,
+		                                     VK_QUEUE_FAMILY_IGNORED,
+		                                     VK_QUEUE_FAMILY_IGNORED,
+		                                     image,
+		                                     vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+		cmdBuf.pipelineBarrier(
+			vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {}, barrier);
+	}
+
 	_device->Submit(cmd);
 
 	_device->EndFrame();

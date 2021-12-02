@@ -39,7 +39,7 @@ uint32_t Swapchain::AcquireNextImage() {
 
 	_acquiredImage = std::numeric_limits<uint32_t>::max();
 	while (retry < retryMax) {
-		auto acquire = _device.RequestSemaphore();
+		auto acquire = _device.RequestSemaphore("Swapchain Image Acquire");
 		const auto acquireResult =
 			device.acquireNextImageKHR(_swapchain, std::numeric_limits<uint64_t>::max(), acquire->GetSemaphore(), nullptr);
 
@@ -55,6 +55,11 @@ uint32_t Swapchain::AcquireNextImage() {
 		} else if (acquireResult.result == vk::Result::eSuccess) {
 			acquire->SignalExternal();
 			_acquiredImage = acquireResult.value;
+			_releaseSemaphores[_acquiredImage].Reset();
+#ifdef LUNA_DEBUG
+			const auto acquireName = fmt::format("Swapchain Image {} Acquire", _acquiredImage);
+			_device.SetObjectName(acquire->GetSemaphore(), acquireName);
+#endif
 			_device.SetAcquireSemaphore({}, _acquiredImage, acquire);
 			break;
 		}

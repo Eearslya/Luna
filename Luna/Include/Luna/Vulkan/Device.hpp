@@ -45,7 +45,7 @@ class Device final : NonCopyable {
 
 	// Object management.
 	FenceHandle RequestFence();
-	SemaphoreHandle RequestSemaphore();
+	SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
 
 	// Internal functions for other Vulkan classes.
 	uint64_t AllocateCookie(Badge<Cookie>);
@@ -55,6 +55,13 @@ class Device final : NonCopyable {
 	void ReleaseCommandBuffer(Badge<CommandBufferDeleter>, CommandBuffer* cmdBuf);
 	void SetAcquireSemaphore(Badge<Swapchain>, uint32_t imageIndex, SemaphoreHandle& semaphore);
 	void SetupSwapchain(Badge<Swapchain>, Swapchain& swapchain);
+#ifdef LUNA_DEBUG
+	template <typename T>
+	void SetObjectName(T object, const std::string& name) {
+		SetObjectNameImpl(T::objectType, *reinterpret_cast<uint64_t*>(&object), name);
+	}
+
+#endif
 
  private:
 	// A FrameContext contains all of the information needed to complete and clean up after a frame of work.
@@ -112,6 +119,9 @@ class Device final : NonCopyable {
 	void DestroyTimelineSemaphores();
 	void ReleaseFence(vk::Fence fence);
 	void ReleaseSemaphore(vk::Semaphore semaphore);
+#ifdef LUNA_DEBUG
+	void SetObjectNameImpl(vk::ObjectType type, uint64_t handle, const std::string& name);
+#endif
 
 	// All of our Vulkan information/objects inherited from Context.
 	const ExtensionInfo& _extensions;

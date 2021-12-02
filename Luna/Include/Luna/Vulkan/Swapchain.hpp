@@ -9,6 +9,16 @@ class Swapchain {
 	Swapchain(Device& device);
 	~Swapchain() noexcept;
 
+	const vk::Extent2D& GetExtent() const {
+		return _extent;
+	}
+	vk::Format GetFormat() const {
+		return _format.format;
+	}
+	vk::Image GetImage(uint32_t index) const {
+		return _images[index];
+	}
+
 	uint32_t AcquireNextImage();
 	void Present();
 

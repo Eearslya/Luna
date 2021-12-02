@@ -32,8 +32,8 @@ class Semaphore : public IntrusivePtrEnabled<Semaphore, SemaphoreDeleter, Handle
 
  private:
 	Semaphore(Device& device);
-	Semaphore(Device& device, vk::Semaphore semaphore, bool signalled = true);
-	Semaphore(Device& device, vk::Semaphore semaphore, uint64_t value);
+	Semaphore(Device& device, vk::Semaphore semaphore, bool signalled = true, const std::string& debugName = "");
+	Semaphore(Device& device, vk::Semaphore semaphore, uint64_t value, const std::string& debugName = "");
 
 	Device& _device;
 	vk::Semaphore _semaphore;
