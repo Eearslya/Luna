@@ -329,9 +329,8 @@ void Device::SubmitQueue(QueueType queueType, InternalFence* submitFence) {
 		batches[batch].CommandBuffers.push_back(cmdBufHandle->GetCommandBuffer());
 
 		if (firstBatch) {
-			const auto releaseName           = fmt::format("Swapchain Image {} Release", _swapchainIndex);
 			vk::Semaphore release            = AllocateSemaphore();
-			_swapchainRelease                = SemaphoreHandle(_semaphorePool.Allocate(*this, release, true, releaseName));
+			_swapchainRelease                = SemaphoreHandle(_semaphorePool.Allocate(*this, release, true));
 			_swapchainRelease->_internalSync = true;
 			batches[batch].SignalSemaphores.push_back(release);
 			batches[batch].SignalValues.push_back(0);
