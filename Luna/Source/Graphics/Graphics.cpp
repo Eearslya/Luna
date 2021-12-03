@@ -14,8 +14,9 @@ Graphics::Graphics() {
 	_device    = std::make_unique<Vulkan::Device>(*_context);
 	_swapchain = std::make_unique<Vulkan::Swapchain>(*_device);
 
-	auto buffer = _device->CreateBuffer(
-		Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, 128, vk::BufferUsageFlagBits::eStorageBuffer));
+	uint8_t data[128] = {0, 1, 2, 3, 4, 5, 6, 7, 8};
+	auto buffer       = _device->CreateBuffer(
+    Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Device, 128, vk::BufferUsageFlagBits::eStorageBuffer), data);
 }
 
 Graphics::~Graphics() noexcept {}

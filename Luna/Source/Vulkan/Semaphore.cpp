@@ -50,6 +50,10 @@ void Semaphore::SignalExternal() {
 	_signalled = true;
 }
 
+void Semaphore::SignalPendingWait() {
+	_pending = true;
+}
+
 void Semaphore::WaitExternal() {
 	assert(_semaphore);
 	assert(_signalled);

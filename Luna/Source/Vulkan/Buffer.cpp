@@ -44,9 +44,10 @@ Buffer::Buffer(Device& device, const BufferCreateInfo& createInfo)
 		vk::createResultValue(createResult, "vmaCreateBuffer");
 	}
 
-	_buffer     = buffer;
-	_allocation = allocation;
-	_mapped     = allocationInfo.pMappedData;
+	_buffer           = buffer;
+	_allocation       = allocation;
+	_mapped           = allocationInfo.pMappedData;
+	_memoryProperties = _device.GetGPUInfo().Memory.memoryTypes[allocationInfo.memoryType].propertyFlags;
 }
 
 Buffer::~Buffer() noexcept {

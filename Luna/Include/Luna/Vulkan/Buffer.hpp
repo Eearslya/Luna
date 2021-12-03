@@ -65,6 +65,9 @@ class Buffer : public IntrusivePtrEnabled<Buffer, BufferDeleter, HandleCounter>,
  public:
 	~Buffer() noexcept;
 
+	bool CanMap() const {
+		return _mapped != nullptr;
+	}
 	VmaAllocation& GetAllocation() {
 		return _allocation;
 	}
@@ -76,6 +79,9 @@ class Buffer : public IntrusivePtrEnabled<Buffer, BufferDeleter, HandleCounter>,
 	}
 	const BufferCreateInfo& GetCreateInfo() const {
 		return _createInfo;
+	}
+	vk::MemoryPropertyFlags GetMemoryProperties() const {
+		return _memoryProperties;
 	}
 
 	void* Map();
@@ -89,6 +95,7 @@ class Buffer : public IntrusivePtrEnabled<Buffer, BufferDeleter, HandleCounter>,
 	VmaAllocation _allocation;
 	BufferCreateInfo _createInfo;
 	void* _mapped = nullptr;
+	vk::MemoryPropertyFlags _memoryProperties;
 };
 }  // namespace Vulkan
 }  // namespace Luna

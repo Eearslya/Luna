@@ -43,13 +43,15 @@ class Device final : NonCopyable {
 	void EndFrame();
 	void NextFrame();
 	CommandBufferHandle RequestCommandBuffer(CommandBufferType type = CommandBufferType::Generic);
-	void Submit(CommandBufferHandle& cmd, FenceHandle* fence = nullptr);
+	void Submit(CommandBufferHandle& cmd,
+	            FenceHandle* fence                       = nullptr,
+	            std::vector<SemaphoreHandle>* semaphores = nullptr);
 
 	// General functionality.
 	void WaitIdle();
 
 	// Object management.
-	BufferHandle CreateBuffer(const BufferCreateInfo& createInfo);
+	BufferHandle CreateBuffer(const BufferCreateInfo& createInfo, const void* initialData = nullptr);
 	FenceHandle RequestFence();
 	SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
 
@@ -109,11 +111,17 @@ class Device final : NonCopyable {
 	};
 
 	// Frame management.
+	void AddWaitSemaphoreNoLock(QueueType queueType,
+	                            SemaphoreHandle semaphore,
+	                            vk::PipelineStageFlags stages,
+	                            bool flush);
 	void EndFrameNoLock();
 	FrameContext& Frame();
+	void FlushFrameNoLock(QueueType queueType);
 	CommandBufferHandle RequestCommandBufferNoLock(CommandBufferType type, uint32_t threadIndex);
-	void SubmitNoLock(CommandBufferHandle cmd, FenceHandle* fence);
-	void SubmitQueue(QueueType queueType, InternalFence* submitFence);
+	void SubmitNoLock(CommandBufferHandle cmd, FenceHandle* fence, std::vector<SemaphoreHandle>* semaphores);
+	void SubmitQueue(QueueType queueType, InternalFence* submitFence, std::vector<SemaphoreHandle>* semaphores);
+	void SubmitStaging(CommandBufferHandle& cmd, vk::BufferUsageFlags usage, bool flush);
 
 	// General functionality.
 	QueueType GetQueueType(CommandBufferType bufferType) const;

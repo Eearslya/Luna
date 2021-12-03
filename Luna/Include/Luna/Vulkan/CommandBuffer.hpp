@@ -28,6 +28,13 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void Begin();
 	void End();
 
+	void Barrier(vk::PipelineStageFlags srcStages,
+	             vk::AccessFlags srcAccess,
+	             vk::PipelineStageFlags dstStages,
+	             vk::AccessFlags dstAccess);
+	void CopyBuffer(Buffer& dst, Buffer& src);
+	void CopyBuffer(Buffer& dst, vk::DeviceSize dstOffset, Buffer& src, vk::DeviceSize srcOffset, vk::DeviceSize bytes);
+
  private:
 	CommandBuffer(Device& device, vk::CommandBuffer commandBuffer, CommandBufferType type, uint32_t threadIndex);
 

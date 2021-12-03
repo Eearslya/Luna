@@ -119,6 +119,8 @@ void Device::EndFrame() {
 void Device::NextFrame() {
 	WAIT_FOR_PENDING_COMMAND_BUFFERS();
 
+	EndFrameNoLock();
+
 	_currentFrameContext = (_currentFrameContext + 1) % (_frameContexts.size());
 	Frame().Begin();
 }
@@ -132,9 +134,9 @@ CommandBufferHandle Device::RequestCommandBuffer(CommandBufferType type) {
 
 // Submit a command buffer for processing. All command buffers retrieved from the device must be submitted on the same
 // frame.
-void Device::Submit(CommandBufferHandle& cmd, FenceHandle* fence) {
+void Device::Submit(CommandBufferHandle& cmd, FenceHandle* fence, std::vector<SemaphoreHandle>* semaphores) {
 	LOCK();
-	SubmitNoLock(std::move(cmd), fence);
+	SubmitNoLock(std::move(cmd), fence, semaphores);
 }
 
 // ===== General Functionality =====
@@ -148,8 +150,38 @@ void Device::WaitIdle() {
 
 // ===== Object Management =====
 
-BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo) {
-	return BufferHandle(_bufferPool.Allocate(*this, createInfo));
+BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo, const void* initialData) {
+	BufferCreateInfo actualInfo = createInfo;
+	if (createInfo.Domain == BufferDomain::Device && initialData) {
+		actualInfo.Usage |= vk::BufferUsageFlagBits::eTransferDst;
+	}
+
+	auto handle = BufferHandle(_bufferPool.Allocate(*this, actualInfo));
+
+	if (createInfo.Domain == BufferDomain::Device && initialData && !handle->CanMap()) {
+		auto stagingInfo   = createInfo;
+		stagingInfo.Domain = BufferDomain::Host;
+		stagingInfo.Usage |= vk::BufferUsageFlagBits::eTransferSrc;
+		auto stagingBuffer = CreateBuffer(stagingInfo, initialData);
+
+		auto transferCmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
+		transferCmd->CopyBuffer(*handle, *stagingBuffer);
+
+		{
+			LOCK();
+			SubmitStaging(transferCmd, actualInfo.Usage, true);
+		}
+	} else if (initialData) {
+		void* data = handle->Map();
+		if (data) {
+			memcpy(data, initialData, createInfo.Size);
+			handle->Unmap();
+		} else {
+			Log::Error("[Vulkan::Device] Failed to map buffer!");
+		}
+	}
+
+	return handle;
 }
 
 FenceHandle Device::RequestFence() {
@@ -244,6 +276,20 @@ void Device::SetupSwapchain(Badge<Swapchain>, Swapchain& swapchain) {
 
 // ===== Frame management =====
 
+void Device::AddWaitSemaphoreNoLock(QueueType queueType,
+                                    SemaphoreHandle semaphore,
+                                    vk::PipelineStageFlags stages,
+                                    bool flush) {
+	if (flush) { FlushFrameNoLock(queueType); }
+
+	auto& queueData = _queueData[static_cast<int>(queueType)];
+
+	semaphore->SignalPendingWait();
+	queueData.WaitSemaphores.push_back(semaphore);
+	queueData.WaitStages.push_back(stages);
+	queueData.NeedsFence = true;
+}
+
 void Device::EndFrameNoLock() {
 	constexpr static const QueueType flushOrder[] = {QueueType::Transfer, QueueType::Graphics, QueueType::Compute};
 	InternalFence submitFence;
@@ -251,7 +297,7 @@ void Device::EndFrameNoLock() {
 	for (auto& type : flushOrder) {
 		auto& queueData = _queueData[static_cast<int>(type)];
 		if (queueData.NeedsFence || !Frame().Submissions[static_cast<int>(type)].empty()) {
-			SubmitQueue(type, &submitFence);
+			SubmitQueue(type, &submitFence, nullptr);
 			if (submitFence.Fence) {
 				Frame().FencesToAwait.push_back(submitFence.Fence);
 				Frame().FencesToRecycle.push_back(submitFence.Fence);
@@ -259,6 +305,10 @@ void Device::EndFrameNoLock() {
 			queueData.NeedsFence = false;
 		}
 	}
+}
+
+void Device::FlushFrameNoLock(QueueType queueType) {
+	if (_queues.Queue(queueType)) { SubmitQueue(queueType, nullptr, nullptr); }
 }
 
 // Return our current frame context.
@@ -281,7 +331,7 @@ CommandBufferHandle Device::RequestCommandBufferNoLock(CommandBufferType type, u
 }
 
 // Private implementation of Submit().
-void Device::SubmitNoLock(CommandBufferHandle cmd, FenceHandle* fence) {
+void Device::SubmitNoLock(CommandBufferHandle cmd, FenceHandle* fence, std::vector<SemaphoreHandle>* semaphores) {
 	const auto queueType = GetQueueType(cmd->GetType());
 	auto& submissions    = Frame().Submissions[static_cast<int>(queueType)];
 
@@ -293,8 +343,8 @@ void Device::SubmitNoLock(CommandBufferHandle cmd, FenceHandle* fence) {
 
 	// If we were given a fence to signal, we submit the queue now. If not, it can wait until the end of the frame.
 	InternalFence submitFence;
-	if (fence) {
-		SubmitQueue(queueType, &submitFence);
+	if (fence || semaphores) {
+		SubmitQueue(queueType, fence ? &submitFence : nullptr, semaphores);
 
 		// Assign the fence handle appropriately, whether we're using fences or timeline semaphores.
 		if (submitFence.TimelineValue != 0) {
@@ -309,11 +359,14 @@ void Device::SubmitNoLock(CommandBufferHandle cmd, FenceHandle* fence) {
 	_pendingCommandBuffersCondition.notify_all();
 }
 
-void Device::SubmitQueue(QueueType queueType, InternalFence* submitFence) {
-	auto& queueData   = _queueData[static_cast<int>(queueType)];
-	auto& submissions = Frame().Submissions[static_cast<int>(queueType)];
+void Device::SubmitQueue(QueueType queueType, InternalFence* submitFence, std::vector<SemaphoreHandle>* semaphores) {
+	auto& queueData          = _queueData[static_cast<int>(queueType)];
+	auto& submissions        = Frame().Submissions[static_cast<int>(queueType)];
+	const bool hasSemaphores = semaphores != nullptr && semaphores->size() != 0;
 
-	if (submissions.empty() && submitFence == nullptr) { return; }
+	if (submissions.empty() && submitFence == nullptr && !hasSemaphores) { return; }
+
+	if (queueType != QueueType::Transfer) { FlushFrameNoLock(QueueType::Transfer); }
 
 	vk::Queue queue                 = _queues.Queue(queueType);
 	vk::Semaphore timelineSemaphore = queueData.TimelineSemaphore;
@@ -402,10 +455,25 @@ void Device::SubmitQueue(QueueType queueType, InternalFence* submitFence) {
 			submitFence->TimelineSemaphore = timelineSemaphore;
 			submitFence->TimelineValue     = timelineValue;
 		}
+
+		if (hasSemaphores) {
+			for (size_t i = 0; i < semaphores->size(); ++i) {
+				(*semaphores)[i] = SemaphoreHandle(_semaphorePool.Allocate(*this, timelineSemaphore, timelineValue));
+			}
+		}
 	} else {
 		if (submitFence) {
 			submitFence->TimelineSemaphore = VK_NULL_HANDLE;
 			submitFence->TimelineValue     = 0;
+		}
+
+		if (hasSemaphores) {
+			for (size_t i = 0; i < semaphores->size(); ++i) {
+				vk::Semaphore sem = AllocateSemaphore();
+				batches[batch].SignalSemaphores.push_back(sem);
+				batches[batch].SignalValues.push_back(0);
+				(*semaphores)[i] = SemaphoreHandle(_semaphorePool.Allocate(*this, sem, true));
+			}
 		}
 	}
 
@@ -439,6 +507,65 @@ void Device::SubmitQueue(QueueType queueType, InternalFence* submitFence) {
 	// If we weren't able to use a timeline semaphore, we need to make sure there is a fence in
 	// place to wait for completion.
 	if (!_gpuInfo.AvailableFeatures.TimelineSemaphore.timelineSemaphore) { queueData.NeedsFence = true; }
+}
+
+void Device::SubmitStaging(CommandBufferHandle& cmd, vk::BufferUsageFlags usage, bool flush) {
+	const auto access   = BufferUsageToAccess(usage);
+	const auto stages   = BufferUsageToStages(usage);
+	const auto srcQueue = _queues.Queue(GetQueueType(cmd->GetType()));
+
+	if (_queues.SameQueue(QueueType::Graphics, QueueType::Compute)) {
+		cmd->Barrier(vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite, stages, access);
+		SubmitNoLock(cmd, nullptr, nullptr);
+	} else {
+		const auto computeStages =
+			stages & (vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eDrawIndirect);
+		const auto computeAccess = access & (vk::AccessFlagBits::eIndirectCommandRead | vk::AccessFlagBits::eShaderRead |
+		                                     vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eTransferRead |
+		                                     vk::AccessFlagBits::eTransferWrite | vk::AccessFlagBits::eUniformRead);
+
+		const auto graphicsStages = stages & vk::PipelineStageFlagBits::eAllGraphics;
+
+		if (srcQueue == _queues.Queue(QueueType::Graphics)) {
+			cmd->Barrier(vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite, graphicsStages, access);
+
+			if (computeStages) {
+				std::vector<SemaphoreHandle> semaphores(1);
+				SubmitNoLock(cmd, nullptr, &semaphores);
+				AddWaitSemaphoreNoLock(QueueType::Compute, semaphores[0], computeStages, flush);
+			} else {
+				SubmitNoLock(cmd, nullptr, nullptr);
+			}
+		} else if (srcQueue == _queues.Queue(QueueType::Compute)) {
+			cmd->Barrier(
+				vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite, computeStages, computeAccess);
+
+			if (graphicsStages) {
+				std::vector<SemaphoreHandle> semaphores(1);
+				SubmitNoLock(cmd, nullptr, &semaphores);
+				AddWaitSemaphoreNoLock(QueueType::Graphics, semaphores[0], graphicsStages, flush);
+			} else {
+				SubmitNoLock(cmd, nullptr, nullptr);
+			}
+		} else {
+			if (graphicsStages && computeStages) {
+				std::vector<SemaphoreHandle> semaphores(2);
+				SubmitNoLock(cmd, nullptr, &semaphores);
+				AddWaitSemaphoreNoLock(QueueType::Graphics, semaphores[0], graphicsStages, flush);
+				AddWaitSemaphoreNoLock(QueueType::Compute, semaphores[1], computeStages, flush);
+			} else if (graphicsStages) {
+				std::vector<SemaphoreHandle> semaphores(1);
+				SubmitNoLock(cmd, nullptr, &semaphores);
+				AddWaitSemaphoreNoLock(QueueType::Graphics, semaphores[0], graphicsStages, flush);
+			} else if (computeStages) {
+				std::vector<SemaphoreHandle> semaphores(1);
+				SubmitNoLock(cmd, nullptr, &semaphores);
+				AddWaitSemaphoreNoLock(QueueType::Compute, semaphores[0], computeStages, flush);
+			} else {
+				SubmitNoLock(cmd, nullptr, nullptr);
+			}
+		}
+	}
 }
 
 // ===== General Functionality =====

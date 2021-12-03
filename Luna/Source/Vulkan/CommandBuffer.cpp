@@ -1,3 +1,4 @@
+#include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Device.hpp>
 
@@ -22,6 +23,24 @@ void CommandBuffer::Begin() {
 
 void CommandBuffer::End() {
 	_commandBuffer.end();
+}
+
+void CommandBuffer::Barrier(vk::PipelineStageFlags srcStages,
+                            vk::AccessFlags srcAccess,
+                            vk::PipelineStageFlags dstStages,
+                            vk::AccessFlags dstAccess) {
+	const vk::MemoryBarrier barrier(srcAccess, dstAccess);
+	_commandBuffer.pipelineBarrier(srcStages, dstStages, {}, barrier, nullptr, nullptr);
+}
+
+void CommandBuffer::CopyBuffer(Buffer& dst, Buffer& src) {
+	CopyBuffer(dst, 0, src, 0, dst.GetCreateInfo().Size);
+}
+
+void CommandBuffer::CopyBuffer(
+	Buffer& dst, vk::DeviceSize dstOffset, Buffer& src, vk::DeviceSize srcOffset, vk::DeviceSize bytes) {
+	const vk::BufferCopy region(srcOffset, dstOffset, bytes);
+	_commandBuffer.copyBuffer(src.GetBuffer(), dst.GetBuffer(), region);
 }
 }  // namespace Vulkan
 }  // namespace Luna
