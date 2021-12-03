@@ -107,6 +107,24 @@ const char* VulkanEnumToString<CommandBufferType>(const CommandBufferType value)
 	return "Unknown";
 }
 
+enum class FormatCompressionType { Uncompressed, BC, ETC, ASTC };
+constexpr static const int FormatCompressionTypeCount = 4;
+template <>
+const char* VulkanEnumToString<FormatCompressionType>(const FormatCompressionType value) {
+	switch (value) {
+		case FormatCompressionType::Uncompressed:
+			return "Uncompressed";
+		case FormatCompressionType::BC:
+			return "BC";
+		case FormatCompressionType::ETC:
+			return "ETC";
+		case FormatCompressionType::ASTC:
+			return "ASTC";
+	}
+
+	return "Unknown";
+}
+
 // Structures
 struct ExtensionInfo {
 	bool DebugUtils                   = false;
