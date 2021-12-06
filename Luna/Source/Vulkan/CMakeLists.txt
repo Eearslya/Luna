@@ -6,6 +6,7 @@ target_sources(Luna PRIVATE
 	Cookie.cpp
 	Device.cpp
 	Fence.cpp
+	FormatLayout.cpp
 	Image.cpp
 	Semaphore.cpp
 	Swapchain.cpp)
