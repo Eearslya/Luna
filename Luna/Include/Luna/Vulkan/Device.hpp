@@ -52,6 +52,7 @@ class Device final : NonCopyable {
 
 	// Object management.
 	BufferHandle CreateBuffer(const BufferCreateInfo& createInfo, const void* initialData = nullptr);
+	ImageHandle CreateImage(const ImageCreateInfo& createInfo);
 	FenceHandle RequestFence();
 	SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
 
@@ -59,6 +60,7 @@ class Device final : NonCopyable {
 	uint64_t AllocateCookie(Badge<Cookie>);
 	SemaphoreHandle ConsumeReleaseSemaphore(Badge<Swapchain>);
 	void DestroyBuffer(Badge<BufferDeleter>, Buffer* buffer);
+	void DestroyImage(Badge<ImageDeleter>, Image* image);
 	void RecycleFence(Badge<FenceDeleter>, Fence* fence);
 	void RecycleSemaphore(Badge<SemaphoreDeleter>, Semaphore* semaphore);
 	void ReleaseCommandBuffer(Badge<CommandBufferDeleter>, CommandBuffer* cmdBuf);
@@ -90,6 +92,7 @@ class Device final : NonCopyable {
 		std::vector<Buffer*> BuffersToDestroy;
 		std::vector<vk::Fence> FencesToAwait;
 		std::vector<vk::Fence> FencesToRecycle;
+		std::vector<Image*> ImagesToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToRecycle;
 	};
@@ -178,6 +181,7 @@ class Device final : NonCopyable {
 	VulkanObjectPool<Buffer> _bufferPool;
 	VulkanObjectPool<CommandBuffer> _commandBufferPool;
 	VulkanObjectPool<Fence> _fencePool;
+	VulkanObjectPool<Image> _imagePool;
 	VulkanObjectPool<Semaphore> _semaphorePool;
 };
 }  // namespace Vulkan

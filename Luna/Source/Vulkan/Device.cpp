@@ -6,6 +6,7 @@
 #include <Luna/Vulkan/Context.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Fence.hpp>
+#include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
 #include <Luna/Vulkan/Swapchain.hpp>
 
@@ -184,6 +185,17 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo, const void
 	return handle;
 }
 
+ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo) {
+	ImageCreateInfo actualInfo = createInfo;
+
+	if (createInfo.Domain == ImageDomain::Transient) { actualInfo.Usage |= vk::ImageUsageFlagBits::eTransientAttachment; }
+	if (createInfo.MipLevels == 0) { actualInfo.MipLevels = CalculateMipLevels(createInfo.Extent); }
+
+	auto handle = ImageHandle(_imagePool.Allocate(*this, actualInfo));
+
+	return handle;
+}
+
 FenceHandle Device::RequestFence() {
 	LOCK();
 	auto fence = AllocateFence();
@@ -216,6 +228,11 @@ SemaphoreHandle Device::ConsumeReleaseSemaphore(Badge<Swapchain>) {
 void Device::DestroyBuffer(Badge<BufferDeleter>, Buffer* buffer) {
 	MAYBE_LOCK(buffer);
 	Frame().BuffersToDestroy.push_back(buffer);
+}
+
+void Device::DestroyImage(Badge<ImageDeleter>, Image* image) {
+	MAYBE_LOCK(image);
+	Frame().ImagesToDestroy.push_back(image);
 }
 
 void Device::RecycleFence(Badge<FenceDeleter>, Fence* fence) {
@@ -759,9 +776,11 @@ void Device::FrameContext::Begin() {
 
 	// Destroy or recycle all of our other resources that are no longer in use.
 	for (auto& buffer : BuffersToDestroy) { Parent._bufferPool.Free(buffer); }
+	for (auto& image : ImagesToDestroy) { Parent._imagePool.Free(image); }
 	for (auto& semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
 	for (auto& semaphore : SemaphoresToRecycle) { Parent.ReleaseSemaphore(semaphore); }
 	BuffersToDestroy.clear();
+	ImagesToDestroy.clear();
 	SemaphoresToDestroy.clear();
 	SemaphoresToRecycle.clear();
 }

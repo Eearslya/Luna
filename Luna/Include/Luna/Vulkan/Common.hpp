@@ -33,6 +33,11 @@ class Context;
 class Device;
 class Fence;
 struct FenceDeleter;
+class Image;
+struct ImageCreateInfo;
+struct ImageDeleter;
+class ImageView;
+struct ImageViewDeleter;
 class Semaphore;
 struct SemaphoreDeleter;
 class Swapchain;
@@ -41,6 +46,8 @@ class Swapchain;
 using BufferHandle        = IntrusivePtr<Buffer>;
 using CommandBufferHandle = IntrusivePtr<CommandBuffer>;
 using FenceHandle         = IntrusivePtr<Fence>;
+using ImageHandle         = IntrusivePtr<Image>;
+using ImageViewHandle     = IntrusivePtr<ImageView>;
 using SemaphoreHandle     = IntrusivePtr<Semaphore>;
 
 // Typedefs.
@@ -120,6 +127,20 @@ const char* VulkanEnumToString<FormatCompressionType>(const FormatCompressionTyp
 			return "ETC";
 		case FormatCompressionType::ASTC:
 			return "ASTC";
+	}
+
+	return "Unknown";
+}
+
+enum class ImageLayoutType { Optimal, General };
+constexpr static const int ImageLayoutTypeCount = 2;
+template <>
+const char* VulkanEnumToString<ImageLayoutType>(const ImageLayoutType value) {
+	switch (value) {
+		case ImageLayoutType::Optimal:
+			return "Optimal";
+		case ImageLayoutType::General:
+			return "General";
 	}
 
 	return "Unknown";

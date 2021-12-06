@@ -4,6 +4,7 @@
 #include <Luna/Vulkan/Context.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Fence.hpp>
+#include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/Swapchain.hpp>
 
 namespace Luna {
@@ -17,6 +18,9 @@ Graphics::Graphics() {
 	uint8_t data[128] = {0, 1, 2, 3, 4, 5, 6, 7, 8};
 	auto buffer       = _device->CreateBuffer(
     Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Device, 128, vk::BufferUsageFlagBits::eStorageBuffer), data);
+
+	auto image = _device->CreateImage(
+		Vulkan::ImageCreateInfo::Immutable2D(vk::Format::eR8G8B8A8Unorm, vk::Extent2D(400, 400), false));
 }
 
 Graphics::~Graphics() noexcept {}
