@@ -18,6 +18,7 @@ struct MipInfo final {
 
 class FormatLayout final {
  public:
+	FormatLayout() = default;
 	FormatLayout(vk::Format format, uint32_t width, uint32_t arrayLayers = 1, uint32_t mipLevels = 1);
 	FormatLayout(vk::Format format, const vk::Extent2D& extent, uint32_t arrayLayers = 1, uint32_t mipLevels = 1);
 	FormatLayout(vk::Format format, const vk::Extent3D& extent, uint32_t mipLevels = 1);
@@ -47,6 +48,7 @@ class FormatLayout final {
 	vk::ImageType GetImageType() const {
 		return _imageType;
 	}
+	size_t GetLayerSize(uint32_t mip = 0) const;
 	const MipInfo& GetMipInfo(uint32_t mip) const {
 		return _mips[mip];
 	}
@@ -56,6 +58,7 @@ class FormatLayout final {
 	size_t GetRequiredSize() const {
 		return _requiredSize;
 	}
+	size_t GetRowSize(uint32_t mip = 0) const;
 
 	void SetBuffer(void* buffer, size_t size);
 

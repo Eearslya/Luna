@@ -55,7 +55,7 @@ class Filesystem : public Module::Registrar<Filesystem> {
 	void RemoveSearchPath(const std::string& path);
 
 	std::optional<std::string> Read(const std::filesystem::path& path);
-	std::vector<unsigned char> ReadBytes(const std::filesystem::path& path);
+	std::optional<std::vector<uint8_t>> ReadBytes(const std::filesystem::path& path);
 
  private:
 	std::vector<std::string> _searchPaths;

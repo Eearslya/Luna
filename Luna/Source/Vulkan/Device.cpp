@@ -6,6 +6,7 @@
 #include <Luna/Vulkan/Context.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Fence.hpp>
+#include <Luna/Vulkan/FormatLayout.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
 #include <Luna/Vulkan/Swapchain.hpp>
@@ -111,6 +112,14 @@ Device::~Device() noexcept {
 
 // ===== Frame management =====
 
+void Device::AddWaitSemaphore(CommandBufferType bufferType,
+                              SemaphoreHandle semaphore,
+                              vk::PipelineStageFlags stages,
+                              bool flush) {
+	LOCK();
+	AddWaitSemaphoreNoLock(GetQueueType(bufferType), semaphore, stages, flush);
+}
+
 void Device::EndFrame() {
 	WAIT_FOR_PENDING_COMMAND_BUFFERS();
 	EndFrameNoLock();
@@ -185,13 +194,206 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo, const void
 	return handle;
 }
 
-ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo) {
+ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const InitialImageData* initialData) {
+	const bool generateMips = createInfo.Flags & ImageCreateFlagBits::GenerateMipmaps;
+
+	// If we have image data to put into this image, we first prepare a staging buffer.
+	InitialImageBuffer initialBuffer;
+	if (initialData) {
+		// If we want to generate mipmaps, we first need to determine how many levels there will be.
+		uint32_t copyLevels = createInfo.MipLevels;
+		if (generateMips) {
+			copyLevels = 1;
+		} else if (createInfo.MipLevels == 0) {
+			copyLevels = CalculateMipLevels(createInfo.Extent);
+		}
+
+		Log::Trace("[Vulkan::Device] Creating initial image staging buffer.{}", generateMips ? " Generating mipmaps." : "");
+
+		// Next, we need our helper class initialized with our image layout to help with calculating mip offsets.
+		FormatLayout layout;
+		switch (createInfo.Type) {
+			case vk::ImageType::e1D:
+				Log::Trace("[Vulkan::Device] - 1D Image Size: {}", createInfo.Extent.width);
+				layout = FormatLayout(createInfo.Format, createInfo.Extent.width, createInfo.ArrayLayers, copyLevels);
+				break;
+			case vk::ImageType::e2D:
+				Log::Trace("[Vulkan::Device] - 2D Image Size: {}x{}", createInfo.Extent.width, createInfo.Extent.height);
+				layout = FormatLayout(createInfo.Format,
+				                      vk::Extent2D(createInfo.Extent.width, createInfo.Extent.height),
+				                      createInfo.ArrayLayers,
+				                      copyLevels);
+				break;
+			case vk::ImageType::e3D:
+				Log::Trace("[Vulkan::Device] - 3D Image Size: {}x{}x{}",
+				           createInfo.Extent.width,
+				           createInfo.Extent.height,
+				           createInfo.Extent.depth);
+				layout = FormatLayout(createInfo.Format, createInfo.Extent, copyLevels);
+				break;
+			default:
+				return {};
+		}
+
+		Log::Trace("[Vulkan::Device] - Copying {} mip levels * {} array layers.", copyLevels, createInfo.ArrayLayers);
+		Log::Trace("[Vulkan::Device] - Buffer requires {}B.", layout.GetRequiredSize());
+
+		// Now we create the actual staging buffer.
+		const BufferCreateInfo bufferCI(BufferDomain::Host,
+		                                layout.GetRequiredSize(),
+		                                vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eTransferSrc);
+		initialBuffer.Buffer = CreateBuffer(bufferCI);
+
+		// Map our data and set our layout class up.
+		void* data     = initialBuffer.Buffer->Map();
+		uint32_t index = 0;
+		layout.SetBuffer(data, bufferCI.Size);
+
+		// Now we do the copies of each mip level and array layer.
+		for (uint32_t level = 0; level < copyLevels; ++level) {
+			const auto& mipInfo          = layout.GetMipInfo(level);
+			const size_t dstHeightStride = layout.GetLayerSize(level);
+			const size_t rowSize         = layout.GetRowSize(level);
+
+			for (uint32_t layer = 0; layer < createInfo.ArrayLayers; ++layer, ++index) {
+				const uint32_t srcRowLength = initialData[index].RowLength ? initialData[index].RowLength : mipInfo.RowLength;
+				const uint32_t srcArrayHeight =
+					initialData[index].ImageHeight ? initialData[index].ImageHeight : mipInfo.ImageHeight;
+				const uint32_t srcRowStride    = layout.RowByteStride(srcRowLength);
+				const uint32_t srcHeightStride = layout.LayerByteStride(srcArrayHeight, srcRowStride);
+
+				uint8_t* dst       = static_cast<uint8_t*>(layout.Data(layer, level));
+				const uint8_t* src = static_cast<const uint8_t*>(initialData[index].Data);
+
+				for (uint32_t z = 0; z < mipInfo.Extent.depth; ++z) {
+					for (uint32_t y = 0; y < mipInfo.Extent.height; ++y) {
+						memcpy(
+							dst + (z * dstHeightStride) + (y * rowSize), src + (z * srcHeightStride) + (y * srcRowStride), rowSize);
+					}
+				}
+			}
+		}
+
+		initialBuffer.Buffer->Unmap();
+		initialBuffer.ImageCopies = layout.BuildBufferImageCopies();
+	}
+
 	ImageCreateInfo actualInfo = createInfo;
 
+	if (initialData) { actualInfo.Usage |= vk::ImageUsageFlagBits::eTransferDst; }
+	if (generateMips) { actualInfo.Usage |= vk::ImageUsageFlagBits::eTransferSrc; }
 	if (createInfo.Domain == ImageDomain::Transient) { actualInfo.Usage |= vk::ImageUsageFlagBits::eTransientAttachment; }
 	if (createInfo.MipLevels == 0) { actualInfo.MipLevels = CalculateMipLevels(createInfo.Extent); }
+	actualInfo.InitialLayout = vk::ImageLayout::eUndefined;
 
 	auto handle = ImageHandle(_imagePool.Allocate(*this, actualInfo));
+
+	if (handle) {
+		handle->SetAccessFlags(ImageUsageToAccess(actualInfo.Usage));
+		handle->SetStageFlags(ImageUsageToStages(actualInfo.Usage));
+	}
+
+	CommandBufferHandle transitionCmd;
+
+	// Now that we have the image, we copy over the initial data if we have some.
+	if (initialData) {
+		vk::AccessFlags finalTransitionSrcAccess;
+		if (generateMips) {
+			finalTransitionSrcAccess = vk::AccessFlagBits::eTransferRead;
+		} else if (_queues.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
+			finalTransitionSrcAccess = vk::AccessFlagBits::eTransferWrite;
+		}
+		const vk::AccessFlags prepareSrcAccess = _queues.SameQueue(QueueType::Graphics, QueueType::Transfer)
+		                                           ? vk::AccessFlagBits::eTransferWrite
+		                                           : vk::AccessFlags();
+		bool needMipmapBarrier                 = true;
+		bool needInitialBarrier                = generateMips;
+
+		auto graphicsCmd = RequestCommandBuffer(CommandBufferType::Generic);
+		CommandBufferHandle transferCmd;
+		if (!_queues.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
+			transferCmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
+		} else {
+			transferCmd = graphicsCmd;
+		}
+
+		transferCmd->ImageBarrier(*handle,
+		                          vk::ImageLayout::eUndefined,
+		                          vk::ImageLayout::eTransferDstOptimal,
+		                          vk::PipelineStageFlagBits::eTopOfPipe,
+		                          {},
+		                          vk::PipelineStageFlagBits::eTransfer,
+		                          vk::AccessFlagBits::eTransferWrite);
+		transferCmd->CopyBufferToImage(*handle, *initialBuffer.Buffer, initialBuffer.ImageCopies);
+
+		if (!_queues.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
+			vk::PipelineStageFlags dstStages = generateMips ? vk::PipelineStageFlagBits::eTransfer : handle->GetStageFlags();
+
+			if (!_queues.SameFamily(QueueType::Graphics, QueueType::Transfer)) {
+				needMipmapBarrier = false;
+
+				const vk::ImageMemoryBarrier release(
+					vk::AccessFlagBits::eTransferWrite,
+					{},
+					vk::ImageLayout::eTransferDstOptimal,
+					generateMips ? vk::ImageLayout::eTransferSrcOptimal : createInfo.InitialLayout,
+					_queues.Family(QueueType::Transfer),
+					_queues.Family(QueueType::Graphics),
+					handle->GetImage(),
+					vk::ImageSubresourceRange(
+						FormatToAspect(createInfo.Format), 0, generateMips ? 1 : actualInfo.MipLevels, 0, actualInfo.ArrayLayers));
+				vk::ImageMemoryBarrier acquire = release;
+				acquire.srcAccessMask          = {};
+				acquire.dstAccessMask          = generateMips
+				                                   ? vk::AccessFlagBits::eTransferRead
+				                                   : (handle->GetAccessFlags() & ImageLayoutToPossibleAccess(createInfo.InitialLayout));
+
+				transferCmd->Barrier(
+					vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eBottomOfPipe, nullptr, nullptr, release);
+				graphicsCmd->Barrier(dstStages, dstStages, nullptr, nullptr, acquire);
+			}
+
+			std::vector<SemaphoreHandle> semaphores(1);
+			Submit(transferCmd, nullptr, &semaphores);
+			AddWaitSemaphore(CommandBufferType::Generic, semaphores[0], dstStages, true);
+		}
+
+		if (generateMips) {
+			graphicsCmd->GenerateMipmaps(*handle,
+			                             vk::ImageLayout::eTransferDstOptimal,
+			                             vk::PipelineStageFlagBits::eTransfer,
+			                             prepareSrcAccess,
+			                             needMipmapBarrier);
+		}
+
+		if (needInitialBarrier) {
+			graphicsCmd->ImageBarrier(
+				*handle,
+				generateMips ? vk::ImageLayout::eTransferSrcOptimal : vk::ImageLayout::eTransferDstOptimal,
+				createInfo.InitialLayout,
+				vk::PipelineStageFlagBits::eTransfer,
+				finalTransitionSrcAccess,
+				handle->GetStageFlags(),
+				handle->GetAccessFlags() & ImageLayoutToPossibleAccess(createInfo.InitialLayout));
+		}
+
+		transitionCmd = std::move(graphicsCmd);
+	} else if (actualInfo.InitialLayout != vk::ImageLayout::eUndefined) {
+		auto cmd = RequestCommandBuffer(CommandBufferType::Generic);
+		cmd->ImageBarrier(*handle,
+		                  actualInfo.InitialLayout,
+		                  createInfo.InitialLayout,
+		                  vk::PipelineStageFlagBits::eTopOfPipe,
+		                  {},
+		                  handle->GetStageFlags(),
+		                  handle->GetAccessFlags() & ImageLayoutToPossibleAccess(createInfo.InitialLayout));
+		transitionCmd = std::move(cmd);
+	}
+
+	if (transitionCmd) {
+		LOCK();
+		SubmitNoLock(transitionCmd, nullptr, nullptr);
+	}
 
 	return handle;
 }

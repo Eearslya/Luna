@@ -11,6 +11,80 @@ static inline uint32_t CalculateMipLevels(const vk::Extent3D& extent) {
 	return static_cast<uint32_t>(std::floor(std::log2(longest))) + 1;
 }
 
+static inline vk::AccessFlags ImageLayoutToPossibleAccess(vk::ImageLayout layout) {
+	switch (layout) {
+		case vk::ImageLayout::eShaderReadOnlyOptimal:
+			return vk::AccessFlagBits::eInputAttachmentRead | vk::AccessFlagBits::eShaderRead;
+		case vk::ImageLayout::eColorAttachmentOptimal:
+			return vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
+		case vk::ImageLayout::eDepthStencilAttachmentOptimal:
+			return vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+		case vk::ImageLayout::eDepthStencilReadOnlyOptimal:
+			return vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eInputAttachmentRead;
+		case vk::ImageLayout::eTransferDstOptimal:
+			return vk::AccessFlagBits::eTransferWrite;
+		case vk::ImageLayout::eTransferSrcOptimal:
+			return vk::AccessFlagBits::eTransferRead;
+		default:
+			return static_cast<vk::AccessFlags>(~0u);
+	}
+}
+
+static inline vk::AccessFlags ImageUsageToAccess(vk::ImageUsageFlags usage) {
+	vk::AccessFlags access;
+
+	if (usage & vk::ImageUsageFlagBits::eTransferDst) { access |= vk::AccessFlagBits::eTransferWrite; }
+	if (usage & vk::ImageUsageFlagBits::eTransferSrc) { access |= vk::AccessFlagBits::eTransferRead; }
+	if (usage & vk::ImageUsageFlagBits::eSampled) { access |= vk::AccessFlagBits::eShaderRead; }
+	if (usage & vk::ImageUsageFlagBits::eStorage) {
+		access |= vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
+	}
+	if (usage & vk::ImageUsageFlagBits::eColorAttachment) {
+		access |= vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
+	}
+	if (usage & vk::ImageUsageFlagBits::eDepthStencilAttachment) {
+		access |= vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+	}
+	if (usage & vk::ImageUsageFlagBits::eInputAttachment) { access |= vk::AccessFlagBits::eInputAttachmentRead; }
+
+	if (usage & vk::ImageUsageFlagBits::eTransientAttachment) {
+		access &= vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite |
+		          vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite |
+		          vk::AccessFlagBits::eInputAttachmentRead;
+	}
+
+	return access;
+}
+
+static inline vk::PipelineStageFlags ImageUsageToStages(vk::ImageUsageFlags usage) {
+	vk::PipelineStageFlags stages;
+
+	if (usage & (vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc)) {
+		stages |= vk::PipelineStageFlagBits::eTransfer;
+	}
+	if (usage & vk::ImageUsageFlagBits::eSampled) {
+		stages |= vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eFragmentShader |
+		          vk::PipelineStageFlagBits::eVertexShader;
+	}
+	if (usage & vk::ImageUsageFlagBits::eStorage) { stages |= vk::PipelineStageFlagBits::eComputeShader; }
+	if (usage & vk::ImageUsageFlagBits::eColorAttachment) { stages |= vk::PipelineStageFlagBits::eColorAttachmentOutput; }
+	if (usage & vk::ImageUsageFlagBits::eDepthStencilAttachment) {
+		stages |= vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests;
+	}
+	if (usage & vk::ImageUsageFlagBits::eInputAttachment) { stages |= vk::PipelineStageFlagBits::eFragmentShader; }
+
+	if (usage & vk::ImageUsageFlagBits::eTransientAttachment) {
+		vk::PipelineStageFlags possible = vk::PipelineStageFlagBits::eColorAttachmentOutput |
+		                                  vk::PipelineStageFlagBits::eEarlyFragmentTests |
+		                                  vk::PipelineStageFlagBits::eLateFragmentTests;
+		if (usage & vk::ImageUsageFlagBits::eInputAttachment) { possible |= vk::PipelineStageFlagBits::eFragmentShader; }
+
+		stages &= possible;
+	}
+
+	return stages;
+}
+
 enum class ImageCreateFlagBits { GenerateMipmaps = 1 << 0 };
 using ImageCreateFlags = Bitmask<ImageCreateFlagBits>;
 
@@ -52,6 +126,28 @@ class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>,
  public:
 	~Image() noexcept;
 
+	vk::AccessFlags GetAccessFlags() const {
+		return _accessFlags;
+	}
+	const ImageCreateInfo& GetCreateInfo() const {
+		return _createInfo;
+	}
+	vk::Image GetImage() const {
+		return _image;
+	}
+	vk::PipelineStageFlags GetStageFlags() const {
+		return _stageFlags;
+	}
+
+	vk::ImageLayout GetLayout(vk::ImageLayout optimal) const;
+
+	void SetAccessFlags(vk::AccessFlags access) {
+		_accessFlags = access;
+	}
+	void SetStageFlags(vk::PipelineStageFlags stages) {
+		_stageFlags = stages;
+	}
+
  private:
 	Image(Device& device, const ImageCreateInfo& createInfo);
 
@@ -59,6 +155,9 @@ class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>,
 	ImageCreateInfo _createInfo;
 	vk::Image _image;
 	VmaAllocation _allocation;
+	ImageLayoutType _layoutType = ImageLayoutType::Optimal;
+	vk::AccessFlags _accessFlags;
+	vk::PipelineStageFlags _stageFlags;
 };
 }  // namespace Vulkan
 

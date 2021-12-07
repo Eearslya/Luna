@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Luna/Devices/Window.hpp>
+#include <Luna/Filesystem/Filesystem.hpp>
 #include <Luna/Threading/Threading.hpp>
 
 namespace Luna {
@@ -10,7 +11,7 @@ class Device;
 }  // namespace Vulkan
 
 class Graphics : public Module::Registrar<Graphics> {
-	static inline const bool Registered = Register("Graphics", Stage::Render, Depends<Threading, Window>());
+	static inline const bool Registered = Register("Graphics", Stage::Render, Depends<Filesystem, Threading, Window>());
 
  public:
 	Graphics();

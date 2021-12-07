@@ -226,19 +226,33 @@ std::optional<std::string> Filesystem::Read(const std::filesystem::path& path) {
 	return std::string(data.begin(), data.end());
 }
 
-std::vector<unsigned char> Filesystem::ReadBytes(const std::filesystem::path& path) {
-	IFileStream file(path);
-	file >> std::noskipws;
+std::optional<std::vector<uint8_t>> Filesystem::ReadBytes(const std::filesystem::path& path) {
+	auto pathStr = path.string();
+	std::replace(pathStr.begin(), pathStr.end(), '\\', '/');
+	auto fsFile = PHYSFS_openRead(pathStr.c_str());
 
-	const auto fileSize = file.tellg();
-	file.seekg(0, std::ios::beg);
+	if (!fsFile) {
+		if (!std::filesystem::exists(path) || !std::filesystem::is_regular_file(path)) {
+			Log::Error("Failed to open file '{}': {}", pathStr, PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
+			return std::nullopt;
+		}
 
-	std::vector<unsigned char> bytes;
-	bytes.reserve(fileSize);
+		std::ifstream is(path, std::ios::ate);
+		const auto fileSize = is.tellg();
+		std::vector<uint8_t> bytes(fileSize);
+		is.read(reinterpret_cast<char*>(bytes.data()), fileSize);
 
-	std::copy(
-		std::istream_iterator<unsigned char>(file), std::istream_iterator<unsigned char>(), std::back_inserter(bytes));
+		return bytes;
+	}
 
-	return bytes;
+	const auto size = PHYSFS_fileLength(fsFile);
+	std::vector<uint8_t> data(size);
+	PHYSFS_readBytes(fsFile, data.data(), static_cast<PHYSFS_uint64>(size));
+
+	if (PHYSFS_close(fsFile) == 0) {
+		Log::Warning("Failed to close file '{}': {}", pathStr, PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
+	}
+
+	return data;
 }
 }  // namespace Luna

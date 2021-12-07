@@ -342,11 +342,19 @@ size_t FormatLayout::LayerByteStride(uint32_t imageHeight, size_t rowByteStride)
 }
 
 size_t FormatLayout::RowByteStride(uint32_t rowLength) const {
-	return ((rowLength - _blockDims.x - 1) / _blockDims.x) * _blockStride;
+	return ((rowLength + _blockDims.x - 1) / _blockDims.x) * _blockStride;
 }
 
 vk::Extent3D FormatLayout::GetExtent(uint32_t mip) const {
 	return _mips[mip].Extent;
+}
+
+size_t FormatLayout::GetLayerSize(uint32_t mip) const {
+	return _mips[mip].BlockImageHeight * GetRowSize(mip);
+}
+
+size_t FormatLayout::GetRowSize(uint32_t mip) const {
+	return _mips[mip].BlockRowLength * _blockStride;
 }
 
 void FormatLayout::SetBuffer(void* buffer, size_t size) {

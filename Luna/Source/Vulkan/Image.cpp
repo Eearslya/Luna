@@ -53,5 +53,9 @@ Image::~Image() noexcept {
 	if (_image) { dev.destroyImage(_image); }
 	if (_allocation) { vmaFreeMemory(_device.GetAllocator(), _allocation); }
 }
+
+vk::ImageLayout Image::GetLayout(vk::ImageLayout optimal) const {
+	return _layoutType == ImageLayoutType::Optimal ? optimal : vk::ImageLayout::eGeneral;
+}
 }  // namespace Vulkan
 }  // namespace Luna

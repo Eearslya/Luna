@@ -8,6 +8,12 @@ namespace Luna {
 namespace Vulkan {
 class Context;
 
+struct InitialImageData {
+	const void* Data     = nullptr;
+	uint32_t RowLength   = 0;
+	uint32_t ImageHeight = 0;
+};
+
 class Device final : NonCopyable {
  public:
 	Device(const Context& context);
@@ -40,6 +46,10 @@ class Device final : NonCopyable {
 	}
 
 	// Frame management.
+	void AddWaitSemaphore(CommandBufferType bufferType,
+	                      SemaphoreHandle semaphore,
+	                      vk::PipelineStageFlags stages,
+	                      bool flush = false);
 	void EndFrame();
 	void NextFrame();
 	CommandBufferHandle RequestCommandBuffer(CommandBufferType type = CommandBufferType::Generic);
@@ -52,7 +62,7 @@ class Device final : NonCopyable {
 
 	// Object management.
 	BufferHandle CreateBuffer(const BufferCreateInfo& createInfo, const void* initialData = nullptr);
-	ImageHandle CreateImage(const ImageCreateInfo& createInfo);
+	ImageHandle CreateImage(const ImageCreateInfo& createInfo, const InitialImageData* initialData = nullptr);
 	FenceHandle RequestFence();
 	SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
 
@@ -95,6 +105,11 @@ class Device final : NonCopyable {
 		std::vector<Image*> ImagesToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToRecycle;
+	};
+
+	struct InitialImageBuffer {
+		BufferHandle Buffer;
+		std::vector<vk::BufferImageCopy> ImageCopies;
 	};
 
 	// A small structure to keep track of a "fence". An internal fence can be represented by an actual fence, or by a

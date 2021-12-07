@@ -1,3 +1,6 @@
+#include <stb_image.h>
+
+#include <Luna/Core/Log.hpp>
 #include <Luna/Graphics/Graphics.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
@@ -9,6 +12,10 @@
 
 namespace Luna {
 Graphics::Graphics() {
+	auto filesystem = Filesystem::Get();
+
+	filesystem->AddSearchPath("Assets");
+
 	const auto instanceExtensions                   = Window::Get()->GetRequiredInstanceExtensions();
 	const std::vector<const char*> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 	_context   = std::make_unique<Vulkan::Context>(instanceExtensions, deviceExtensions);
@@ -19,8 +26,19 @@ Graphics::Graphics() {
 	auto buffer       = _device->CreateBuffer(
     Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Device, 128, vk::BufferUsageFlagBits::eStorageBuffer), data);
 
-	auto image = _device->CreateImage(
-		Vulkan::ImageCreateInfo::Immutable2D(vk::Format::eR8G8B8A8Unorm, vk::Extent2D(400, 400), false));
+	auto imageData = filesystem->ReadBytes("Images/Test.jpg");
+	if (imageData.has_value()) {
+		int w, h;
+		stbi_uc* pixels = stbi_load_from_memory(
+			reinterpret_cast<const stbi_uc*>(imageData->data()), imageData->size(), &w, &h, nullptr, STBI_rgb_alpha);
+		if (pixels) {
+			const Vulkan::InitialImageData initialImage{.Data = pixels};
+			auto image = _device->CreateImage(
+				Vulkan::ImageCreateInfo::Immutable2D(vk::Format::eR8G8B8A8Unorm, vk::Extent2D(w, h), true), &initialImage);
+		} else {
+			Log::Error("[Graphics] Failed to load test texture: {}", stbi_failure_reason());
+		}
+	}
 }
 
 Graphics::~Graphics() noexcept {}
