@@ -15,6 +15,9 @@ class Swapchain {
 	vk::Format GetFormat() const {
 		return _format.format;
 	}
+	const std::vector<vk::Image>& GetImages() const {
+		return _images;
+	}
 	vk::Image GetImage(uint32_t index) const {
 		return _images[index];
 	}

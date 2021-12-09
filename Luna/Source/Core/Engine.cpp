@@ -55,6 +55,7 @@ Engine::Engine(const char* argv0) : _argv0(argv0) {
 }
 
 Engine::~Engine() noexcept {
+	_modules.clear();
 	Module::Registry().clear();
 	_instance = nullptr;
 }

@@ -63,6 +63,7 @@ class Device final : NonCopyable {
 	// Object management.
 	BufferHandle CreateBuffer(const BufferCreateInfo& createInfo, const void* initialData = nullptr);
 	ImageHandle CreateImage(const ImageCreateInfo& createInfo, const InitialImageData* initialData = nullptr);
+	ImageViewHandle CreateImageView(const ImageViewCreateInfo& createInfo);
 	FenceHandle RequestFence();
 	SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
 
@@ -71,6 +72,7 @@ class Device final : NonCopyable {
 	SemaphoreHandle ConsumeReleaseSemaphore(Badge<Swapchain>);
 	void DestroyBuffer(Badge<BufferDeleter>, Buffer* buffer);
 	void DestroyImage(Badge<ImageDeleter>, Image* image);
+	void DestroyImageView(Badge<ImageViewDeleter>, ImageView* view);
 	void RecycleFence(Badge<FenceDeleter>, Fence* fence);
 	void RecycleSemaphore(Badge<SemaphoreDeleter>, Semaphore* semaphore);
 	void ReleaseCommandBuffer(Badge<CommandBufferDeleter>, CommandBuffer* cmdBuf);
@@ -103,6 +105,7 @@ class Device final : NonCopyable {
 		std::vector<vk::Fence> FencesToAwait;
 		std::vector<vk::Fence> FencesToRecycle;
 		std::vector<Image*> ImagesToDestroy;
+		std::vector<ImageView*> ImageViewsToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToRecycle;
 	};
@@ -182,13 +185,10 @@ class Device final : NonCopyable {
 	uint32_t _pendingCommandBuffers = 0;
 	std::array<QueueData, QueueTypeCount> _queueData;
 
-	// Frame contexts.
-	uint32_t _currentFrameContext = 0;
-	std::vector<std::unique_ptr<FrameContext>> _frameContexts;
-
 	// Swapchain/WSI Sync Objects
 	SemaphoreHandle _swapchainAcquire;
 	bool _swapchainAcquireConsumed = false;
+	std::vector<ImageHandle> _swapchainImages;
 	uint32_t _swapchainIndex;
 	SemaphoreHandle _swapchainRelease;
 
@@ -197,7 +197,12 @@ class Device final : NonCopyable {
 	VulkanObjectPool<CommandBuffer> _commandBufferPool;
 	VulkanObjectPool<Fence> _fencePool;
 	VulkanObjectPool<Image> _imagePool;
+	VulkanObjectPool<ImageView> _imageViewPool;
 	VulkanObjectPool<Semaphore> _semaphorePool;
+
+	// Frame contexts.
+	uint32_t _currentFrameContext = 0;
+	std::vector<std::unique_ptr<FrameContext>> _frameContexts;
 };
 }  // namespace Vulkan
 }  // namespace Luna

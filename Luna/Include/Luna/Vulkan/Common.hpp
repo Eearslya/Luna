@@ -37,6 +37,7 @@ class Image;
 struct ImageCreateInfo;
 struct ImageDeleter;
 class ImageView;
+struct ImageViewCreateInfo;
 struct ImageViewDeleter;
 class Semaphore;
 struct SemaphoreDeleter;

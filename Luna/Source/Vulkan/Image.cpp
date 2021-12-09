@@ -8,6 +8,10 @@ void ImageDeleter::operator()(Image* image) {
 	image->_device.DestroyImage({}, image);
 }
 
+void ImageViewDeleter::operator()(ImageView* view) {
+	view->_device.DestroyImageView({}, view);
+}
+
 Image::Image(Device& device, const ImageCreateInfo& createInfo)
 		: Cookie(device), _device(device), _createInfo(createInfo) {
 	Log::Trace("[Vulkan::Image] Creating new Image.");
@@ -44,18 +48,48 @@ Image::Image(Device& device, const ImageCreateInfo& createInfo)
 		vk::createResultValue(createResult, "vmaCreateImage");
 	}
 
-	_image = image;
+	_image       = image;
+	_accessFlags = ImageUsageToAccess(imageCI.usage);
+	_stageFlags  = ImageUsageToStages(imageCI.usage);
 }
+
+Image::Image(Device& device, const ImageCreateInfo& createInfo, vk::Image image)
+		: Cookie(device), _device(device), _image(image), _ownsImage(false) {}
 
 Image::~Image() noexcept {
 	auto dev = _device.GetDevice();
 
-	if (_image) { dev.destroyImage(_image); }
-	if (_allocation) { vmaFreeMemory(_device.GetAllocator(), _allocation); }
+	if (_ownsImage) {
+		if (_image) { dev.destroyImage(_image); }
+		if (_allocation) { vmaFreeMemory(_device.GetAllocator(), _allocation); }
+	}
 }
 
 vk::ImageLayout Image::GetLayout(vk::ImageLayout optimal) const {
 	return _layoutType == ImageLayoutType::Optimal ? optimal : vk::ImageLayout::eGeneral;
+}
+
+ImageView::ImageView(Device& device, const ImageViewCreateInfo& createInfo)
+		: Cookie(device), _device(device), _createInfo(createInfo) {
+	Log::Trace("[Vulkan::ImageView] Creating new ImageView.");
+
+	const auto& imageCI = _createInfo.Image->GetCreateInfo();
+
+	const vk::ImageViewCreateInfo viewCI({},
+	                                     _createInfo.Image->GetImage(),
+	                                     _createInfo.Type,
+	                                     _createInfo.Format,
+	                                     vk::ComponentMapping(),
+	                                     vk::ImageSubresourceRange(FormatToAspect(_createInfo.Format),
+	                                                               _createInfo.BaseMipLevel,
+	                                                               _createInfo.MipLevels,
+	                                                               _createInfo.BaseArrayLayer,
+	                                                               _createInfo.ArrayLayers));
+	_imageView = _device.GetDevice().createImageView(viewCI);
+}
+
+ImageView::~ImageView() noexcept {
+	if (_imageView) { _device.GetDevice().destroyImageView(_imageView); }
 }
 }  // namespace Vulkan
 }  // namespace Luna

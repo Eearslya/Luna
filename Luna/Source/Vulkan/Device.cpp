@@ -100,6 +100,7 @@ Device::~Device() noexcept {
 
 	_swapchainAcquire.Reset();
 	_swapchainRelease.Reset();
+	_swapchainImages.clear();
 
 	vmaDestroyAllocator(_allocator);
 
@@ -195,9 +196,8 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo, const void
 }
 
 ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const InitialImageData* initialData) {
-	const bool generateMips = createInfo.Flags & ImageCreateFlagBits::GenerateMipmaps;
-
 	// If we have image data to put into this image, we first prepare a staging buffer.
+	const bool generateMips = createInfo.Flags & ImageCreateFlagBits::GenerateMipmaps;
 	InitialImageBuffer initialBuffer;
 	if (initialData) {
 		// If we want to generate mipmaps, we first need to determine how many levels there will be.
@@ -278,124 +278,160 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 		initialBuffer.ImageCopies = layout.BuildBufferImageCopies();
 	}
 
+	// Now we adjust a few flags to ensure the image is created with all of the proper usages and flags before creating
+	// the image itself.
 	ImageCreateInfo actualInfo = createInfo;
+	ImageHandle handle;
+	{
+		// If we have initial data, we need to be able to transfer into the image.
+		if (initialData) { actualInfo.Usage |= vk::ImageUsageFlagBits::eTransferDst; }
 
-	if (initialData) { actualInfo.Usage |= vk::ImageUsageFlagBits::eTransferDst; }
-	if (generateMips) { actualInfo.Usage |= vk::ImageUsageFlagBits::eTransferSrc; }
-	if (createInfo.Domain == ImageDomain::Transient) { actualInfo.Usage |= vk::ImageUsageFlagBits::eTransientAttachment; }
-	if (createInfo.MipLevels == 0) { actualInfo.MipLevels = CalculateMipLevels(createInfo.Extent); }
-	actualInfo.InitialLayout = vk::ImageLayout::eUndefined;
+		// If we are generating mips, we need to be able to transfer from each mip level.
+		if (generateMips) { actualInfo.Usage |= vk::ImageUsageFlagBits::eTransferSrc; }
 
-	auto handle = ImageHandle(_imagePool.Allocate(*this, actualInfo));
+		// If the image domain is transient, ensure the transient attachment usage is applied.
+		if (createInfo.Domain == ImageDomain::Transient) {
+			actualInfo.Usage |= vk::ImageUsageFlagBits::eTransientAttachment;
+		}
 
-	if (handle) {
-		handle->SetAccessFlags(ImageUsageToAccess(actualInfo.Usage));
-		handle->SetStageFlags(ImageUsageToStages(actualInfo.Usage));
+		// If the number of mips was specified as 0, calculate the correct number of mips based on image size.
+		if (createInfo.MipLevels == 0) { actualInfo.MipLevels = CalculateMipLevels(createInfo.Extent); }
+
+		// The initial layout given to the ImageCreateInfo struct is what we will transition to after creation. The image
+		// still must be created as undefined.
+		actualInfo.InitialLayout = vk::ImageLayout::eUndefined;
+
+		handle = ImageHandle(_imagePool.Allocate(*this, actualInfo));
 	}
 
-	CommandBufferHandle transitionCmd;
-
-	// Now that we have the image, we copy over the initial data if we have some.
-	if (initialData) {
-		vk::AccessFlags finalTransitionSrcAccess;
-		if (generateMips) {
-			finalTransitionSrcAccess = vk::AccessFlagBits::eTransferRead;
-		} else if (_queues.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
-			finalTransitionSrcAccess = vk::AccessFlagBits::eTransferWrite;
+	// If applicable, create a default ImageView.
+	{
+		const bool hasView(actualInfo.Usage &
+		                   (vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eDepthStencilAttachment |
+		                    vk::ImageUsageFlagBits::eInputAttachment | vk::ImageUsageFlagBits::eSampled |
+		                    vk::ImageUsageFlagBits::eStorage));
+		if (hasView) {
+			const ImageViewCreateInfo viewCI{
+				.Image = handle.Get(), .Format = createInfo.Format, .Type = GetImageViewType(createInfo)};
+			auto view = CreateImageView(viewCI);
+			handle->SetDefaultView(view);
 		}
-		const vk::AccessFlags prepareSrcAccess = _queues.SameQueue(QueueType::Graphics, QueueType::Transfer)
-		                                           ? vk::AccessFlagBits::eTransferWrite
-		                                           : vk::AccessFlags();
-		bool needMipmapBarrier                 = true;
-		bool needInitialBarrier                = generateMips;
+	}
 
-		auto graphicsCmd = RequestCommandBuffer(CommandBufferType::Generic);
-		CommandBufferHandle transferCmd;
-		if (!_queues.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
-			transferCmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
-		} else {
-			transferCmd = graphicsCmd;
-		}
+	// Here we copy over the initial image data (if present) and transition the image to the layout requested in
+	// ImageCreateInfo.
+	{
+		CommandBufferHandle transitionCmd;
+		// Now that we have the image, we copy over the initial data if we have some.
+		if (initialData) {
+			vk::AccessFlags finalTransitionSrcAccess;
+			if (generateMips) {
+				finalTransitionSrcAccess = vk::AccessFlagBits::eTransferRead;
+			} else if (_queues.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
+				finalTransitionSrcAccess = vk::AccessFlagBits::eTransferWrite;
+			}
+			const vk::AccessFlags prepareSrcAccess = _queues.SameQueue(QueueType::Graphics, QueueType::Transfer)
+			                                           ? vk::AccessFlagBits::eTransferWrite
+			                                           : vk::AccessFlags();
+			bool needMipmapBarrier                 = true;
+			bool needInitialBarrier                = generateMips;
 
-		transferCmd->ImageBarrier(*handle,
-		                          vk::ImageLayout::eUndefined,
-		                          vk::ImageLayout::eTransferDstOptimal,
-		                          vk::PipelineStageFlagBits::eTopOfPipe,
-		                          {},
-		                          vk::PipelineStageFlagBits::eTransfer,
-		                          vk::AccessFlagBits::eTransferWrite);
-		transferCmd->CopyBufferToImage(*handle, *initialBuffer.Buffer, initialBuffer.ImageCopies);
-
-		if (!_queues.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
-			vk::PipelineStageFlags dstStages = generateMips ? vk::PipelineStageFlagBits::eTransfer : handle->GetStageFlags();
-
-			if (!_queues.SameFamily(QueueType::Graphics, QueueType::Transfer)) {
-				needMipmapBarrier = false;
-
-				const vk::ImageMemoryBarrier release(
-					vk::AccessFlagBits::eTransferWrite,
-					{},
-					vk::ImageLayout::eTransferDstOptimal,
-					generateMips ? vk::ImageLayout::eTransferSrcOptimal : createInfo.InitialLayout,
-					_queues.Family(QueueType::Transfer),
-					_queues.Family(QueueType::Graphics),
-					handle->GetImage(),
-					vk::ImageSubresourceRange(
-						FormatToAspect(createInfo.Format), 0, generateMips ? 1 : actualInfo.MipLevels, 0, actualInfo.ArrayLayers));
-				vk::ImageMemoryBarrier acquire = release;
-				acquire.srcAccessMask          = {};
-				acquire.dstAccessMask          = generateMips
-				                                   ? vk::AccessFlagBits::eTransferRead
-				                                   : (handle->GetAccessFlags() & ImageLayoutToPossibleAccess(createInfo.InitialLayout));
-
-				transferCmd->Barrier(
-					vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eBottomOfPipe, nullptr, nullptr, release);
-				graphicsCmd->Barrier(dstStages, dstStages, nullptr, nullptr, acquire);
+			auto graphicsCmd = RequestCommandBuffer(CommandBufferType::Generic);
+			CommandBufferHandle transferCmd;
+			if (!_queues.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
+				transferCmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
+			} else {
+				transferCmd = graphicsCmd;
 			}
 
-			std::vector<SemaphoreHandle> semaphores(1);
-			Submit(transferCmd, nullptr, &semaphores);
-			AddWaitSemaphore(CommandBufferType::Generic, semaphores[0], dstStages, true);
+			transferCmd->ImageBarrier(*handle,
+			                          vk::ImageLayout::eUndefined,
+			                          vk::ImageLayout::eTransferDstOptimal,
+			                          vk::PipelineStageFlagBits::eTopOfPipe,
+			                          {},
+			                          vk::PipelineStageFlagBits::eTransfer,
+			                          vk::AccessFlagBits::eTransferWrite);
+			transferCmd->CopyBufferToImage(*handle, *initialBuffer.Buffer, initialBuffer.ImageCopies);
+
+			if (!_queues.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
+				vk::PipelineStageFlags dstStages =
+					generateMips ? vk::PipelineStageFlagBits::eTransfer : handle->GetStageFlags();
+
+				if (!_queues.SameFamily(QueueType::Graphics, QueueType::Transfer)) {
+					needMipmapBarrier = false;
+
+					const vk::ImageMemoryBarrier release(
+						vk::AccessFlagBits::eTransferWrite,
+						{},
+						vk::ImageLayout::eTransferDstOptimal,
+						generateMips ? vk::ImageLayout::eTransferSrcOptimal : createInfo.InitialLayout,
+						_queues.Family(QueueType::Transfer),
+						_queues.Family(QueueType::Graphics),
+						handle->GetImage(),
+						vk::ImageSubresourceRange(FormatToAspect(createInfo.Format),
+					                            0,
+					                            generateMips ? 1 : actualInfo.MipLevels,
+					                            0,
+					                            actualInfo.ArrayLayers));
+					vk::ImageMemoryBarrier acquire = release;
+					acquire.srcAccessMask          = {};
+					acquire.dstAccessMask =
+						generateMips ? vk::AccessFlagBits::eTransferRead
+												 : (handle->GetAccessFlags() & ImageLayoutToPossibleAccess(createInfo.InitialLayout));
+
+					transferCmd->Barrier(
+						vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eBottomOfPipe, nullptr, nullptr, release);
+					graphicsCmd->Barrier(dstStages, dstStages, nullptr, nullptr, acquire);
+				}
+
+				std::vector<SemaphoreHandle> semaphores(1);
+				Submit(transferCmd, nullptr, &semaphores);
+				AddWaitSemaphore(CommandBufferType::Generic, semaphores[0], dstStages, true);
+			}
+
+			if (generateMips) {
+				graphicsCmd->GenerateMipmaps(*handle,
+				                             vk::ImageLayout::eTransferDstOptimal,
+				                             vk::PipelineStageFlagBits::eTransfer,
+				                             prepareSrcAccess,
+				                             needMipmapBarrier);
+			}
+
+			if (needInitialBarrier) {
+				graphicsCmd->ImageBarrier(
+					*handle,
+					generateMips ? vk::ImageLayout::eTransferSrcOptimal : vk::ImageLayout::eTransferDstOptimal,
+					createInfo.InitialLayout,
+					vk::PipelineStageFlagBits::eTransfer,
+					finalTransitionSrcAccess,
+					handle->GetStageFlags(),
+					handle->GetAccessFlags() & ImageLayoutToPossibleAccess(createInfo.InitialLayout));
+			}
+
+			transitionCmd = std::move(graphicsCmd);
+		} else if (actualInfo.InitialLayout != vk::ImageLayout::eUndefined) {
+			auto cmd = RequestCommandBuffer(CommandBufferType::Generic);
+			cmd->ImageBarrier(*handle,
+			                  actualInfo.InitialLayout,
+			                  createInfo.InitialLayout,
+			                  vk::PipelineStageFlagBits::eTopOfPipe,
+			                  {},
+			                  handle->GetStageFlags(),
+			                  handle->GetAccessFlags() & ImageLayoutToPossibleAccess(createInfo.InitialLayout));
+			transitionCmd = std::move(cmd);
 		}
 
-		if (generateMips) {
-			graphicsCmd->GenerateMipmaps(*handle,
-			                             vk::ImageLayout::eTransferDstOptimal,
-			                             vk::PipelineStageFlagBits::eTransfer,
-			                             prepareSrcAccess,
-			                             needMipmapBarrier);
+		if (transitionCmd) {
+			LOCK();
+			SubmitNoLock(transitionCmd, nullptr, nullptr);
 		}
-
-		if (needInitialBarrier) {
-			graphicsCmd->ImageBarrier(
-				*handle,
-				generateMips ? vk::ImageLayout::eTransferSrcOptimal : vk::ImageLayout::eTransferDstOptimal,
-				createInfo.InitialLayout,
-				vk::PipelineStageFlagBits::eTransfer,
-				finalTransitionSrcAccess,
-				handle->GetStageFlags(),
-				handle->GetAccessFlags() & ImageLayoutToPossibleAccess(createInfo.InitialLayout));
-		}
-
-		transitionCmd = std::move(graphicsCmd);
-	} else if (actualInfo.InitialLayout != vk::ImageLayout::eUndefined) {
-		auto cmd = RequestCommandBuffer(CommandBufferType::Generic);
-		cmd->ImageBarrier(*handle,
-		                  actualInfo.InitialLayout,
-		                  createInfo.InitialLayout,
-		                  vk::PipelineStageFlagBits::eTopOfPipe,
-		                  {},
-		                  handle->GetStageFlags(),
-		                  handle->GetAccessFlags() & ImageLayoutToPossibleAccess(createInfo.InitialLayout));
-		transitionCmd = std::move(cmd);
-	}
-
-	if (transitionCmd) {
-		LOCK();
-		SubmitNoLock(transitionCmd, nullptr, nullptr);
 	}
 
 	return handle;
+}
+
+ImageViewHandle Device::CreateImageView(const ImageViewCreateInfo& createInfo) {
+	return ImageViewHandle(_imageViewPool.Allocate(*this, createInfo));
 }
 
 FenceHandle Device::RequestFence() {
@@ -435,6 +471,11 @@ void Device::DestroyBuffer(Badge<BufferDeleter>, Buffer* buffer) {
 void Device::DestroyImage(Badge<ImageDeleter>, Image* image) {
 	MAYBE_LOCK(image);
 	Frame().ImagesToDestroy.push_back(image);
+}
+
+void Device::DestroyImageView(Badge<ImageViewDeleter>, ImageView* view) {
+	MAYBE_LOCK(view);
+	Frame().ImageViewsToDestroy.push_back(view);
 }
 
 void Device::RecycleFence(Badge<FenceDeleter>, Fence* fence) {
@@ -487,6 +528,21 @@ void Device::SetAcquireSemaphore(Badge<Swapchain>, uint32_t imageIndex, Semaphor
 void Device::SetupSwapchain(Badge<Swapchain>, Swapchain& swapchain) {
 	WAIT_FOR_PENDING_COMMAND_BUFFERS();
 	WaitIdleNoLock();
+
+	const auto extent     = swapchain.GetExtent();
+	const auto format     = swapchain.GetFormat();
+	const auto& images    = swapchain.GetImages();
+	const auto createInfo = ImageCreateInfo::RenderTarget(format, extent);
+
+	for (const auto& image : images) {
+		Image* img = _imagePool.Allocate(*this, createInfo, image);
+		ImageHandle handle(img);
+		const ImageViewCreateInfo viewCI{.Image = img, .Format = format, .Type = vk::ImageViewType::e2D};
+		ImageViewHandle view(_imageViewPool.Allocate(*this, viewCI));
+		handle->SetDefaultView(view);
+
+		_swapchainImages.push_back(handle);
+	}
 }
 
 /* **********
@@ -979,10 +1035,12 @@ void Device::FrameContext::Begin() {
 	// Destroy or recycle all of our other resources that are no longer in use.
 	for (auto& buffer : BuffersToDestroy) { Parent._bufferPool.Free(buffer); }
 	for (auto& image : ImagesToDestroy) { Parent._imagePool.Free(image); }
+	for (auto& view : ImageViewsToDestroy) { Parent._imageViewPool.Free(view); }
 	for (auto& semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
 	for (auto& semaphore : SemaphoresToRecycle) { Parent.ReleaseSemaphore(semaphore); }
 	BuffersToDestroy.clear();
 	ImagesToDestroy.clear();
+	ImageViewsToDestroy.clear();
 	SemaphoresToDestroy.clear();
 	SemaphoresToRecycle.clear();
 }

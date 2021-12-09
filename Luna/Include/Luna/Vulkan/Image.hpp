@@ -2,6 +2,7 @@
 
 #include <Luna/Utility/EnumClass.hpp>
 #include <Luna/Vulkan/Common.hpp>
+#include <Luna/Vulkan/Format.hpp>
 
 namespace Luna {
 namespace Vulkan {
@@ -101,6 +102,20 @@ struct ImageCreateInfo {
 		        .Flags         = mipmapped ? ImageCreateFlagBits::GenerateMipmaps : ImageCreateFlags()};
 	}
 
+	static ImageCreateInfo RenderTarget(vk::Format format, const vk::Extent2D& extent) {
+		return {.Domain        = ImageDomain::Physical,
+		        .Format        = format,
+		        .Type          = vk::ImageType::e2D,
+		        .Usage         = (FormatHasDepthOrStencil(format) ? vk::ImageUsageFlagBits::eDepthStencilAttachment
+		                                                          : vk::ImageUsageFlags()),
+		        .Extent        = vk::Extent3D(extent.width, extent.height, 1),
+		        .ArrayLayers   = 1,
+		        .MipLevels     = 1,
+		        .Samples       = vk::SampleCountFlagBits::e1,
+		        .InitialLayout = FormatHasDepthOrStencil(format) ? vk::ImageLayout::eDepthStencilAttachmentOptimal
+		                                                         : vk::ImageLayout::eColorAttachmentOptimal};
+	}
+
 	ImageDomain Domain              = ImageDomain::Physical;
 	vk::Format Format               = vk::Format::eUndefined;
 	vk::ImageType Type              = vk::ImageType::e2D;
@@ -113,8 +128,36 @@ struct ImageCreateInfo {
 	ImageCreateFlags Flags          = {};
 };
 
+struct ImageViewCreateInfo {
+	Image* Image            = nullptr;
+	vk::Format Format       = vk::Format::eUndefined;
+	vk::ImageViewType Type  = vk::ImageViewType::e2D;
+	uint32_t BaseMipLevel   = 0;
+	uint32_t MipLevels      = VK_REMAINING_MIP_LEVELS;
+	uint32_t BaseArrayLayer = 0;
+	uint32_t ArrayLayers    = VK_REMAINING_ARRAY_LAYERS;
+};
+
+static inline vk::ImageViewType GetImageViewType(const ImageCreateInfo& createInfo) {
+	switch (createInfo.Type) {
+		case vk::ImageType::e1D:
+			return createInfo.ArrayLayers > 1 ? vk::ImageViewType::e1DArray : vk::ImageViewType::e1D;
+		case vk::ImageType::e2D:
+			return createInfo.ArrayLayers > 1 ? vk::ImageViewType::e2DArray : vk::ImageViewType::e2D;
+		case vk::ImageType::e3D:
+			return vk::ImageViewType::e3D;
+	}
+
+	assert(false && "Invalid ImageCreateInfo!");
+	return vk::ImageViewType::e2D;
+}
+
 struct ImageDeleter {
 	void operator()(Image* image);
+};
+
+struct ImageViewDeleter {
+	void operator()(ImageView* view);
 };
 
 class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>,
@@ -138,11 +181,17 @@ class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>,
 	vk::PipelineStageFlags GetStageFlags() const {
 		return _stageFlags;
 	}
+	const ImageViewHandle& GetView() const {
+		return _defaultView;
+	}
 
 	vk::ImageLayout GetLayout(vk::ImageLayout optimal) const;
 
 	void SetAccessFlags(vk::AccessFlags access) {
 		_accessFlags = access;
+	}
+	void SetDefaultView(const ImageViewHandle& view) {
+		_defaultView = view;
 	}
 	void SetStageFlags(vk::PipelineStageFlags stages) {
 		_stageFlags = stages;
@@ -150,6 +199,7 @@ class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>,
 
  private:
 	Image(Device& device, const ImageCreateInfo& createInfo);
+	Image(Device& device, const ImageCreateInfo& createInfo, vk::Image image);
 
 	Device& _device;
 	ImageCreateInfo _createInfo;
@@ -158,6 +208,33 @@ class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>,
 	ImageLayoutType _layoutType = ImageLayoutType::Optimal;
 	vk::AccessFlags _accessFlags;
 	vk::PipelineStageFlags _stageFlags;
+	bool _ownsImage = true;
+
+	ImageViewHandle _defaultView;
+};
+
+class ImageView : public IntrusivePtrEnabled<ImageView, ImageViewDeleter, HandleCounter>,
+									public Cookie,
+									public InternalSyncEnabled {
+	friend class ObjectPool<ImageView>;
+	friend struct ImageViewDeleter;
+
+ public:
+	~ImageView() noexcept;
+
+	const ImageViewCreateInfo& GetCreateInfo() const {
+		return _createInfo;
+	}
+	vk::ImageView GetImageView() const {
+		return _imageView;
+	}
+
+ private:
+	ImageView(Device& device, const ImageViewCreateInfo& createInfo);
+
+	Device& _device;
+	vk::ImageView _imageView;
+	ImageViewCreateInfo _createInfo;
 };
 }  // namespace Vulkan
 
