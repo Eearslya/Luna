@@ -369,7 +369,7 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 				--family.queueCount;
 				familyPriorities[q].push_back(1.0f);
 
-				Log::Debug("Using queue {}.{} for {}.", _queues.Family(type), _queues.Index(type), QueueTypeName(type));
+				Log::Debug("Using queue {}.{} for {}.", _queues.Family(type), _queues.Index(type), VulkanEnumToString(type));
 
 				return true;
 			}

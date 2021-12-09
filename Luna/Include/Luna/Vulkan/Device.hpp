@@ -58,6 +58,7 @@ class Device final : NonCopyable {
 	            std::vector<SemaphoreHandle>* semaphores = nullptr);
 
 	// General functionality.
+	RenderPassInfo GetStockRenderPass(StockRenderPass type) const;
 	void WaitIdle();
 
 	// Object management.
@@ -76,6 +77,7 @@ class Device final : NonCopyable {
 	void RecycleFence(Badge<FenceDeleter>, Fence* fence);
 	void RecycleSemaphore(Badge<SemaphoreDeleter>, Semaphore* semaphore);
 	void ReleaseCommandBuffer(Badge<CommandBufferDeleter>, CommandBuffer* cmdBuf);
+	RenderPass& RequestRenderPass(RenderPassInfo& info, bool compatible = false);
 	void SetAcquireSemaphore(Badge<Swapchain>, uint32_t imageIndex, SemaphoreHandle& semaphore);
 	void SetupSwapchain(Badge<Swapchain>, Swapchain& swapchain);
 #ifdef LUNA_DEBUG
@@ -199,6 +201,9 @@ class Device final : NonCopyable {
 	VulkanObjectPool<Image> _imagePool;
 	VulkanObjectPool<ImageView> _imageViewPool;
 	VulkanObjectPool<Semaphore> _semaphorePool;
+
+	// Vulkan hashed caches.
+	VulkanCache<RenderPass> _renderPasses;
 
 	// Frame contexts.
 	uint32_t _currentFrameContext = 0;

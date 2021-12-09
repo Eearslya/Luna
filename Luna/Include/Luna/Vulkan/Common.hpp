@@ -3,6 +3,7 @@
 #include <vk_mem_alloc.h>
 
 #include <Luna/Utility/Badge.hpp>
+#include <Luna/Utility/EnumClass.hpp>
 #include <Luna/Utility/IntrusiveHashMap.hpp>
 #include <Luna/Utility/IntrusivePtr.hpp>
 #include <Luna/Utility/NonCopyable.hpp>
@@ -33,12 +34,15 @@ class Context;
 class Device;
 class Fence;
 struct FenceDeleter;
+class Framebuffer;
 class Image;
 struct ImageCreateInfo;
 struct ImageDeleter;
 class ImageView;
 struct ImageViewCreateInfo;
 struct ImageViewDeleter;
+class RenderPass;
+struct RenderPassInfo;
 class Semaphore;
 struct SemaphoreDeleter;
 class Swapchain;
@@ -52,6 +56,9 @@ using ImageViewHandle     = IntrusivePtr<ImageView>;
 using SemaphoreHandle     = IntrusivePtr<Semaphore>;
 
 // Typedefs.
+template <typename T>
+using HashedObject = IntrusiveHashMapEnabled<T>;
+
 #ifdef LUNA_VULKAN_MT
 using HandleCounter = MultiThreadCounter;
 template <typename T>
@@ -71,6 +78,8 @@ using VulkanObjectPool = ObjectPool<T>;
 #endif
 
 // Enums and constants.
+constexpr static const int MaxColorAttachments = 8;
+
 template <typename T>
 static const char* VulkanEnumToString(const T value) {
 	return nullptr;
@@ -142,6 +151,22 @@ const char* VulkanEnumToString<ImageLayoutType>(const ImageLayoutType value) {
 			return "Optimal";
 		case ImageLayoutType::General:
 			return "General";
+	}
+
+	return "Unknown";
+}
+
+enum class StockRenderPass { ColorOnly, Depth, DepthStencil };
+constexpr static const int StockRenderPassCount = 3;
+template <>
+const char* VulkanEnumToString<StockRenderPass>(const StockRenderPass value) {
+	switch (value) {
+		case StockRenderPass::ColorOnly:
+			return "ColorOnly";
+		case StockRenderPass::Depth:
+			return "Depth";
+		case StockRenderPass::DepthStencil:
+			return "DepthStencil";
 	}
 
 	return "Unknown";
@@ -245,18 +270,6 @@ inline std::string FormatSize(vk::DeviceSize size) {
 	}
 
 	return oss.str();
-}
-inline const char* QueueTypeName(QueueType type) {
-	switch (type) {
-		case QueueType::Graphics:
-			return "Graphics";
-		case QueueType::Transfer:
-			return "Transfer";
-		case QueueType::Compute:
-			return "Compute";
-	}
-
-	return "Unknown";
 }
 }  // namespace Vulkan
 }  // namespace Luna

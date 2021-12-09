@@ -178,11 +178,20 @@ class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>,
 	vk::Image GetImage() const {
 		return _image;
 	}
+	ImageLayoutType GetLayoutType() const {
+		return _layoutType;
+	}
 	vk::PipelineStageFlags GetStageFlags() const {
 		return _stageFlags;
 	}
+	vk::ImageLayout GetSwapchainLayout() const {
+		return _swapchainLayout;
+	}
 	const ImageViewHandle& GetView() const {
 		return _defaultView;
+	}
+	bool IsSwapchainImage() const {
+		return _swapchainLayout != vk::ImageLayout::eUndefined;
 	}
 
 	vk::ImageLayout GetLayout(vk::ImageLayout optimal) const;
@@ -196,6 +205,9 @@ class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>,
 	void SetStageFlags(vk::PipelineStageFlags stages) {
 		_stageFlags = stages;
 	}
+	void SetSwapchainLayout(vk::ImageLayout layout) {
+		_swapchainLayout = layout;
+	}
 
  private:
 	Image(Device& device, const ImageCreateInfo& createInfo);
@@ -208,7 +220,8 @@ class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>,
 	ImageLayoutType _layoutType = ImageLayoutType::Optimal;
 	vk::AccessFlags _accessFlags;
 	vk::PipelineStageFlags _stageFlags;
-	bool _ownsImage = true;
+	vk::ImageLayout _swapchainLayout = vk::ImageLayout::eUndefined;
+	bool _ownsImage                  = true;
 
 	ImageViewHandle _defaultView;
 };
@@ -224,6 +237,9 @@ class ImageView : public IntrusivePtrEnabled<ImageView, ImageViewDeleter, Handle
 
 	const ImageViewCreateInfo& GetCreateInfo() const {
 		return _createInfo;
+	}
+	const Image& GetImage() const {
+		return *_createInfo.Image;
 	}
 	vk::ImageView GetImageView() const {
 		return _imageView;

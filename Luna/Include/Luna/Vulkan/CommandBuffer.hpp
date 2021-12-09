@@ -65,6 +65,9 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	                  vk::PipelineStageFlags dstStages,
 	                  vk::AccessFlags dstAccess);
 
+	void BeginRenderPass(const RenderPassInfo& info);
+	void EndRenderPass();
+
  private:
 	CommandBuffer(Device& device, vk::CommandBuffer commandBuffer, CommandBufferType type, uint32_t threadIndex);
 

@@ -24,10 +24,10 @@ class IntrusiveList {
 		Iterator(IntrusiveListEnabled<T>* node) : _node(node) {}
 
 		T* Get() {
-			return _node;
+			return static_cast<T*>(_node);
 		}
 		const T* Get() const {
-			return _node;
+			return static_cast<T*>(_node);
 		}
 
 		explicit operator bool() const {

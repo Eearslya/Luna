@@ -8,5 +8,6 @@ target_sources(Luna PRIVATE
 	Fence.cpp
 	FormatLayout.cpp
 	Image.cpp
+	RenderPass.cpp
 	Semaphore.cpp
 	Swapchain.cpp)

@@ -172,5 +172,10 @@ void CommandBuffer::ImageBarrier(Image& image,
 	                                                               image.GetCreateInfo().ArrayLayers));
 	_commandBuffer.pipelineBarrier(srcStages, dstStages, {}, nullptr, nullptr, barrier);
 }
+
+void CommandBuffer::BeginRenderPass(const RenderPassInfo& info) {}
+
+void CommandBuffer::EndRenderPass() {}
+
 }  // namespace Vulkan
 }  // namespace Luna

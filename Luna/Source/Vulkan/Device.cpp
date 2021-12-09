@@ -8,6 +8,7 @@
 #include <Luna/Vulkan/Fence.hpp>
 #include <Luna/Vulkan/FormatLayout.hpp>
 #include <Luna/Vulkan/Image.hpp>
+#include <Luna/Vulkan/RenderPass.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
 #include <Luna/Vulkan/Swapchain.hpp>
 
@@ -151,6 +152,22 @@ void Device::Submit(CommandBufferHandle& cmd, FenceHandle* fence, std::vector<Se
 }
 
 // ===== General Functionality =====
+
+RenderPassInfo Device::GetStockRenderPass(StockRenderPass type) const {
+	RenderPassInfo info{.ColorAttachmentCount = 1, .ClearAttachments = 1, .StoreAttachments = 1};
+	info.ColorAttachments[0] = _swapchainImages[_swapchainIndex]->GetView().Get();
+
+	switch (type) {
+		case StockRenderPass::Depth:
+			break;
+		case StockRenderPass::DepthStencil:
+			break;
+		default:
+			break;
+	}
+
+	return info;
+}
 
 // The great big "make it go slow" button. This function will wait for all work on the GPU to be completed and perform
 // some tidying up.
@@ -517,6 +534,14 @@ void Device::ReleaseCommandBuffer(Badge<CommandBufferDeleter>, CommandBuffer* cm
 	_commandBufferPool.Free(cmdBuf);
 }
 
+RenderPass& Device::RequestRenderPass(RenderPassInfo& info, bool compatible) {
+	const auto hash = HashRenderPassInfo(info, compatible);
+	auto* ret       = _renderPasses.Find(hash);
+	if (!ret) { ret = _renderPasses.EmplaceYield(hash, hash, *this, info); }
+
+	return *ret;
+}
+
 void Device::SetAcquireSemaphore(Badge<Swapchain>, uint32_t imageIndex, SemaphoreHandle& semaphore) {
 	_swapchainAcquire         = std::move(semaphore);
 	_swapchainAcquireConsumed = false;
@@ -537,9 +562,13 @@ void Device::SetupSwapchain(Badge<Swapchain>, Swapchain& swapchain) {
 	for (const auto& image : images) {
 		Image* img = _imagePool.Allocate(*this, createInfo, image);
 		ImageHandle handle(img);
+		handle->_internalSync = true;
+		handle->SetSwapchainLayout(vk::ImageLayout::ePresentSrcKHR);
+
 		const ImageViewCreateInfo viewCI{.Image = img, .Format = format, .Type = vk::ImageViewType::e2D};
 		ImageViewHandle view(_imageViewPool.Allocate(*this, viewCI));
 		handle->SetDefaultView(view);
+		view->_internalSync = true;
 
 		_swapchainImages.push_back(handle);
 	}

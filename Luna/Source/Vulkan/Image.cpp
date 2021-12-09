@@ -54,7 +54,7 @@ Image::Image(Device& device, const ImageCreateInfo& createInfo)
 }
 
 Image::Image(Device& device, const ImageCreateInfo& createInfo, vk::Image image)
-		: Cookie(device), _device(device), _image(image), _ownsImage(false) {}
+		: Cookie(device), _device(device), _image(image), _createInfo(createInfo), _ownsImage(false) {}
 
 Image::~Image() noexcept {
 	auto dev = _device.GetDevice();

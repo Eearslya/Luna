@@ -8,6 +8,7 @@
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Fence.hpp>
 #include <Luna/Vulkan/Image.hpp>
+#include <Luna/Vulkan/RenderPass.hpp>
 #include <Luna/Vulkan/Swapchain.hpp>
 
 namespace Luna {
@@ -49,6 +50,9 @@ void Graphics::Update() {
 	_device->NextFrame();
 
 	auto cmd = _device->RequestCommandBuffer();
+
+	auto rpInfo = _device->GetStockRenderPass(Vulkan::StockRenderPass::ColorOnly);
+	auto& pass  = _device->RequestRenderPass(rpInfo);
 
 	// FIXME: Temporary patch to transition the swapchain image until we have render passes.
 	{

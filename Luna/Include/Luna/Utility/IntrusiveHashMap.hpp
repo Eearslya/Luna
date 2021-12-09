@@ -450,7 +450,7 @@ class ThreadSafeIntrusiveHashMapReadCached {
 	void Clear() {
 		_lock.LockWrite();
 		ClearList(_readOnly.InnerList());
-		ClearList(_readWrite.InnertList());
+		ClearList(_readWrite.InnerList());
 		_readOnly.Clear();
 		_readWrite.Clear();
 		_lock.UnlockWrite();
@@ -526,7 +526,7 @@ class ThreadSafeIntrusiveHashMapReadCached {
 		auto it = list.begin();
 		while (it != list.end()) {
 			auto* toFree = it.Get();
-			it           = list.erase(it);
+			it           = list.Erase(it);
 			_pool.Free(toFree);
 		}
 	}
