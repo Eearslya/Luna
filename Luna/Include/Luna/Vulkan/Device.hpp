@@ -77,7 +77,9 @@ class Device final : NonCopyable {
 	void RecycleFence(Badge<FenceDeleter>, Fence* fence);
 	void RecycleSemaphore(Badge<SemaphoreDeleter>, Semaphore* semaphore);
 	void ReleaseCommandBuffer(Badge<CommandBufferDeleter>, CommandBuffer* cmdBuf);
-	RenderPass& RequestRenderPass(RenderPassInfo& info, bool compatible = false);
+	Framebuffer& RequestFramebuffer(Badge<CommandBuffer>, const RenderPassInfo& info);
+	RenderPass& RequestRenderPass(Badge<CommandBuffer>, const RenderPassInfo& info, bool compatible = false);
+	RenderPass& RequestRenderPass(Badge<FramebufferAllocator>, const RenderPassInfo& info, bool compatible = false);
 	void SetAcquireSemaphore(Badge<Swapchain>, uint32_t imageIndex, SemaphoreHandle& semaphore);
 	void SetupSwapchain(Badge<Swapchain>, Swapchain& swapchain);
 #ifdef LUNA_DEBUG
@@ -158,6 +160,7 @@ class Device final : NonCopyable {
 	void DestroyTimelineSemaphores();
 	void ReleaseFence(vk::Fence fence);
 	void ReleaseSemaphore(vk::Semaphore semaphore);
+	RenderPass& RequestRenderPass(const RenderPassInfo& info, bool compatible);
 #ifdef LUNA_DEBUG
 	void SetObjectNameImpl(vk::ObjectType type, uint64_t handle, const std::string& name);
 #endif
@@ -204,6 +207,9 @@ class Device final : NonCopyable {
 
 	// Vulkan hashed caches.
 	VulkanCache<RenderPass> _renderPasses;
+
+	// Management objects.
+	std::unique_ptr<FramebufferAllocator> _framebufferAllocator;
 
 	// Frame contexts.
 	uint32_t _currentFrameContext = 0;

@@ -18,6 +18,9 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	vk::CommandBuffer GetCommandBuffer() const {
 		return _commandBuffer;
 	}
+	vk::PipelineStageFlags GetSwapchainStages() const {
+		return _swapchainStages;
+	}
 	uint32_t GetThreadIndex() const {
 		return _threadIndex;
 	}
@@ -71,10 +74,18 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
  private:
 	CommandBuffer(Device& device, vk::CommandBuffer commandBuffer, CommandBufferType type, uint32_t threadIndex);
 
+	void SetViewportScissor();
+
 	Device& _device;
 	vk::CommandBuffer _commandBuffer;
 	CommandBufferType _commandBufferType;
 	uint32_t _threadIndex;
+
+	const RenderPass* _actualRenderPass     = nullptr;
+	const Framebuffer* _framebuffer         = nullptr;
+	vk::Rect2D _scissor                     = {{0, 0}, {0, 0}};
+	vk::PipelineStageFlags _swapchainStages = {};
+	vk::Viewport _viewport                  = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 };
 }  // namespace Vulkan
 }  // namespace Luna

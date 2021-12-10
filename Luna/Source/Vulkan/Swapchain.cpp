@@ -29,8 +29,8 @@ Swapchain::~Swapchain() noexcept {
 	}
 }
 
-uint32_t Swapchain::AcquireNextImage() {
-	if (_acquiredImage != std::numeric_limits<uint32_t>::max()) { return _acquiredImage; }
+bool Swapchain::AcquireNextImage() {
+	if (_acquiredImage != std::numeric_limits<uint32_t>::max()) { return true; }
 
 	auto device = _device.GetDevice();
 
@@ -61,7 +61,7 @@ uint32_t Swapchain::AcquireNextImage() {
 		}
 	}
 
-	return _acquiredImage;
+	return _acquiredImage != std::numeric_limits<uint32_t>::max();
 }
 
 void Swapchain::Present() {

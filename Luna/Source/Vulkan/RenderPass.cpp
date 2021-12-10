@@ -620,7 +620,7 @@ RenderPass::RenderPass(Hash hash, Device& device, const RenderPassInfo& info)
 	Log::Trace("[Vulkan::RenderPass]   - Attachments ({}):", rpCI.attachmentCount);
 	for (uint32_t i = 0; i < rpCI.attachmentCount; ++i) {
 		const auto& att = rpCI.pAttachments[i];
-		Log::Trace("[Vulkan::RenderPass]     - {} MSAA x{}", att.format, vk::to_string(att.samples));
+		Log::Trace("[Vulkan::RenderPass]     - {} MSAA x{}", vk::to_string(att.format), vk::to_string(att.samples));
 		Log::Trace("[Vulkan::RenderPass]     - Initial {}, Final {}",
 		           vk::to_string(att.initialLayout),
 		           vk::to_string(att.finalLayout));
@@ -637,8 +637,88 @@ RenderPass::~RenderPass() noexcept {
 	if (_renderPass) { _device.GetDevice().destroyRenderPass(_renderPass); }
 }
 
-Framebuffer::Framebuffer(Device& device) : Cookie(device), _device(device) {}
+Framebuffer::Framebuffer(Device& device, const RenderPass& renderPass, const RenderPassInfo& renderPassInfo)
+		: Cookie(device), _device(device) {
+	Log::Trace("[Vulkan::Framebuffer] Creating new Framebuffer.");
 
-Framebuffer::~Framebuffer() noexcept {}
+	uint32_t viewCount = 0;
+	std::array<vk::ImageView, MaxColorAttachments + 1> imageViews;
+	_extent = vk::Extent2D{std::numeric_limits<uint32_t>::max(), std::numeric_limits<uint32_t>::max()};
+
+	for (uint32_t i = 0; i < renderPassInfo.ColorAttachmentCount; ++i) {
+		const uint32_t lod = renderPassInfo.ColorAttachments[i]->GetCreateInfo().BaseMipLevel;
+		const auto extent  = renderPassInfo.ColorAttachments[i]->GetImage().GetExtent(lod);
+		_extent.width      = std::min(_extent.width, extent.width);
+		_extent.height     = std::min(_extent.height, extent.height);
+
+		if (renderPassInfo.ArrayLayers > 1) {
+			imageViews[viewCount++] = renderPassInfo.ColorAttachments[i]->GetImageView();
+		} else {
+			imageViews[viewCount++] = renderPassInfo.ColorAttachments[i]->GetRenderTargetView(renderPassInfo.BaseArrayLayer);
+		}
+	}
+
+	if (renderPassInfo.DepthStencilAttachment) {
+		const uint32_t lod = renderPassInfo.DepthStencilAttachment->GetCreateInfo().BaseMipLevel;
+		const auto extent  = renderPassInfo.DepthStencilAttachment->GetImage().GetExtent(lod);
+		_extent.width      = std::min(_extent.width, extent.width);
+		_extent.height     = std::min(_extent.height, extent.height);
+
+		if (renderPassInfo.ArrayLayers > 1) {
+			imageViews[viewCount++] = renderPassInfo.DepthStencilAttachment->GetImageView();
+		} else {
+			imageViews[viewCount++] =
+				renderPassInfo.DepthStencilAttachment->GetRenderTargetView(renderPassInfo.BaseArrayLayer);
+		}
+	}
+
+	const vk::FramebufferCreateInfo framebufferCI(
+		{}, renderPass.GetRenderPass(), viewCount, imageViews.data(), _extent.width, _extent.height, 1);
+	_framebuffer = _device.GetDevice().createFramebuffer(framebufferCI);
+}
+
+Framebuffer::~Framebuffer() noexcept {
+	if (_framebuffer) { _device.GetDevice().destroyFramebuffer(_framebuffer); }
+}
+
+FramebufferAllocator::FramebufferAllocator(Device& device) : _device(device) {}
+
+void FramebufferAllocator::BeginFrame() {
+	_framebuffers.BeginFrame();
+}
+
+void FramebufferAllocator::Clear() {
+	_framebuffers.Clear();
+}
+
+Framebuffer& FramebufferAllocator::RequestFramebuffer(const RenderPassInfo& info) {
+	auto& renderPass = _device.RequestRenderPass(Badge<FramebufferAllocator>{}, info, true);
+
+	Hasher h;
+	h(renderPass.GetHash());
+	for (uint32_t i = 0; i < info.ColorAttachmentCount; ++i) { h(info.ColorAttachments[i]->GetCookie()); }
+	if (info.DepthStencilAttachment) { h(info.DepthStencilAttachment->GetCookie()); }
+	if (info.ArrayLayers > 1) {
+		h(0u);
+	} else {
+		h(info.BaseArrayLayer);
+	}
+	const auto hash = h.Get();
+
+#ifdef LUNA_VULKAN_MT
+	std::lock_guard<std::mutex> lock(_mutex);
+#endif
+	auto* node = _framebuffers.Request(hash);
+	if (node) { return *node; }
+
+	return *_framebuffers.Emplace(hash, _device, renderPass, info);
+}
+
+FramebufferAllocator::FramebufferNode::FramebufferNode(Device& device,
+                                                       const RenderPass& renderPass,
+                                                       const RenderPassInfo& renderPassInfo)
+		: Framebuffer(device, renderPass, renderPassInfo) {
+	_internalSync = true;
+}
 }  // namespace Vulkan
 }  // namespace Luna

@@ -233,7 +233,7 @@ class IntrusiveHashMap : NonCopyable {
 
 	template <typename... Args>
 	T* Allocate(Args&&... args) {
-		_pool.Allocate(std::forward<Args>(args)...);
+		return _pool.Allocate(std::forward<Args>(args)...);
 	}
 
 	void Clear() {
@@ -241,7 +241,7 @@ class IntrusiveHashMap : NonCopyable {
 		auto it    = list.begin();
 		while (it != list.end()) {
 			auto* toFree = it.Get();
-			it           = list.erase(it);
+			it           = list.Erase(it);
 			_pool.Free(toFree);
 		}
 		_hashMap.Clear();

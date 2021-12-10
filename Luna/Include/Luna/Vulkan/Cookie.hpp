@@ -22,7 +22,7 @@ class Cookie {
 class InternalSyncEnabled {
 	friend class Device;
 
- private:
+ protected:
 	bool _internalSync = false;
 };
 }  // namespace Vulkan

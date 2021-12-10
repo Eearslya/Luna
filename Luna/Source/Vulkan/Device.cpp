@@ -90,6 +90,7 @@ Device::Device(const Context& context)
 	}
 
 	CreateTimelineSemaphores();
+	_framebufferAllocator = std::make_unique<FramebufferAllocator>(*this);
 	CreateFrameContexts(2);
 }
 
@@ -102,6 +103,8 @@ Device::~Device() noexcept {
 	_swapchainAcquire.Reset();
 	_swapchainRelease.Reset();
 	_swapchainImages.clear();
+
+	_framebufferAllocator.reset();
 
 	vmaDestroyAllocator(_allocator);
 
@@ -132,6 +135,8 @@ void Device::NextFrame() {
 	WAIT_FOR_PENDING_COMMAND_BUFFERS();
 
 	EndFrameNoLock();
+
+	_framebufferAllocator->BeginFrame();
 
 	_currentFrameContext = (_currentFrameContext + 1) % (_frameContexts.size());
 	Frame().Begin();
@@ -534,12 +539,16 @@ void Device::ReleaseCommandBuffer(Badge<CommandBufferDeleter>, CommandBuffer* cm
 	_commandBufferPool.Free(cmdBuf);
 }
 
-RenderPass& Device::RequestRenderPass(RenderPassInfo& info, bool compatible) {
-	const auto hash = HashRenderPassInfo(info, compatible);
-	auto* ret       = _renderPasses.Find(hash);
-	if (!ret) { ret = _renderPasses.EmplaceYield(hash, hash, *this, info); }
+Framebuffer& Device::RequestFramebuffer(Badge<CommandBuffer>, const RenderPassInfo& info) {
+	return _framebufferAllocator->RequestFramebuffer(info);
+}
 
-	return *ret;
+RenderPass& Device::RequestRenderPass(Badge<CommandBuffer>, const RenderPassInfo& info, bool compatible) {
+	return RequestRenderPass(info, compatible);
+}
+
+RenderPass& Device::RequestRenderPass(Badge<FramebufferAllocator>, const RenderPassInfo& info, bool compatible) {
+	return RequestRenderPass(info, compatible);
 }
 
 void Device::SetAcquireSemaphore(Badge<Swapchain>, uint32_t imageIndex, SemaphoreHandle& semaphore) {
@@ -559,14 +568,23 @@ void Device::SetupSwapchain(Badge<Swapchain>, Swapchain& swapchain) {
 	const auto& images    = swapchain.GetImages();
 	const auto createInfo = ImageCreateInfo::RenderTarget(format, extent);
 
-	for (const auto& image : images) {
-		Image* img = _imagePool.Allocate(*this, createInfo, image);
+	for (size_t i = 0; i < images.size(); ++i) {
+		const auto& image = images[i];
+		Image* img        = _imagePool.Allocate(*this, createInfo, image);
+#ifdef LUNA_DEBUG
+		const std::string imgName = fmt::format("Swapchain Image {}", i);
+		SetObjectName(img->GetImage(), imgName);
+#endif
 		ImageHandle handle(img);
 		handle->_internalSync = true;
 		handle->SetSwapchainLayout(vk::ImageLayout::ePresentSrcKHR);
 
 		const ImageViewCreateInfo viewCI{.Image = img, .Format = format, .Type = vk::ImageViewType::e2D};
 		ImageViewHandle view(_imageViewPool.Allocate(*this, viewCI));
+#ifdef LUNA_DEBUG
+		const std::string viewName = fmt::format("Swapchain Image View {}", i);
+		SetObjectName(view->GetImageView(), viewName);
+#endif
 		handle->SetDefaultView(view);
 		view->_internalSync = true;
 
@@ -708,36 +726,45 @@ void Device::SubmitQueue(QueueType queueType, InternalFence* submitFence, std::v
 	queueData.WaitStages.clear();
 
 	// Add our command buffers.
-	bool firstBatch = true;
 	for (auto& cmdBufHandle : submissions) {
-		// FIXME: Until command buffers are more fleshed out, we simply add the WSI acquire to the first batch.
-		if (firstBatch) {
-			if (_swapchainAcquire && !_swapchainAcquireConsumed) {
+		const vk::PipelineStageFlags swapchainStages = cmdBufHandle->GetSwapchainStages();
+
+		if (swapchainStages && !_swapchainAcquireConsumed) {
+			if (_swapchainAcquire && _swapchainAcquire->GetSemaphore()) {
+				if (!batches[batch].CommandBuffers.empty() || !batches[batch].SignalSemaphores.empty()) { ++batch; }
+
+				const auto value = _swapchainAcquire->GetTimelineValue();
 				batches[batch].WaitSemaphores.push_back(_swapchainAcquire->GetSemaphore());
-				batches[batch].WaitStages.push_back(vk::PipelineStageFlagBits::eColorAttachmentOutput);
-				batches[batch].WaitValues.push_back(_swapchainAcquire->GetTimelineValue());
-				Frame().SemaphoresToRecycle.push_back(_swapchainAcquire->Consume());
+				batches[batch].WaitStages.push_back(swapchainStages);
+				batches[batch].WaitValues.push_back(value);
+
+				if (!value) { Frame().SemaphoresToRecycle.push_back(_swapchainAcquire->GetSemaphore()); }
+
+				_swapchainAcquire->Consume();
 				_swapchainAcquireConsumed = true;
 				_swapchainAcquire.Reset();
 			}
-		}
 
-		if (!batches[batch].SignalSemaphores.empty()) {
-			++batch;
-			assert(batch < MaxSubmissions);
-		}
+			if (!batches[batch].SignalSemaphores.empty()) {
+				++batch;
+				assert(batch < MaxSubmissions);
+			}
 
-		batches[batch].CommandBuffers.push_back(cmdBufHandle->GetCommandBuffer());
+			batches[batch].CommandBuffers.push_back(cmdBufHandle->GetCommandBuffer());
 
-		if (firstBatch) {
 			vk::Semaphore release            = AllocateSemaphore();
 			_swapchainRelease                = SemaphoreHandle(_semaphorePool.Allocate(*this, release, true));
 			_swapchainRelease->_internalSync = true;
 			batches[batch].SignalSemaphores.push_back(release);
 			batches[batch].SignalValues.push_back(0);
-		}
+		} else {
+			if (!batches[batch].SignalSemaphores.empty()) {
+				++batch;
+				assert(batch < MaxSubmissions);
+			}
 
-		firstBatch = false;
+			batches[batch].CommandBuffers.push_back(cmdBufHandle->GetCommandBuffer());
+		}
 	}
 	submissions.clear();
 
@@ -899,6 +926,8 @@ void Device::WaitIdleNoLock() {
 	// Wait on the actual device itself.
 	if (_device) { _device.waitIdle(); }
 
+	_framebufferAllocator->Clear();
+
 	// Now that we know the device is doing nothing, we can go through all of our frame contexts and clean up all deferred
 	// deletions.
 	for (auto& context : _frameContexts) { context->Begin(); }
@@ -942,6 +971,7 @@ vk::Semaphore Device::AllocateSemaphore() {
 void Device::CreateFrameContexts(uint32_t count) {
 	Log::Debug("[Vulkan::Device] Creating {} frame contexts.", count);
 
+	_framebufferAllocator->Clear();
 	_currentFrameContext = 0;
 	_frameContexts.clear();
 	for (uint32_t i = 0; i < count; ++i) { _frameContexts.emplace_back(std::make_unique<FrameContext>(*this, i)); }
@@ -978,6 +1008,14 @@ void Device::ReleaseFence(vk::Fence fence) {
 
 void Device::ReleaseSemaphore(vk::Semaphore semaphore) {
 	_availableSemaphores.push_back(semaphore);
+}
+
+RenderPass& Device::RequestRenderPass(const RenderPassInfo& info, bool compatible) {
+	const auto hash = HashRenderPassInfo(info, compatible);
+	auto* ret       = _renderPasses.Find(hash);
+	if (!ret) { ret = _renderPasses.EmplaceYield(hash, hash, *this, info); }
+
+	return *ret;
 }
 
 #ifdef LUNA_DEBUG

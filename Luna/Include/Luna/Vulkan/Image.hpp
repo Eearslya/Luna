@@ -175,6 +175,9 @@ class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>,
 	const ImageCreateInfo& GetCreateInfo() const {
 		return _createInfo;
 	}
+	vk::Extent2D GetExtent(uint32_t mip = 0) const {
+		return vk::Extent2D(std::max(1u, _createInfo.Extent.width >> mip), std::max(1u, _createInfo.Extent.height >> mip));
+	}
 	vk::Image GetImage() const {
 		return _image;
 	}
@@ -245,12 +248,15 @@ class ImageView : public IntrusivePtrEnabled<ImageView, ImageViewDeleter, Handle
 		return _imageView;
 	}
 
+	vk::ImageView GetRenderTargetView(uint32_t layer) const;
+
  private:
 	ImageView(Device& device, const ImageViewCreateInfo& createInfo);
 
 	Device& _device;
 	vk::ImageView _imageView;
 	ImageViewCreateInfo _createInfo;
+	std::vector<vk::ImageView> _renderTargetViews;
 };
 }  // namespace Vulkan
 

@@ -91,5 +91,15 @@ ImageView::ImageView(Device& device, const ImageViewCreateInfo& createInfo)
 ImageView::~ImageView() noexcept {
 	if (_imageView) { _device.GetDevice().destroyImageView(_imageView); }
 }
+
+vk::ImageView ImageView::GetRenderTargetView(uint32_t layer) const {
+	if (_createInfo.Image->GetCreateInfo().Domain == ImageDomain::Transient) { return _imageView; }
+
+	if (_renderTargetViews.empty()) {
+		return _imageView;
+	} else {
+		return _renderTargetViews[layer];
+	}
+}
 }  // namespace Vulkan
 }  // namespace Luna

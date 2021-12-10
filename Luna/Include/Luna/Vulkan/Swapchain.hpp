@@ -22,7 +22,7 @@ class Swapchain {
 		return _images[index];
 	}
 
-	uint32_t AcquireNextImage();
+	bool AcquireNextImage();
 	void Present();
 
  private:

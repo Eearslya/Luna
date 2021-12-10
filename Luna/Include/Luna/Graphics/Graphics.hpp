@@ -20,6 +20,9 @@ class Graphics : public Module::Registrar<Graphics> {
 	virtual void Update() override;
 
  private:
+	bool BeginFrame();
+	void EndFrame();
+
 	std::unique_ptr<Vulkan::Context> _context;
 	std::unique_ptr<Vulkan::Device> _device;
 	std::unique_ptr<Vulkan::Swapchain> _swapchain;

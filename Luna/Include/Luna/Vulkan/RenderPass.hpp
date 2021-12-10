@@ -102,7 +102,7 @@ class RenderPass : public HashedObject<RenderPass>, NonCopyable {
 
 class Framebuffer : public Cookie, public InternalSyncEnabled, NonCopyable {
  public:
-	Framebuffer(Device& device);
+	Framebuffer(Device& device, const RenderPass& renderPass, const RenderPassInfo& renderPassInfo);
 	~Framebuffer() noexcept;
 
 	const vk::Extent2D& GetExtent() const {
@@ -116,6 +116,30 @@ class Framebuffer : public Cookie, public InternalSyncEnabled, NonCopyable {
 	Device& _device;
 	vk::Framebuffer _framebuffer;
 	vk::Extent2D _extent;
+};
+
+class FramebufferAllocator {
+	constexpr static const int FramebufferRingSize = 8;
+
+ public:
+	explicit FramebufferAllocator(Device& device);
+
+	void BeginFrame();
+	void Clear();
+	Framebuffer& RequestFramebuffer(const RenderPassInfo& info);
+
+ private:
+	struct FramebufferNode : TemporaryHashMapEnabled<FramebufferNode>,
+													 IntrusiveListEnabled<FramebufferNode>,
+													 public Framebuffer {
+		FramebufferNode(Device& device, const RenderPass& renderPass, const RenderPassInfo& renderPassInfo);
+	};
+
+	Device& _device;
+	TemporaryHashMap<FramebufferNode, FramebufferRingSize, false> _framebuffers;
+#ifdef LUNA_VULKAN_MT
+	std::mutex _mutex;
+#endif
 };
 }  // namespace Vulkan
 

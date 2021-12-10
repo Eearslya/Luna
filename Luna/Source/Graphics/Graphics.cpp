@@ -45,33 +45,27 @@ Graphics::Graphics() {
 Graphics::~Graphics() noexcept {}
 
 void Graphics::Update() {
-	uint32_t swapchainImage = _swapchain->AcquireNextImage();
-
-	_device->NextFrame();
+	if (!BeginFrame()) { return; }
 
 	auto cmd = _device->RequestCommandBuffer();
 
 	auto rpInfo = _device->GetStockRenderPass(Vulkan::StockRenderPass::ColorOnly);
-	auto& pass  = _device->RequestRenderPass(rpInfo);
-
-	// FIXME: Temporary patch to transition the swapchain image until we have render passes.
-	{
-		auto cmdBuf = cmd->GetCommandBuffer();
-		auto image  = _swapchain->GetImage(swapchainImage);
-		const vk::ImageMemoryBarrier barrier({},
-		                                     {},
-		                                     vk::ImageLayout::eUndefined,
-		                                     vk::ImageLayout::ePresentSrcKHR,
-		                                     VK_QUEUE_FAMILY_IGNORED,
-		                                     VK_QUEUE_FAMILY_IGNORED,
-		                                     image,
-		                                     vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
-		cmdBuf.pipelineBarrier(
-			vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {}, barrier);
-	}
+	rpInfo.ClearColors[0].setFloat32({0.1f, 0.1f, 0.1f, 1.0f});
+	cmd->BeginRenderPass(rpInfo);
+	cmd->EndRenderPass();
 
 	_device->Submit(cmd);
 
+	EndFrame();
+}
+
+bool Graphics::BeginFrame() {
+	_device->NextFrame();
+
+	return _swapchain->AcquireNextImage();
+}
+
+void Graphics::EndFrame() {
 	_device->EndFrame();
 	_swapchain->Present();
 }

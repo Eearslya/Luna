@@ -47,10 +47,10 @@ class IntrusiveList {
 			return *static_cast<T*>(_node);
 		}
 		T* operator->() {
-			return _node;
+			return static_cast<T*>(_node);
 		}
 		const T* operator->() const {
-			return _node;
+			return static_cast<T*>(_node);
 		}
 
 		Iterator& operator++() {

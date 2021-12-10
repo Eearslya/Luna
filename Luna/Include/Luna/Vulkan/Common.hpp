@@ -35,6 +35,7 @@ class Device;
 class Fence;
 struct FenceDeleter;
 class Framebuffer;
+class FramebufferAllocator;
 class Image;
 struct ImageCreateInfo;
 struct ImageDeleter;

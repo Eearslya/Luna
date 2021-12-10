@@ -3,6 +3,7 @@
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Format.hpp>
 #include <Luna/Vulkan/Image.hpp>
+#include <Luna/Vulkan/RenderPass.hpp>
 
 namespace Luna {
 namespace Vulkan {
@@ -173,9 +174,56 @@ void CommandBuffer::ImageBarrier(Image& image,
 	_commandBuffer.pipelineBarrier(srcStages, dstStages, {}, nullptr, nullptr, barrier);
 }
 
-void CommandBuffer::BeginRenderPass(const RenderPassInfo& info) {}
+void CommandBuffer::BeginRenderPass(const RenderPassInfo& info) {
+	_framebuffer      = &_device.RequestFramebuffer({}, info);
+	_actualRenderPass = &_device.RequestRenderPass(Badge<CommandBuffer>{}, info, false);
 
-void CommandBuffer::EndRenderPass() {}
+	uint32_t clearValueCount = 0;
+	std::array<vk::ClearValue, MaxColorAttachments + 1> clearValues;
+	for (uint32_t i = 0; i < info.ColorAttachmentCount; ++i) {
+		if (info.ClearAttachments & (1u << i)) {
+			clearValues[i].setColor(info.ClearColors[i]);
+			clearValueCount = i + 1;
+		}
+		if (info.ColorAttachments[i]->GetImage().IsSwapchainImage()) {
+			_swapchainStages |= vk::PipelineStageFlagBits::eColorAttachmentOutput;
+		}
+	}
+	if (info.DepthStencilAttachment && (info.DSOps & DepthStencilOpBits::ClearDepthStencil)) {
+		clearValues[info.ColorAttachmentCount].setDepthStencil(info.ClearDepthStencil);
+		clearValueCount = info.ColorAttachmentCount + 1;
+	}
 
+	SetViewportScissor();
+
+	const vk::RenderPassBeginInfo rpBI(
+		_actualRenderPass->GetRenderPass(), _framebuffer->GetFramebuffer(), _scissor, clearValueCount, clearValues.data());
+	_commandBuffer.beginRenderPass(rpBI, vk::SubpassContents::eInline);
+}
+
+void CommandBuffer::EndRenderPass() {
+	_commandBuffer.endRenderPass();
+
+	_framebuffer      = nullptr;
+	_actualRenderPass = nullptr;
+}
+
+void CommandBuffer::SetViewportScissor() {
+	const auto& rpInfo   = _actualRenderPass->GetRenderPassInfo();
+	const auto& fbExtent = _framebuffer->GetExtent();
+
+	_scissor               = rpInfo.RenderArea;
+	_scissor.offset.x      = std::min(fbExtent.width, static_cast<uint32_t>(_scissor.offset.x));
+	_scissor.offset.y      = std::min(fbExtent.height, static_cast<uint32_t>(_scissor.offset.y));
+	_scissor.extent.width  = std::min(fbExtent.width - _scissor.offset.x, _scissor.extent.width);
+	_scissor.extent.height = std::min(fbExtent.height - _scissor.offset.y, _scissor.extent.height);
+
+	_viewport = vk::Viewport{static_cast<float>(_scissor.offset.x),
+	                         static_cast<float>(_scissor.offset.y),
+	                         static_cast<float>(_scissor.extent.width),
+	                         static_cast<float>(_scissor.extent.height),
+	                         0.0f,
+	                         1.0f};
+}
 }  // namespace Vulkan
 }  // namespace Luna
