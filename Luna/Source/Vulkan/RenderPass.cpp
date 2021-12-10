@@ -616,20 +616,76 @@ RenderPass::RenderPass(Hash hash, Device& device, const RenderPassInfo& info)
 	                                    subpasses.data(),
 	                                    static_cast<uint32_t>(subpassDependencies.size()),
 	                                    subpassDependencies.data());
-	Log::Trace("[Vulkan::RenderPass] - Final create info:");
-	Log::Trace("[Vulkan::RenderPass]   - Attachments ({}):", rpCI.attachmentCount);
-	for (uint32_t i = 0; i < rpCI.attachmentCount; ++i) {
-		const auto& att = rpCI.pAttachments[i];
-		Log::Trace("[Vulkan::RenderPass]     - {} MSAA x{}", vk::to_string(att.format), vk::to_string(att.samples));
-		Log::Trace("[Vulkan::RenderPass]     - Initial {}, Final {}",
-		           vk::to_string(att.initialLayout),
-		           vk::to_string(att.finalLayout));
-		Log::Trace(
-			"[Vulkan::RenderPass]     - LoadOp {}, StoreOp {}", vk::to_string(att.loadOp), vk::to_string(att.storeOp));
-		Log::Trace("[Vulkan::RenderPass]     - StencilLoadOp {}, StencilStoreOp {}",
-		           vk::to_string(att.stencilLoadOp),
-		           vk::to_string(att.stencilStoreOp));
+
+#if 0
+	// Dump pass info to console.
+	{
+		Log::Trace("[Vulkan::RenderPass] - Final create info:");
+		Log::Trace("[Vulkan::RenderPass]   - Attachments ({}):", rpCI.attachmentCount);
+		for (uint32_t i = 0; i < rpCI.attachmentCount; ++i) {
+			const auto& att = rpCI.pAttachments[i];
+			Log::Trace("[Vulkan::RenderPass]     {}: {} MSAA x{}", i, vk::to_string(att.format), vk::to_string(att.samples));
+			Log::Trace("[Vulkan::RenderPass]        Initial {}, Final {}",
+			           vk::to_string(att.initialLayout),
+			           vk::to_string(att.finalLayout));
+			Log::Trace(
+				"[Vulkan::RenderPass]        LoadOp {}, StoreOp {}", vk::to_string(att.loadOp), vk::to_string(att.storeOp));
+			Log::Trace("[Vulkan::RenderPass]        StencilLoadOp {}, StencilStoreOp {}",
+			           vk::to_string(att.stencilLoadOp),
+			           vk::to_string(att.stencilStoreOp));
+		}
+		Log::Trace("[Vulkan::RenderPass]   - Subpasses ({}):", rpCI.subpassCount);
+		for (uint32_t i = 0; i < rpCI.subpassCount; ++i) {
+			const auto& sp = rpCI.pSubpasses[i];
+			std::vector<std::string> colors;
+			std::vector<std::string> inputs;
+			std::vector<std::string> resolves;
+			std::vector<std::string> preserves;
+			for (uint32_t j = 0; j < sp.colorAttachmentCount; ++j) {
+				colors.push_back(
+					fmt::format("{} ({})", sp.pColorAttachments[j].attachment, vk::to_string(sp.pColorAttachments[j].layout)));
+			}
+			for (uint32_t j = 0; j < sp.inputAttachmentCount; ++j) {
+				inputs.push_back(
+					fmt::format("{} ({})", sp.pInputAttachments[j].attachment, vk::to_string(sp.pInputAttachments[j].layout)));
+			}
+			if (sp.pResolveAttachments) {
+				for (uint32_t j = 0; j < sp.colorAttachmentCount; ++j) {
+					resolves.push_back(fmt::format(
+						"{} ({})", sp.pResolveAttachments[j].attachment, vk::to_string(sp.pResolveAttachments[j].layout)));
+				}
+			}
+			if (sp.pPreserveAttachments) {
+				for (uint32_t j = 0; j < sp.preserveAttachmentCount; ++j) {
+					preserves.push_back(fmt::format("{}", sp.pPreserveAttachments[j]));
+				}
+			}
+			Log::Trace(
+				"[Vulkan::RenderPass]     {}: Color Attachments: {}", i, fmt::join(colors.begin(), colors.end(), ", "));
+			Log::Trace("[Vulkan::RenderPass]        Input Attachments: {}", fmt::join(inputs.begin(), inputs.end(), ", "));
+			Log::Trace("[Vulkan::RenderPass]        Resolve Attachments: {}",
+			           fmt::join(resolves.begin(), resolves.end(), ", "));
+			Log::Trace("[Vulkan::RenderPass]        Preserve Attachments: {}",
+			           fmt::join(preserves.begin(), preserves.end(), ", "));
+		}
+		Log::Trace("[Vulkan::RenderPass]  - Dependencies ({}):", rpCI.dependencyCount);
+		for (uint32_t i = 0; i < rpCI.dependencyCount; ++i) {
+			const auto& dep = rpCI.pDependencies[i];
+			Log::Trace("[Vulkan::RenderPass]     {}: {} to {}",
+			           i,
+			           dep.srcSubpass == VK_SUBPASS_EXTERNAL ? "External" : std::to_string(dep.srcSubpass),
+			           dep.dstSubpass == VK_SUBPASS_EXTERNAL ? "External" : std::to_string(dep.dstSubpass));
+			Log::Trace("[Vulkan::RenderPass]        Flags: {}", vk::to_string(dep.dependencyFlags));
+			Log::Trace("[Vulkan::RenderPass]        Stages {} to {}",
+			           vk::to_string(dep.srcStageMask),
+			           vk::to_string(dep.dstStageMask));
+			Log::Trace("[Vulkan::RenderPass]        Access {} to {}",
+			           vk::to_string(dep.srcAccessMask),
+			           vk::to_string(dep.dstAccessMask));
+		}
 	}
+#endif
+
 	_renderPass = _device.GetDevice().createRenderPass(rpCI);
 }
 
