@@ -3,6 +3,7 @@ target_link_libraries(Editor PRIVATE Luna)
 
 target_sources(Editor PRIVATE
 	Editor.cpp)
+add_dependencies(Editor Shaders)
 
 add_custom_target(Run
 	COMMAND Editor

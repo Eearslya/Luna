@@ -13,3 +13,4 @@ Build/
 *.log
 *.o
 *.pdb
+*.spv

@@ -1,0 +1,19 @@
+set(GLSL_SOURCES
+	"Basic.vert.glsl"
+	"Basic.frag.glsl")
+
+set(SHADER_BINARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+
+foreach(FILENAME ${GLSL_SOURCES})
+	set(GLSL "${CMAKE_CURRENT_SOURCE_DIR}/${FILENAME}")
+	cmake_path(GET GLSL STEM LAST_ONLY FILENAME)
+	set(SPIRV "${SHADER_BINARY_DIR}/${FILENAME}.spv")
+	add_custom_command(
+		OUTPUT "${SPIRV}"
+		COMMAND ${CMAKE_COMMAND} -E make_directory "${SHADER_BINARY_DIR}"
+		COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V "${GLSL}" -o "${SPIRV}"
+		DEPENDS "${GLSL}")
+	list(APPEND SPIRV_BINARIES ${SPIRV})
+endforeach(FILENAME)
+
+add_custom_target(Shaders DEPENDS ${SPIRV_BINARIES})
