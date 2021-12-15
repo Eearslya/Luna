@@ -91,6 +91,7 @@ Device::Device(const Context& context)
 	}
 
 	CreateTimelineSemaphores();
+	CreateStockSamplers();
 	_framebufferAllocator = std::make_unique<FramebufferAllocator>(*this);
 	CreateFrameContexts(2);
 }
@@ -457,17 +458,23 @@ ImageViewHandle Device::CreateImageView(const ImageViewCreateInfo& createInfo) {
 	return ImageViewHandle(_imageViewPool.Allocate(*this, createInfo));
 }
 
-SamplerHandle Device::CreateSampler(const SamplerCreateInfo& createInfo) {
-	Hasher h(createInfo);
-	const auto hash = h.Get();
-
-	return SamplerHandle(_samplerPool.Allocate(hash, *this, createInfo, false));
-}
-
 FenceHandle Device::RequestFence() {
 	LOCK();
 	auto fence = AllocateFence();
 	return FenceHandle(_fencePool.Allocate(*this, fence));
+}
+
+const Sampler& Device::RequestSampler(const SamplerCreateInfo& createInfo) {
+	Hasher h(createInfo);
+	const auto hash = h.Get();
+	auto* ret       = _samplers.Find(hash);
+	if (!ret) { ret = _samplers.EmplaceYield(hash, hash, *this, createInfo); }
+
+	return *ret;
+}
+
+const Sampler& Device::RequestSampler(StockSampler type) {
+	return *_stockSamplers[static_cast<int>(type)];
 }
 
 SemaphoreHandle Device::RequestSemaphore(const std::string& debugName) {
@@ -506,11 +513,6 @@ void Device::DestroyImage(Badge<ImageDeleter>, Image* image) {
 void Device::DestroyImageView(Badge<ImageViewDeleter>, ImageView* view) {
 	MAYBE_LOCK(view);
 	Frame().ImageViewsToDestroy.push_back(view);
-}
-
-void Device::DestroySampler(Badge<SamplerDeleter>, Sampler* sampler) {
-	MAYBE_LOCK(sampler);
-	Frame().SamplersToDestroy.push_back(sampler);
 }
 
 void Device::RecycleFence(Badge<FenceDeleter>, Fence* fence) {
@@ -990,6 +992,47 @@ void Device::CreateFrameContexts(uint32_t count) {
 	for (uint32_t i = 0; i < count; ++i) { _frameContexts.emplace_back(std::make_unique<FrameContext>(*this, i)); }
 }
 
+void Device::CreateStockSamplers() {
+	for (int i = 0; i < StockSamplerCount; ++i) {
+		const auto type = static_cast<StockSampler>(i);
+		SamplerCreateInfo info{};
+
+		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::DefaultGeometryFilterWrap ||
+		    type == StockSampler::LinearClamp || type == StockSampler::LinearShadow || type == StockSampler::LinearWrap ||
+		    type == StockSampler::TrilinearClamp || type == StockSampler::TrilinearWrap) {
+			info.MagFilter = vk::Filter::eLinear;
+			info.MinFilter = vk::Filter::eLinear;
+		}
+
+		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::DefaultGeometryFilterWrap ||
+		    type == StockSampler::TrilinearClamp || type == StockSampler::TrilinearWrap) {
+			info.MipmapMode = vk::SamplerMipmapMode::eLinear;
+		}
+
+		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::LinearClamp ||
+		    type == StockSampler::LinearShadow || type == StockSampler::NearestClamp ||
+		    type == StockSampler::NearestShadow || type == StockSampler::TrilinearClamp) {
+			info.AddressModeU = vk::SamplerAddressMode::eClampToEdge;
+			info.AddressModeV = vk::SamplerAddressMode::eClampToEdge;
+			info.AddressModeW = vk::SamplerAddressMode::eClampToEdge;
+		}
+
+		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::DefaultGeometryFilterWrap) {
+			if (_gpuInfo.EnabledFeatures.Features.samplerAnisotropy) {
+				info.AnisotropyEnable = VK_TRUE;
+				info.MaxAnisotropy    = std::min(_gpuInfo.Properties.Properties.limits.maxSamplerAnisotropy, 16.0f);
+			}
+		}
+
+		if (type == StockSampler::LinearShadow || type == StockSampler::NearestShadow) {
+			info.CompareEnable = VK_TRUE;
+			info.CompareOp     = vk::CompareOp::eLessOrEqual;
+		}
+
+		_stockSamplers[i] = &RequestSampler(info);
+	}
+}
+
 void Device::CreateTimelineSemaphores() {
 	if (!_gpuInfo.AvailableFeatures.TimelineSemaphore.timelineSemaphore) { return; }
 
@@ -1116,7 +1159,6 @@ void Device::FrameContext::Begin() {
 	for (auto& buffer : BuffersToDestroy) { Parent._bufferPool.Free(buffer); }
 	for (auto& image : ImagesToDestroy) { Parent._imagePool.Free(image); }
 	for (auto& view : ImageViewsToDestroy) { Parent._imageViewPool.Free(view); }
-	for (auto& sampler : SamplersToDestroy) { Parent._samplerPool.Free(sampler); }
 	for (auto& semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
 	for (auto& semaphore : SemaphoresToRecycle) { Parent.ReleaseSemaphore(semaphore); }
 	BuffersToDestroy.clear();

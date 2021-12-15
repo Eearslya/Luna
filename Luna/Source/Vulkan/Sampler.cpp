@@ -4,13 +4,9 @@
 
 namespace Luna {
 namespace Vulkan {
-void SamplerDeleter::operator()(Sampler* sampler) {
-	sampler->_device.DestroySampler({}, sampler);
-}
-
-Sampler::Sampler(Hash hash, Device& device, const SamplerCreateInfo& info, bool immutable)
-		: Cookie(device), HashedObject<Sampler>(hash), _device(device), _createInfo(info), _immutable(immutable) {
-	Log::Trace("[Vulkan::Sampler] Creating new {}Sampler.", _immutable ? "Immutable " : "");
+Sampler::Sampler(Hash hash, Device& device, const SamplerCreateInfo& info)
+		: Cookie(device), HashedObject<Sampler>(hash), _device(device), _createInfo(info) {
+	Log::Trace("[Vulkan::Sampler] Creating new Sampler.");
 
 	const vk::SamplerCreateInfo samplerCI({},
 	                                      info.MagFilter,

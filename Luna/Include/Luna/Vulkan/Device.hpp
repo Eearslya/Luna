@@ -65,8 +65,9 @@ class Device final : NonCopyable {
 	BufferHandle CreateBuffer(const BufferCreateInfo& createInfo, const void* initialData = nullptr);
 	ImageHandle CreateImage(const ImageCreateInfo& createInfo, const InitialImageData* initialData = nullptr);
 	ImageViewHandle CreateImageView(const ImageViewCreateInfo& createInfo);
-	SamplerHandle CreateSampler(const SamplerCreateInfo& createInfo);
 	FenceHandle RequestFence();
+	const Sampler& RequestSampler(const SamplerCreateInfo& createInfo);
+	const Sampler& RequestSampler(StockSampler type);
 	SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
 
 	// Internal functions for other Vulkan classes.
@@ -75,7 +76,6 @@ class Device final : NonCopyable {
 	void DestroyBuffer(Badge<BufferDeleter>, Buffer* buffer);
 	void DestroyImage(Badge<ImageDeleter>, Image* image);
 	void DestroyImageView(Badge<ImageViewDeleter>, ImageView* view);
-	void DestroySampler(Badge<SamplerDeleter>, Sampler* sampler);
 	void RecycleFence(Badge<FenceDeleter>, Fence* fence);
 	void RecycleSemaphore(Badge<SemaphoreDeleter>, Semaphore* semaphore);
 	void ReleaseCommandBuffer(Badge<CommandBufferDeleter>, CommandBuffer* cmdBuf);
@@ -159,6 +159,7 @@ class Device final : NonCopyable {
 	vk::Fence AllocateFence();
 	vk::Semaphore AllocateSemaphore();
 	void CreateFrameContexts(uint32_t count);
+	void CreateStockSamplers();
 	void CreateTimelineSemaphores();
 	void DestroyTimelineSemaphores();
 	void ReleaseFence(vk::Fence fence);
@@ -206,14 +207,15 @@ class Device final : NonCopyable {
 	VulkanObjectPool<Fence> _fencePool;
 	VulkanObjectPool<Image> _imagePool;
 	VulkanObjectPool<ImageView> _imageViewPool;
-	VulkanObjectPool<Sampler> _samplerPool;
 	VulkanObjectPool<Semaphore> _semaphorePool;
 
 	// Vulkan hashed caches.
 	VulkanCache<RenderPass> _renderPasses;
+	VulkanCache<Sampler> _samplers;
 
 	// Management objects.
 	std::unique_ptr<FramebufferAllocator> _framebufferAllocator;
+	std::array<const Sampler*, StockSamplerCount> _stockSamplers;
 
 	// Frame contexts.
 	uint32_t _currentFrameContext = 0;

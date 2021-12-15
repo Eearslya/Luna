@@ -4,10 +4,6 @@
 
 namespace Luna {
 namespace Vulkan {
-struct SamplerDeleter {
-	void operator()(Sampler* sampler);
-};
-
 struct SamplerCreateInfo {
 	vk::Filter MagFilter                = vk::Filter::eNearest;
 	vk::Filter MinFilter                = vk::Filter::eNearest;
@@ -26,14 +22,9 @@ struct SamplerCreateInfo {
 	vk::Bool32 UnnormalizedCoordinates  = VK_FALSE;
 };
 
-class Sampler : public IntrusivePtrEnabled<Sampler, SamplerDeleter, HandleCounter>,
-								public HashedObject<Sampler>,
-								public Cookie,
-								public InternalSyncEnabled {
-	friend class ObjectPool<Sampler>;
-	friend struct SamplerDeleter;
-
+class Sampler : public HashedObject<Sampler>, public Cookie, public InternalSyncEnabled {
  public:
+	Sampler(Hash hash, Device& device, const SamplerCreateInfo& info);
 	~Sampler() noexcept;
 
 	const SamplerCreateInfo& GetCreateInfo() const {
@@ -44,12 +35,9 @@ class Sampler : public IntrusivePtrEnabled<Sampler, SamplerDeleter, HandleCounte
 	}
 
  private:
-	Sampler(Hash hash, Device& device, const SamplerCreateInfo& info, bool immutable = false);
-
 	Device& _device;
 	vk::Sampler _sampler;
 	SamplerCreateInfo _createInfo;
-	bool _immutable = false;
 };
 }  // namespace Vulkan
 }  // namespace Luna

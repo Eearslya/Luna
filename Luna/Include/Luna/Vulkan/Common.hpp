@@ -46,7 +46,6 @@ class RenderPass;
 struct RenderPassInfo;
 class Sampler;
 struct SamplerCreateInfo;
-struct SamplerDeleter;
 class Semaphore;
 struct SemaphoreDeleter;
 class Swapchain;
@@ -57,7 +56,6 @@ using CommandBufferHandle = IntrusivePtr<CommandBuffer>;
 using FenceHandle         = IntrusivePtr<Fence>;
 using ImageHandle         = IntrusivePtr<Image>;
 using ImageViewHandle     = IntrusivePtr<ImageView>;
-using SamplerHandle       = IntrusivePtr<Sampler>;
 using SemaphoreHandle     = IntrusivePtr<Semaphore>;
 
 // Typedefs.
@@ -172,6 +170,47 @@ const char* VulkanEnumToString<StockRenderPass>(const StockRenderPass value) {
 			return "Depth";
 		case StockRenderPass::DepthStencil:
 			return "DepthStencil";
+	}
+
+	return "Unknown";
+}
+
+enum class StockSampler {
+	NearestClamp,
+	LinearClamp,
+	TrilinearClamp,
+	NearestWrap,
+	LinearWrap,
+	TrilinearWrap,
+	NearestShadow,
+	LinearShadow,
+	DefaultGeometryFilterClamp,
+	DefaultGeometryFilterWrap
+};
+constexpr static const int StockSamplerCount = 10;
+template <>
+const char* VulkanEnumToString<StockSampler>(const StockSampler value) {
+	switch (value) {
+		case StockSampler::NearestClamp:
+			return "NearestClamp";
+		case StockSampler::LinearClamp:
+			return "LinearClamp";
+		case StockSampler::TrilinearClamp:
+			return "TrilinearClamp";
+		case StockSampler::NearestWrap:
+			return "NearestWrap";
+		case StockSampler::LinearWrap:
+			return "LinearWrap";
+		case StockSampler::TrilinearWrap:
+			return "TrilinearWrap";
+		case StockSampler::NearestShadow:
+			return "NearestShadow";
+		case StockSampler::LinearShadow:
+			return "LinearShadow";
+		case StockSampler::DefaultGeometryFilterClamp:
+			return "DefaultGeometryFilterClamp";
+		case StockSampler::DefaultGeometryFilterWrap:
+			return "DefaultGeometryFilterWrap";
 	}
 
 	return "Unknown";
