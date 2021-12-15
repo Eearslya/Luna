@@ -65,6 +65,7 @@ class Device final : NonCopyable {
 	BufferHandle CreateBuffer(const BufferCreateInfo& createInfo, const void* initialData = nullptr);
 	ImageHandle CreateImage(const ImageCreateInfo& createInfo, const InitialImageData* initialData = nullptr);
 	ImageViewHandle CreateImageView(const ImageViewCreateInfo& createInfo);
+	SamplerHandle CreateSampler(const SamplerCreateInfo& createInfo);
 	FenceHandle RequestFence();
 	SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
 
@@ -74,6 +75,7 @@ class Device final : NonCopyable {
 	void DestroyBuffer(Badge<BufferDeleter>, Buffer* buffer);
 	void DestroyImage(Badge<ImageDeleter>, Image* image);
 	void DestroyImageView(Badge<ImageViewDeleter>, ImageView* view);
+	void DestroySampler(Badge<SamplerDeleter>, Sampler* sampler);
 	void RecycleFence(Badge<FenceDeleter>, Fence* fence);
 	void RecycleSemaphore(Badge<SemaphoreDeleter>, Semaphore* semaphore);
 	void ReleaseCommandBuffer(Badge<CommandBufferDeleter>, CommandBuffer* cmdBuf);
@@ -110,6 +112,7 @@ class Device final : NonCopyable {
 		std::vector<vk::Fence> FencesToRecycle;
 		std::vector<Image*> ImagesToDestroy;
 		std::vector<ImageView*> ImageViewsToDestroy;
+		std::vector<Sampler*> SamplersToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToRecycle;
 	};
@@ -203,6 +206,7 @@ class Device final : NonCopyable {
 	VulkanObjectPool<Fence> _fencePool;
 	VulkanObjectPool<Image> _imagePool;
 	VulkanObjectPool<ImageView> _imageViewPool;
+	VulkanObjectPool<Sampler> _samplerPool;
 	VulkanObjectPool<Semaphore> _semaphorePool;
 
 	// Vulkan hashed caches.

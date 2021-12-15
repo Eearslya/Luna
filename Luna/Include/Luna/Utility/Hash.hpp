@@ -8,7 +8,11 @@ using Hash = std::uint64_t;
 class Hasher {
  public:
 	Hasher() = default;
-	Hasher(Hash h) : _hash(h) {}
+	explicit Hasher(Hash h) : _hash(h) {}
+	template <typename T>
+	Hasher(const T& data) {
+		operator()(data);
+	}
 
 	Hash Get() const {
 		return _hash;

@@ -44,6 +44,9 @@ struct ImageViewCreateInfo;
 struct ImageViewDeleter;
 class RenderPass;
 struct RenderPassInfo;
+class Sampler;
+struct SamplerCreateInfo;
+struct SamplerDeleter;
 class Semaphore;
 struct SemaphoreDeleter;
 class Swapchain;
@@ -54,6 +57,7 @@ using CommandBufferHandle = IntrusivePtr<CommandBuffer>;
 using FenceHandle         = IntrusivePtr<Fence>;
 using ImageHandle         = IntrusivePtr<Image>;
 using ImageViewHandle     = IntrusivePtr<ImageView>;
+using SamplerHandle       = IntrusivePtr<Sampler>;
 using SemaphoreHandle     = IntrusivePtr<Semaphore>;
 
 // Typedefs.

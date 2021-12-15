@@ -9,5 +9,6 @@ target_sources(Luna PRIVATE
 	FormatLayout.cpp
 	Image.cpp
 	RenderPass.cpp
+	Sampler.cpp
 	Semaphore.cpp
 	Swapchain.cpp)

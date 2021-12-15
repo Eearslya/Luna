@@ -9,6 +9,7 @@
 #include <Luna/Vulkan/FormatLayout.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
+#include <Luna/Vulkan/Sampler.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
 #include <Luna/Vulkan/Swapchain.hpp>
 
@@ -456,6 +457,13 @@ ImageViewHandle Device::CreateImageView(const ImageViewCreateInfo& createInfo) {
 	return ImageViewHandle(_imageViewPool.Allocate(*this, createInfo));
 }
 
+SamplerHandle Device::CreateSampler(const SamplerCreateInfo& createInfo) {
+	Hasher h(createInfo);
+	const auto hash = h.Get();
+
+	return SamplerHandle(_samplerPool.Allocate(hash, *this, createInfo, false));
+}
+
 FenceHandle Device::RequestFence() {
 	LOCK();
 	auto fence = AllocateFence();
@@ -498,6 +506,11 @@ void Device::DestroyImage(Badge<ImageDeleter>, Image* image) {
 void Device::DestroyImageView(Badge<ImageViewDeleter>, ImageView* view) {
 	MAYBE_LOCK(view);
 	Frame().ImageViewsToDestroy.push_back(view);
+}
+
+void Device::DestroySampler(Badge<SamplerDeleter>, Sampler* sampler) {
+	MAYBE_LOCK(sampler);
+	Frame().SamplersToDestroy.push_back(sampler);
 }
 
 void Device::RecycleFence(Badge<FenceDeleter>, Fence* fence) {
@@ -1103,11 +1116,13 @@ void Device::FrameContext::Begin() {
 	for (auto& buffer : BuffersToDestroy) { Parent._bufferPool.Free(buffer); }
 	for (auto& image : ImagesToDestroy) { Parent._imagePool.Free(image); }
 	for (auto& view : ImageViewsToDestroy) { Parent._imageViewPool.Free(view); }
+	for (auto& sampler : SamplersToDestroy) { Parent._samplerPool.Free(sampler); }
 	for (auto& semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
 	for (auto& semaphore : SemaphoresToRecycle) { Parent.ReleaseSemaphore(semaphore); }
 	BuffersToDestroy.clear();
 	ImagesToDestroy.clear();
 	ImageViewsToDestroy.clear();
+	SamplersToDestroy.clear();
 	SemaphoresToDestroy.clear();
 	SemaphoresToRecycle.clear();
 }
