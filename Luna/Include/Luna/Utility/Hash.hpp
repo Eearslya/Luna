@@ -18,6 +18,18 @@ class Hasher {
 		return _hash;
 	}
 
+	void Data(size_t size, const void* bytes) {
+		const size_t chunks = size / sizeof(uint64_t);
+
+		// Hash the data in as many 64-bit chunks as we can first.
+		const uint64_t* p64 = reinterpret_cast<const uint64_t*>(bytes);
+		for (size_t i = 0; i < chunks; ++i) { operator()(p64[i]); }
+
+		// Then hash the remaining bytes one at a time.
+		const uint8_t* p8 = reinterpret_cast<const uint8_t*>(bytes);
+		for (size_t i = (chunks * sizeof(uint64_t)); i < size; ++i) { operator()(p8[i]); }
+	}
+
 	template <typename T>
 	void operator()(const T& data) {
 		const std::size_t hash = std::hash<T>{}(data);

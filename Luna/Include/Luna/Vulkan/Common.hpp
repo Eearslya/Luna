@@ -42,12 +42,14 @@ struct ImageDeleter;
 class ImageView;
 struct ImageViewCreateInfo;
 struct ImageViewDeleter;
+class Program;
 class RenderPass;
 struct RenderPassInfo;
 class Sampler;
 struct SamplerCreateInfo;
 class Semaphore;
 struct SemaphoreDeleter;
+class Shader;
 class Swapchain;
 
 // Handle declarations.
@@ -154,6 +156,36 @@ const char* VulkanEnumToString<ImageLayoutType>(const ImageLayoutType value) {
 			return "Optimal";
 		case ImageLayoutType::General:
 			return "General";
+	}
+
+	return "Unknown";
+}
+
+// Enum is made to line up with the bits in vk::ShaderStageFlagBits.
+enum class ShaderStage {
+	Vertex                 = 0,
+	TessellationControl    = 1,
+	TessellationEvaluation = 2,
+	Geometry               = 3,
+	Fragment               = 4,
+	Compute                = 5
+};
+constexpr static const int ShaderStageCount = 6;
+template <>
+const char* VulkanEnumToString<ShaderStage>(const ShaderStage value) {
+	switch (value) {
+		case ShaderStage::Vertex:
+			return "Vertex";
+		case ShaderStage::TessellationControl:
+			return "TessellationControl";
+		case ShaderStage::TessellationEvaluation:
+			return "TessellationEvaluation";
+		case ShaderStage::Geometry:
+			return "Geometry";
+		case ShaderStage::Fragment:
+			return "Fragment";
+		case ShaderStage::Compute:
+			return "Compute";
 	}
 
 	return "Unknown";

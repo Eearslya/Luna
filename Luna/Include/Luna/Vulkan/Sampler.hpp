@@ -22,7 +22,7 @@ struct SamplerCreateInfo {
 	vk::Bool32 UnnormalizedCoordinates  = VK_FALSE;
 };
 
-class Sampler : public HashedObject<Sampler>, public Cookie, public InternalSyncEnabled {
+class Sampler : public HashedObject<Sampler>, public Cookie, public InternalSyncEnabled, NonCopyable {
  public:
 	Sampler(Hash hash, Device& device, const SamplerCreateInfo& info);
 	~Sampler() noexcept;

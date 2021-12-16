@@ -66,9 +66,11 @@ class Device final : NonCopyable {
 	ImageHandle CreateImage(const ImageCreateInfo& createInfo, const InitialImageData* initialData = nullptr);
 	ImageViewHandle CreateImageView(const ImageViewCreateInfo& createInfo);
 	FenceHandle RequestFence();
+	Program& RequestProgram(size_t vertCodeSize, const void* vertCode, size_t fragCodeSize, const void* fragCode);
 	const Sampler& RequestSampler(const SamplerCreateInfo& createInfo);
 	const Sampler& RequestSampler(StockSampler type);
 	SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
+	Shader& RequestShader(size_t codeSize, const void* code);
 
 	// Internal functions for other Vulkan classes.
 	uint64_t AllocateCookie(Badge<Cookie>);
@@ -210,8 +212,10 @@ class Device final : NonCopyable {
 	VulkanObjectPool<Semaphore> _semaphorePool;
 
 	// Vulkan hashed caches.
+	VulkanCache<Program> _programs;
 	VulkanCache<RenderPass> _renderPasses;
 	VulkanCache<Sampler> _samplers;
+	VulkanCache<Shader> _shaders;
 
 	// Management objects.
 	std::unique_ptr<FramebufferAllocator> _framebufferAllocator;

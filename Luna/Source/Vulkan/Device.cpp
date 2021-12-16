@@ -11,6 +11,7 @@
 #include <Luna/Vulkan/RenderPass.hpp>
 #include <Luna/Vulkan/Sampler.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
+#include <Luna/Vulkan/Shader.hpp>
 #include <Luna/Vulkan/Swapchain.hpp>
 
 // Helper functions for dealing with multithreading.
@@ -464,6 +465,21 @@ FenceHandle Device::RequestFence() {
 	return FenceHandle(_fencePool.Allocate(*this, fence));
 }
 
+Program& Device::RequestProgram(size_t vertCodeSize, const void* vertCode, size_t fragCodeSize, const void* fragCode) {
+	auto& vert = RequestShader(vertCodeSize, vertCode);
+	auto& frag = RequestShader(fragCodeSize, fragCode);
+
+	Hasher h;
+	h(vert.GetHash());
+	h(frag.GetHash());
+	const auto hash = h.Get();
+
+	Program* ret = _programs.Find(hash);
+	if (!ret) { ret = _programs.EmplaceYield(hash, hash, *this, &vert, &frag); }
+
+	return *ret;
+}
+
 const Sampler& Device::RequestSampler(const SamplerCreateInfo& createInfo) {
 	Hasher h(createInfo);
 	const auto hash = h.Get();
@@ -481,6 +497,18 @@ SemaphoreHandle Device::RequestSemaphore(const std::string& debugName) {
 	LOCK();
 	auto semaphore = AllocateSemaphore();
 	return SemaphoreHandle(_semaphorePool.Allocate(*this, semaphore, false, debugName));
+}
+
+Shader& Device::RequestShader(size_t codeSize, const void* code) {
+	Hasher h;
+	h(codeSize);
+	h.Data(codeSize, code);
+	const Hash hash = h.Get();
+
+	Shader* shader = _shaders.Find(hash);
+	if (!shader) { shader = _shaders.EmplaceYield(hash, hash, *this, codeSize, code); }
+
+	return *shader;
 }
 
 // ===== Internal functions for other Vulkan classes =====

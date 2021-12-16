@@ -9,6 +9,7 @@
 #include <Luna/Vulkan/Fence.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
+#include <Luna/Vulkan/Shader.hpp>
 #include <Luna/Vulkan/Swapchain.hpp>
 
 namespace Luna {
@@ -39,6 +40,12 @@ Graphics::Graphics() {
 		} else {
 			Log::Error("[Graphics] Failed to load test texture: {}", stbi_failure_reason());
 		}
+	}
+
+	auto vertData = filesystem->ReadBytes("Shaders/Basic.vert.spv");
+	auto fragData = filesystem->ReadBytes("Shaders/Basic.frag.spv");
+	if (vertData.has_value() && fragData.has_value()) {
+		auto& prog = _device->RequestProgram(vertData->size(), vertData->data(), fragData->size(), fragData->data());
 	}
 }
 
