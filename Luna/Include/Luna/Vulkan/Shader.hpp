@@ -1,14 +1,27 @@
 #pragma once
 
 #include <Luna/Vulkan/Common.hpp>
+#include <Luna/Vulkan/DescriptorSet.hpp>
 
 namespace Luna {
 namespace Vulkan {
+struct ShaderResourceLayout {
+	DescriptorSetLayout SetLayouts[MaxDescriptorSets] = {};
+	uint32_t BindlessSetMask                          = 0;
+	uint32_t InputMask                                = 0;
+	uint32_t OutputMask                               = 0;
+	uint32_t SpecConstantMask                         = 0;
+	uint32_t PushConstantSize                         = 0;
+};
+
 class Shader : public HashedObject<Shader>, NonCopyable {
  public:
 	Shader(Hash hash, Device& device, size_t codeSize, const void* code);
 	~Shader() noexcept;
 
+	const ShaderResourceLayout& GetResourceLayout() const {
+		return _layout;
+	}
 	vk::ShaderModule GetShaderModule() const {
 		return _shaderModule;
 	}
@@ -16,6 +29,7 @@ class Shader : public HashedObject<Shader>, NonCopyable {
  private:
 	Device& _device;
 	vk::ShaderModule _shaderModule;
+	ShaderResourceLayout _layout;
 };
 
 class Program : public HashedObject<Program>, NonCopyable {

@@ -83,7 +83,11 @@ using VulkanObjectPool = ObjectPool<T>;
 #endif
 
 // Enums and constants.
-constexpr static const int MaxColorAttachments = 8;
+constexpr static const int MaxColorAttachments        = 8;
+constexpr static const int MaxDescriptorBindings      = 32;
+constexpr static const int MaxDescriptorSets          = 4;
+constexpr static const int MaxPushConstantSize        = 128;
+constexpr static const int MaxSpecializationConstants = 8;
 
 template <typename T>
 static const char* VulkanEnumToString(const T value) {
