@@ -8,6 +8,6 @@ add_library(Luna STATIC)
 target_compile_definitions(Luna PUBLIC
 	$<$<CONFIG:DEBUG>:LUNA_DEBUG> GLFW_INCLUDE_VULKAN VK_ENABLE_BETA_EXTENSIONS VK_NO_PROTOTYPES VULKAN_HPP_DISPATCH_LOADER_DYNAMIC)
 target_include_directories(Luna PUBLIC Include)
-target_link_libraries(Luna PUBLIC glfw physfs-static spdlog tinygltf Vulkan::Headers vma)
+target_link_libraries(Luna PUBLIC glfw physfs-static spdlog spirv-cross-cpp tinygltf Vulkan::Headers vma)
 
 add_subdirectory(Source)

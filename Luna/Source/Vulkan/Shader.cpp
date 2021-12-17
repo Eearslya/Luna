@@ -34,6 +34,8 @@ Program::Program(Hash hash, Device& device, Shader* compute) : HashedObject<Prog
 	_shaders[static_cast<int>(ShaderStage::Compute)] = compute;
 }
 
-Program::~Program() noexcept {}
+Program::~Program() noexcept {
+	if (_pipeline) { _device.GetDevice().destroyPipeline(_pipeline); }
+}
 }  // namespace Vulkan
 }  // namespace Luna

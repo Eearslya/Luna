@@ -24,9 +24,21 @@ class Program : public HashedObject<Program>, NonCopyable {
 	Program(Hash hash, Device& device, Shader* compute);
 	~Program() noexcept;
 
+	vk::Pipeline GetPipeline() const {
+		return _pipeline;
+	}
+	Shader* GetShader(ShaderStage stage) const {
+		return _shaders[static_cast<int>(stage)];
+	}
+
+	void SetPipeline(vk::Pipeline pipeline) const {
+		_pipeline = pipeline;
+	}
+
  private:
 	Device& _device;
 	std::array<Shader*, ShaderStageCount> _shaders = {};
+	mutable vk::Pipeline _pipeline;
 };
 }  // namespace Vulkan
 }  // namespace Luna

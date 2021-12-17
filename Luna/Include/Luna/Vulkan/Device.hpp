@@ -66,7 +66,7 @@ class Device final : NonCopyable {
 	ImageHandle CreateImage(const ImageCreateInfo& createInfo, const InitialImageData* initialData = nullptr);
 	ImageViewHandle CreateImageView(const ImageViewCreateInfo& createInfo);
 	FenceHandle RequestFence();
-	Program& RequestProgram(size_t vertCodeSize, const void* vertCode, size_t fragCodeSize, const void* fragCode);
+	Program* RequestProgram(size_t vertCodeSize, const void* vertCode, size_t fragCodeSize, const void* fragCode);
 	const Sampler& RequestSampler(const SamplerCreateInfo& createInfo);
 	const Sampler& RequestSampler(StockSampler type);
 	SemaphoreHandle RequestSemaphore(const std::string& debugName = "");

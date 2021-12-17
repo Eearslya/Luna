@@ -4,6 +4,23 @@
 
 namespace Luna {
 namespace Vulkan {
+struct PipelineCompileInfo {
+	const Program* Program = nullptr;
+};
+
+enum class CommandBufferDirtyFlagBits {
+	StaticState      = 1 << 0,
+	Pipeline         = 1 << 1,
+	Viewport         = 1 << 2,
+	Scissor          = 1 << 3,
+	DepthBias        = 1 << 4,
+	StencilReference = 1 << 5,
+	StaticVertex     = 1 << 6,
+	PushConstants    = 1 << 7,
+	DynamicState     = Viewport | Scissor | DepthBias | StencilReference
+};
+using CommandBufferDirtyFlags = Bitmask<CommandBufferDirtyFlagBits>;
+
 struct CommandBufferDeleter {
 	void operator()(CommandBuffer* buffer);
 };
@@ -71,9 +88,15 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void BeginRenderPass(const RenderPassInfo& info);
 	void EndRenderPass();
 
+	void Draw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);
+	void SetProgram(const Program* program);
+
  private:
 	CommandBuffer(Device& device, vk::CommandBuffer commandBuffer, CommandBufferType type, uint32_t threadIndex);
 
+	vk::Pipeline BuildGraphicsPipeline(bool synchronous);
+	bool FlushGraphicsPipeline(bool synchronous);
+	bool FlushRenderState(bool synchronous);
 	void SetViewportScissor();
 
 	Device& _device;
@@ -81,11 +104,19 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	CommandBufferType _commandBufferType;
 	uint32_t _threadIndex;
 
-	const RenderPass* _actualRenderPass     = nullptr;
-	const Framebuffer* _framebuffer         = nullptr;
+	const RenderPass* _actualRenderPass = nullptr;
+	CommandBufferDirtyFlags _dirty;
+	const Framebuffer* _framebuffer = nullptr;
+	vk::Pipeline _pipeline;
+	static vk::PipelineLayout _pipelineLayout;
 	vk::Rect2D _scissor                     = {{0, 0}, {0, 0}};
 	vk::PipelineStageFlags _swapchainStages = {};
 	vk::Viewport _viewport                  = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+
+	PipelineCompileInfo _pipelineCompileInfo;
 };
 }  // namespace Vulkan
+
+template <>
+struct EnableBitmaskOperators<Vulkan::CommandBufferDirtyFlagBits> : std::true_type {};
 }  // namespace Luna

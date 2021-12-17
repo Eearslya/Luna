@@ -26,5 +26,7 @@ class Graphics : public Module::Registrar<Graphics> {
 	std::unique_ptr<Vulkan::Context> _context;
 	std::unique_ptr<Vulkan::Device> _device;
 	std::unique_ptr<Vulkan::Swapchain> _swapchain;
+
+	Vulkan::Program* _program = nullptr;
 };
 }  // namespace Luna

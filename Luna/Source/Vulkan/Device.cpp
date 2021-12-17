@@ -465,7 +465,7 @@ FenceHandle Device::RequestFence() {
 	return FenceHandle(_fencePool.Allocate(*this, fence));
 }
 
-Program& Device::RequestProgram(size_t vertCodeSize, const void* vertCode, size_t fragCodeSize, const void* fragCode) {
+Program* Device::RequestProgram(size_t vertCodeSize, const void* vertCode, size_t fragCodeSize, const void* fragCode) {
 	auto& vert = RequestShader(vertCodeSize, vertCode);
 	auto& frag = RequestShader(fragCodeSize, fragCode);
 
@@ -477,7 +477,7 @@ Program& Device::RequestProgram(size_t vertCodeSize, const void* vertCode, size_
 	Program* ret = _programs.Find(hash);
 	if (!ret) { ret = _programs.EmplaceYield(hash, hash, *this, &vert, &frag); }
 
-	return *ret;
+	return ret;
 }
 
 const Sampler& Device::RequestSampler(const SamplerCreateInfo& createInfo) {

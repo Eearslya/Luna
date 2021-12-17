@@ -45,7 +45,7 @@ Graphics::Graphics() {
 	auto vertData = filesystem->ReadBytes("Shaders/Basic.vert.spv");
 	auto fragData = filesystem->ReadBytes("Shaders/Basic.frag.spv");
 	if (vertData.has_value() && fragData.has_value()) {
-		auto& prog = _device->RequestProgram(vertData->size(), vertData->data(), fragData->size(), fragData->data());
+		_program = _device->RequestProgram(vertData->size(), vertData->data(), fragData->size(), fragData->data());
 	}
 }
 
@@ -56,9 +56,13 @@ void Graphics::Update() {
 
 	auto cmd = _device->RequestCommandBuffer();
 
+	const auto clearColor = std::pow(0.1f, 2.2f);
+
 	auto rpInfo = _device->GetStockRenderPass(Vulkan::StockRenderPass::ColorOnly);
-	rpInfo.ClearColors[0].setFloat32({0.1f, 0.1f, 0.1f, 1.0f});
+	rpInfo.ClearColors[0].setFloat32({clearColor, clearColor, clearColor, 1.0f});
 	cmd->BeginRenderPass(rpInfo);
+	cmd->SetProgram(_program);
+	cmd->Draw(3);
 	cmd->EndRenderPass();
 
 	_device->Submit(cmd);

@@ -1,12 +1,16 @@
+#include <Luna/Core/Log.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Format.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
+#include <Luna/Vulkan/Shader.hpp>
 
 namespace Luna {
 namespace Vulkan {
+vk::PipelineLayout CommandBuffer::_pipelineLayout = VK_NULL_HANDLE;
+
 void CommandBufferDeleter::operator()(CommandBuffer* buffer) {
 	buffer->_device.ReleaseCommandBuffer({}, buffer);
 }
@@ -206,6 +210,127 @@ void CommandBuffer::EndRenderPass() {
 
 	_framebuffer      = nullptr;
 	_actualRenderPass = nullptr;
+}
+
+void CommandBuffer::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
+	if (FlushRenderState(true)) { _commandBuffer.draw(vertexCount, instanceCount, firstVertex, firstInstance); }
+}
+
+void CommandBuffer::SetProgram(const Program* program) {
+	if (_pipelineCompileInfo.Program == program) { return; }
+
+	_pipelineCompileInfo.Program = program;
+	_pipeline                    = VK_NULL_HANDLE;
+
+	_dirty |= CommandBufferDirtyFlagBits::Pipeline | CommandBufferDirtyFlagBits::DynamicState;
+	if (!program) { return; }
+
+	// FIXME: Temporary empty pipeline layout.
+	if (!_pipelineLayout) {
+		const vk::PipelineLayoutCreateInfo layoutCI;
+		_pipelineLayout = _device.GetDevice().createPipelineLayout(layoutCI);
+	}
+}
+
+vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
+	const vk::PipelineViewportStateCreateInfo viewport({}, 1, nullptr, 1, nullptr);
+	const std::vector<vk::DynamicState> dynamicStates{vk::DynamicState::eScissor, vk::DynamicState::eViewport};
+	const vk::PipelineDynamicStateCreateInfo dynamic({}, dynamicStates);
+	const vk::PipelineColorBlendAttachmentState blend1(VK_FALSE,
+	                                                   vk::BlendFactor::eOne,
+	                                                   vk::BlendFactor::eZero,
+	                                                   vk::BlendOp::eAdd,
+	                                                   vk::BlendFactor::eOne,
+	                                                   vk::BlendFactor::eZero,
+	                                                   vk::BlendOp::eAdd,
+	                                                   vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+	                                                     vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
+	const vk::PipelineColorBlendStateCreateInfo blending(
+		{}, VK_FALSE, vk::LogicOp::eCopy, blend1, {1.0f, 1.0f, 1.0f, 1.0f});
+	const vk::PipelineVertexInputStateCreateInfo vertexInput({}, nullptr, nullptr);
+	const vk::PipelineInputAssemblyStateCreateInfo assembly({}, vk::PrimitiveTopology::eTriangleList, VK_FALSE);
+	const vk::PipelineMultisampleStateCreateInfo multisample(
+		{}, vk::SampleCountFlagBits::e1, VK_FALSE, 0.0f, nullptr, VK_FALSE, VK_FALSE);
+	const vk::PipelineRasterizationStateCreateInfo rasterizer({},
+	                                                          VK_FALSE,
+	                                                          VK_FALSE,
+	                                                          vk::PolygonMode::eFill,
+	                                                          vk::CullModeFlagBits::eNone,
+	                                                          vk::FrontFace::eCounterClockwise,
+	                                                          VK_FALSE,
+	                                                          0.0f,
+	                                                          0.0f,
+	                                                          0.0f,
+	                                                          1.0f);
+	std::vector<vk::PipelineShaderStageCreateInfo> stages;
+	stages.push_back(
+		vk::PipelineShaderStageCreateInfo({},
+	                                    vk::ShaderStageFlagBits::eVertex,
+	                                    _pipelineCompileInfo.Program->GetShader(ShaderStage::Vertex)->GetShaderModule(),
+	                                    "main",
+	                                    nullptr));
+	stages.push_back(
+		vk::PipelineShaderStageCreateInfo({},
+	                                    vk::ShaderStageFlagBits::eFragment,
+	                                    _pipelineCompileInfo.Program->GetShader(ShaderStage::Fragment)->GetShaderModule(),
+	                                    "main",
+	                                    nullptr));
+
+	const vk::GraphicsPipelineCreateInfo pipelineCI({},
+	                                                stages,
+	                                                &vertexInput,
+	                                                &assembly,
+	                                                nullptr,
+	                                                &viewport,
+	                                                &rasterizer,
+	                                                &multisample,
+	                                                nullptr,
+	                                                &blending,
+	                                                &dynamic,
+	                                                _pipelineLayout,
+	                                                _actualRenderPass->GetRenderPass(),
+	                                                0,
+	                                                VK_NULL_HANDLE,
+	                                                0);
+	Log::Trace("[Vulkan::CommandBuffer] Creating new Pipeline.");
+	const auto pipelineResult = _device.GetDevice().createGraphicsPipeline(VK_NULL_HANDLE, pipelineCI);
+	_pipelineCompileInfo.Program->SetPipeline(pipelineResult.value);
+
+	return pipelineResult.value;
+}
+
+bool CommandBuffer::FlushGraphicsPipeline(bool synchronous) {
+	_pipeline = _pipelineCompileInfo.Program->GetPipeline();
+	if (!_pipeline) { _pipeline = BuildGraphicsPipeline(synchronous); }
+	return bool(_pipeline);
+}
+
+bool CommandBuffer::FlushRenderState(bool synchronous) {
+	if (!_pipelineCompileInfo.Program) { return false; }
+	if (!_pipeline) { _dirty |= CommandBufferDirtyFlagBits::Pipeline; }
+
+	if (_dirty & (CommandBufferDirtyFlagBits::StaticState | CommandBufferDirtyFlagBits::Pipeline |
+	              CommandBufferDirtyFlagBits::StaticVertex)) {
+		vk::Pipeline oldPipeline = _pipeline;
+		if (!FlushGraphicsPipeline(synchronous)) { return false; }
+
+		if (oldPipeline != _pipeline) {
+			_commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, _pipeline);
+			_dirty |= CommandBufferDirtyFlagBits::DynamicState;
+		}
+	}
+	_dirty &= ~(CommandBufferDirtyFlagBits::StaticState | CommandBufferDirtyFlagBits::Pipeline |
+	            CommandBufferDirtyFlagBits::StaticVertex);
+
+	if (!_pipeline) { return false; }
+
+	if (_dirty & CommandBufferDirtyFlagBits::Viewport) { _commandBuffer.setViewport(0, _viewport); }
+	_dirty &= ~CommandBufferDirtyFlagBits::Viewport;
+
+	if (_dirty & CommandBufferDirtyFlagBits::Scissor) { _commandBuffer.setScissor(0, _scissor); }
+	_dirty &= ~CommandBufferDirtyFlagBits::Scissor;
+
+	return true;
 }
 
 void CommandBuffer::SetViewportScissor() {

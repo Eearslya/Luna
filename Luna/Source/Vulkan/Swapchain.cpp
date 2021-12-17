@@ -14,8 +14,20 @@ Swapchain::Swapchain(Device& device) : _device(device) {
 	auto formats      = gpu.getSurfaceFormatsKHR(surface);
 	auto presentModes = gpu.getSurfacePresentModesKHR(surface);
 
-	_format      = formats[0];
+	_format.format = vk::Format::eUndefined;
+	for (auto& format : formats) {
+		if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+			_format = format;
+			break;
+		}
+	}
+	if (_format.format == vk::Format::eUndefined) { _format = formats[0]; }
+
 	_presentMode = vk::PresentModeKHR::eFifo;
+
+	Log::Trace(
+		"[Vulkan::Swapchain] Swapchain Format: {}, {}", vk::to_string(_format.format), vk::to_string(_format.colorSpace));
+	Log::Trace("[Vulkan::Swapchain] Swapchain Present Mode: {}", vk::to_string(_presentMode));
 
 	RecreateSwapchain();
 }

@@ -7,3 +7,6 @@
 [submodule "External/tinygltf"]
 	path = External/tinygltf
 	url = https://github.com/syoyo/tinygltf.git
+[submodule "External/spirv-cross"]
+	path = External/spirv-cross
+	url = https://github.com/KhronosGroup/SPIRV-Cross.git
