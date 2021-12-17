@@ -6,6 +6,24 @@
 
 namespace Luna {
 namespace Vulkan {
+static std::string MaskToBindings(uint32_t mask, const uint8_t* arraySizes = nullptr) {
+	std::string bindings[32] = {};
+	int bindingCount         = 0;
+
+	ForEachBit(mask, [&](uint32_t bit) {
+		if (arraySizes && arraySizes[bit]) {
+			bindings[bindingCount++] = fmt::format(
+				"{}[{}]",
+				bit,
+				arraySizes[bit] == DescriptorSetLayout::UnsizedArray ? "Bindless" : std::to_string(arraySizes[bit]));
+		} else {
+			bindings[bindingCount++] = std::to_string(bit);
+		}
+	});
+
+	return fmt::format("{}", fmt::join(bindings, bindings + bindingCount, ", "));
+}
+
 Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 		: HashedObject<Shader>(hash), _device(device) {
 	Log::Trace("[Vulkan::Shader] Creating new Shader.");
@@ -186,24 +204,6 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 
 	// Dump shader resources to console.
 	{
-		const auto MaskToBindings = [](uint32_t mask, const uint8_t* arraySizes = nullptr) -> std::string {
-			std::string bindings[32] = {};
-			int bindingCount         = 0;
-
-			ForEachBit(mask, [&](uint32_t bit) {
-				if (arraySizes && arraySizes[bit]) {
-					bindings[bindingCount++] = fmt::format(
-						"{}[{}]",
-						bit,
-						arraySizes[bit] == DescriptorSetLayout::UnsizedArray ? "Bindless" : std::to_string(arraySizes[bit]));
-				} else {
-					bindings[bindingCount++] = std::to_string(bit);
-				}
-			});
-
-			return fmt::format("{}", fmt::join(bindings, bindings + bindingCount, ", "));
-		};
-
 		Log::Trace("[Vulkan::Shader] - Shader Resources:");
 
 		for (int i = 0; i < MaxDescriptorSets; ++i) {
@@ -279,6 +279,8 @@ Program::Program(Hash hash, Device& device, Shader* vertex, Shader* fragment)
 	std::fill(_shaders.begin(), _shaders.end(), nullptr);
 	_shaders[static_cast<int>(ShaderStage::Vertex)]   = vertex;
 	_shaders[static_cast<int>(ShaderStage::Fragment)] = fragment;
+
+	Bake();
 }
 
 Program::Program(Hash hash, Device& device, Shader* compute) : HashedObject<Program>(hash), _device(device) {
@@ -286,10 +288,184 @@ Program::Program(Hash hash, Device& device, Shader* compute) : HashedObject<Prog
 
 	std::fill(_shaders.begin(), _shaders.end(), nullptr);
 	_shaders[static_cast<int>(ShaderStage::Compute)] = compute;
+
+	Bake();
 }
 
 Program::~Program() noexcept {
 	if (_pipeline) { _device.GetDevice().destroyPipeline(_pipeline); }
+}
+
+void Program::Bake() {
+	if (_shaders[static_cast<int>(ShaderStage::Vertex)]) {
+		_layout.AttributeMask = _shaders[static_cast<int>(ShaderStage::Vertex)]->GetResourceLayout().InputMask;
+	}
+	if (_shaders[static_cast<int>(ShaderStage::Fragment)]) {
+		_layout.RenderTargetMask = _shaders[static_cast<int>(ShaderStage::Fragment)]->GetResourceLayout().OutputMask;
+	}
+
+	for (int i = 0; i < ShaderStageCount; ++i) {
+		const auto* shader = _shaders[i];
+		if (!shader) { continue; }
+
+		const auto& shaderLayout = shader->GetResourceLayout();
+		uint32_t stageMask       = 1u << i;
+
+		if (shaderLayout.PushConstantSize) {
+			_layout.PushConstantRange.stageFlags |= static_cast<vk::ShaderStageFlagBits>(stageMask);
+			_layout.PushConstantRange.size = std::max(_layout.PushConstantRange.size, shaderLayout.PushConstantSize);
+		}
+
+		_layout.SpecConstantMask[i] = shaderLayout.SpecConstantMask;
+		_layout.CombinedSpecConstantMask |= shaderLayout.SpecConstantMask;
+		_layout.BindlessDescriptorSetMask |= shaderLayout.BindlessSetMask;
+
+		for (uint32_t set = 0; set < MaxDescriptorSets; ++set) {
+			_layout.SetLayouts[set].FloatMask |= shaderLayout.SetLayouts[set].FloatMask;
+			_layout.SetLayouts[set].ImmutableSamplerMask |= shaderLayout.SetLayouts[set].ImmutableSamplerMask;
+			_layout.SetLayouts[set].InputAttachmentMask |= shaderLayout.SetLayouts[set].InputAttachmentMask;
+			_layout.SetLayouts[set].SampledBufferMask |= shaderLayout.SetLayouts[set].SampledBufferMask;
+			_layout.SetLayouts[set].SampledImageMask |= shaderLayout.SetLayouts[set].SampledImageMask;
+			_layout.SetLayouts[set].SamplerMask |= shaderLayout.SetLayouts[set].SamplerMask;
+			_layout.SetLayouts[set].SeparateImageMask |= shaderLayout.SetLayouts[set].SeparateImageMask;
+			_layout.SetLayouts[set].StorageBufferMask |= shaderLayout.SetLayouts[set].StorageBufferMask;
+			_layout.SetLayouts[set].StorageImageMask |= shaderLayout.SetLayouts[set].StorageImageMask;
+			_layout.SetLayouts[set].UniformBufferMask |= shaderLayout.SetLayouts[set].UniformBufferMask;
+
+			const uint32_t activeBinds =
+				shaderLayout.SetLayouts[set].SampledBufferMask | shaderLayout.SetLayouts[set].SampledImageMask |
+				shaderLayout.SetLayouts[set].SamplerMask | shaderLayout.SetLayouts[set].SeparateImageMask |
+				shaderLayout.SetLayouts[set].StorageBufferMask | shaderLayout.SetLayouts[set].StorageImageMask |
+				shaderLayout.SetLayouts[set].UniformBufferMask;
+			if (activeBinds) { _layout.StagesForSets[set] |= stageMask; }
+
+			ForEachBit(activeBinds, [&](uint32_t bit) {
+				_layout.StagesForBindings[set][bit] |= stageMask;
+				auto& combinedSize     = _layout.SetLayouts[set].ArraySizes[bit];
+				const auto& shaderSize = shaderLayout.SetLayouts[set].ArraySizes[bit];
+				if (combinedSize && combinedSize != shaderSize) {
+					Log::Error(
+						"[Vulkan::Program] Reflection error: Mismatched array sizes between shader stages for set {}, binding {}.",
+						set,
+						bit);
+				} else {
+					combinedSize = shaderSize;
+				}
+			});
+		}
+	}
+
+	for (uint32_t set = 0; set < MaxDescriptorSets; ++set) {
+		if (_layout.StagesForSets[set]) {
+			_layout.DescriptorSetMask |= 1u << set;
+			for (uint32_t binding = 0; binding < MaxDescriptorBindings; ++binding) {
+				auto& arraySize = _layout.SetLayouts[set].ArraySizes[binding];
+				if (arraySize == DescriptorSetLayout::UnsizedArray) {
+					for (uint32_t i = 1; i < MaxDescriptorBindings; ++i) {
+						if (_layout.StagesForBindings[set][i]) {
+							Log::Error(
+								"[Vulkan::Program] Reflection error: Set {}, binding {} is bindless, but binding {} has descriptors.",
+								set,
+								binding,
+								i);
+						}
+					}
+					_layout.StagesForBindings[set][binding] = static_cast<uint32_t>(vk::ShaderStageFlagBits::eAll);
+				} else if (arraySize == 0) {
+					arraySize = 1;
+				}
+			}
+		}
+	}
+
+	Hasher h;
+	h(_layout.PushConstantRange.stageFlags);
+	h(_layout.PushConstantRange.size);
+	_layout.PushConstantLayoutHash = h.Get();
+
+	// Dump program resources to console.
+	{
+		Log::Trace("[Vulkan::Program] - Program Resources:");
+
+		for (int i = 0; i < MaxDescriptorSets; ++i) {
+			const auto& set = _layout.SetLayouts[i];
+
+			if ((set.FloatMask | set.ImmutableSamplerMask | set.InputAttachmentMask | set.SampledBufferMask |
+			     set.SampledImageMask | set.SamplerMask | set.SeparateImageMask | set.StorageBufferMask |
+			     set.StorageImageMask | set.UniformBufferMask) == 0) {
+				continue;
+			}
+
+			Log::Trace("[Vulkan::Program]     Descriptor Set {}:", i);
+			Log::Trace("[Vulkan::Program]       Stages: {}",
+			           vk::to_string(static_cast<vk::ShaderStageFlags>(_layout.StagesForSets[i])));
+			if (set.FloatMask) {
+				Log::Trace("[Vulkan::Program]       Floating Point Images: {}", MaskToBindings(set.FloatMask, set.ArraySizes));
+			}
+			if (set.ImmutableSamplerMask) {
+				Log::Trace("[Vulkan::Program]       Immutable Samplers: {}",
+				           MaskToBindings(set.ImmutableSamplerMask, set.ArraySizes));
+			}
+			if (set.InputAttachmentMask) {
+				Log::Trace("[Vulkan::Program]       Input Attachments: {}",
+				           MaskToBindings(set.InputAttachmentMask, set.ArraySizes));
+			}
+			if (set.SampledBufferMask) {
+				Log::Trace("[Vulkan::Program]       Sampled Buffers: {}",
+				           MaskToBindings(set.SampledBufferMask, set.ArraySizes));
+			}
+			if (set.SampledImageMask) {
+				Log::Trace("[Vulkan::Program]       Sampled Images: {}", MaskToBindings(set.SampledImageMask, set.ArraySizes));
+			}
+			if (set.SamplerMask) {
+				Log::Trace("[Vulkan::Program]       Samplers: {}", MaskToBindings(set.SamplerMask, set.ArraySizes));
+			}
+			if (set.SeparateImageMask) {
+				Log::Trace("[Vulkan::Program]       Separate Images: {}",
+				           MaskToBindings(set.SeparateImageMask, set.ArraySizes));
+			}
+			if (set.StorageBufferMask) {
+				Log::Trace("[Vulkan::Program]       Storage Buffers: {}",
+				           MaskToBindings(set.StorageBufferMask, set.ArraySizes));
+			}
+			if (set.StorageImageMask) {
+				Log::Trace("[Vulkan::Program]       Storage Images: {}", MaskToBindings(set.StorageImageMask, set.ArraySizes));
+			}
+			if (set.UniformBufferMask) {
+				Log::Trace("[Vulkan::Program]       Uniform Buffers: {}",
+				           MaskToBindings(set.UniformBufferMask, set.ArraySizes));
+			}
+		}
+
+		if (_layout.AttributeMask) {
+			Log::Trace("[Vulkan::Program]     Input Attributes: {}", MaskToBindings(_layout.AttributeMask));
+		}
+		if (_layout.BindlessDescriptorSetMask) {
+			Log::Trace("[Vulkan::Program]     Bindless Sets: {}", MaskToBindings(_layout.BindlessDescriptorSetMask));
+		}
+		if (_layout.CombinedSpecConstantMask) {
+			Log::Trace("[Vulkan::Program]     Specialization Constants: {}",
+			           MaskToBindings(_layout.CombinedSpecConstantMask));
+			for (uint32_t stage = 0; stage < ShaderStageCount; ++stage) {
+				if (_layout.SpecConstantMask[stage]) {
+					Log::Trace("[Vulkan::Program]       {}: {}",
+					           vk::to_string(static_cast<vk::ShaderStageFlagBits>(stage)),
+					           MaskToBindings(_layout.SpecConstantMask[stage]));
+				}
+			}
+		}
+		if (_layout.DescriptorSetMask) {
+			Log::Trace("[Vulkan::Program]     Descriptor Sets: {}", MaskToBindings(_layout.DescriptorSetMask));
+		}
+		if (_layout.RenderTargetMask) {
+			Log::Trace("[Vulkan::Program]     Render Targets: {}", MaskToBindings(_layout.RenderTargetMask));
+		}
+		if (_layout.PushConstantRange.size) {
+			Log::Trace("[Vulkan::Program]     Push Constant: {}B in {}",
+			           _layout.PushConstantRange.size,
+			           vk::to_string(_layout.PushConstantRange.stageFlags));
+		}
+	}
 }
 }  // namespace Vulkan
 }  // namespace Luna

@@ -14,6 +14,20 @@ struct ShaderResourceLayout {
 	uint32_t PushConstantSize                         = 0;
 };
 
+struct ProgramResourceLayout {
+	DescriptorSetLayout SetLayouts[MaxDescriptorSets]                    = {};
+	uint32_t AttributeMask                                               = 0;
+	uint32_t BindlessDescriptorSetMask                                   = 0;
+	uint32_t CombinedSpecConstantMask                                    = 0;
+	uint32_t DescriptorSetMask                                           = 0;
+	uint32_t RenderTargetMask                                            = 0;
+	uint32_t SpecConstantMask[ShaderStageCount]                          = {};
+	uint32_t StagesForBindings[MaxDescriptorSets][MaxDescriptorBindings] = {};
+	uint32_t StagesForSets[MaxDescriptorSets]                            = {};
+	vk::PushConstantRange PushConstantRange                              = {};
+	Hash PushConstantLayoutHash                                          = {};
+};
+
 class Shader : public HashedObject<Shader>, NonCopyable {
  public:
 	Shader(Hash hash, Device& device, size_t codeSize, const void* code);
@@ -41,6 +55,9 @@ class Program : public HashedObject<Program>, NonCopyable {
 	vk::Pipeline GetPipeline() const {
 		return _pipeline;
 	}
+	const ProgramResourceLayout& GetResourceLayout() const {
+		return _layout;
+	}
 	Shader* GetShader(ShaderStage stage) const {
 		return _shaders[static_cast<int>(stage)];
 	}
@@ -50,7 +67,10 @@ class Program : public HashedObject<Program>, NonCopyable {
 	}
 
  private:
+	void Bake();
+
 	Device& _device;
+	ProgramResourceLayout _layout;
 	std::array<Shader*, ShaderStageCount> _shaders = {};
 	mutable vk::Pipeline _pipeline;
 };
