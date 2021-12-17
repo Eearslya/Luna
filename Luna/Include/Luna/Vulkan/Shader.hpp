@@ -28,6 +28,24 @@ struct ProgramResourceLayout {
 	Hash PushConstantLayoutHash                                          = {};
 };
 
+class PipelineLayout : public HashedObject<PipelineLayout>, NonCopyable {
+ public:
+	PipelineLayout(Hash hash, Device& device, const ProgramResourceLayout& resourceLayout);
+	~PipelineLayout() noexcept;
+
+	vk::PipelineLayout GetPipelineLayout() const {
+		return _pipelineLayout;
+	}
+	const ProgramResourceLayout& GetResourceLayout() const {
+		return _resourceLayout;
+	}
+
+ private:
+	Device& _device;
+	vk::PipelineLayout _pipelineLayout;
+	ProgramResourceLayout _resourceLayout;
+};
+
 class Shader : public HashedObject<Shader>, NonCopyable {
  public:
 	Shader(Hash hash, Device& device, size_t codeSize, const void* code);
@@ -55,6 +73,9 @@ class Program : public HashedObject<Program>, NonCopyable {
 	vk::Pipeline GetPipeline() const {
 		return _pipeline;
 	}
+	PipelineLayout* GetPipelineLayout() const {
+		return _pipelineLayout;
+	}
 	const ProgramResourceLayout& GetResourceLayout() const {
 		return _layout;
 	}
@@ -73,6 +94,24 @@ class Program : public HashedObject<Program>, NonCopyable {
 	ProgramResourceLayout _layout;
 	std::array<Shader*, ShaderStageCount> _shaders = {};
 	mutable vk::Pipeline _pipeline;
+	PipelineLayout* _pipelineLayout = nullptr;
 };
 }  // namespace Vulkan
 }  // namespace Luna
+
+template <>
+struct std::hash<Luna::Vulkan::ProgramResourceLayout> {
+	size_t operator()(const Luna::Vulkan::ProgramResourceLayout& layout) {
+		Luna::Hasher h;
+
+		h.Data(sizeof(layout.SetLayouts), layout.SetLayouts);
+		h.Data(sizeof(layout.StagesForBindings), layout.StagesForBindings);
+		h.Data(sizeof(layout.SpecConstantMask), layout.SpecConstantMask);
+		h(layout.PushConstantRange.stageFlags);
+		h(layout.PushConstantRange.size);
+		h(layout.AttributeMask);
+		h(layout.RenderTargetMask);
+
+		return static_cast<size_t>(h.Get());
+	}
+};

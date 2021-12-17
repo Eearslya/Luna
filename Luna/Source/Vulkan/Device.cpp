@@ -4,6 +4,7 @@
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/CommandPool.hpp>
 #include <Luna/Vulkan/Context.hpp>
+#include <Luna/Vulkan/DescriptorSet.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Fence.hpp>
 #include <Luna/Vulkan/FormatLayout.hpp>
@@ -584,6 +585,15 @@ void Device::ReleaseCommandBuffer(Badge<CommandBufferDeleter>, CommandBuffer* cm
 
 Framebuffer& Device::RequestFramebuffer(Badge<CommandBuffer>, const RenderPassInfo& info) {
 	return _framebufferAllocator->RequestFramebuffer(info);
+}
+
+PipelineLayout* Device::RequestPipelineLayout(const ProgramResourceLayout& layout) {
+	const auto hash = Hasher(layout).Get();
+
+	auto* ret = _pipelineLayouts.Find(hash);
+	if (!ret) { ret = _pipelineLayouts.EmplaceYield(hash, hash, *this, layout); }
+
+	return ret;
 }
 
 RenderPass& Device::RequestRenderPass(Badge<CommandBuffer>, const RenderPassInfo& info, bool compatible) {

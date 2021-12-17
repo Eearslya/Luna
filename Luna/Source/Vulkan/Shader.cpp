@@ -24,6 +24,18 @@ static std::string MaskToBindings(uint32_t mask, const uint8_t* arraySizes = nul
 	return fmt::format("{}", fmt::join(bindings, bindings + bindingCount, ", "));
 }
 
+PipelineLayout::PipelineLayout(Hash hash, Device& device, const ProgramResourceLayout& resourceLayout)
+		: HashedObject<PipelineLayout>(hash), _device(device), _resourceLayout(resourceLayout) {
+	Log::Trace("[Vulkan::PipelineLayout] Creating new PipelineLayout.");
+
+	const vk::PipelineLayoutCreateInfo layoutCI;
+	_pipelineLayout = _device.GetDevice().createPipelineLayout(layoutCI);
+}
+
+PipelineLayout::~PipelineLayout() noexcept {
+	if (_pipelineLayout) { _device.GetDevice().destroyPipelineLayout(_pipelineLayout); }
+}
+
 Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 		: HashedObject<Shader>(hash), _device(device) {
 	Log::Trace("[Vulkan::Shader] Creating new Shader.");
@@ -382,6 +394,8 @@ void Program::Bake() {
 	h(_layout.PushConstantRange.stageFlags);
 	h(_layout.PushConstantRange.size);
 	_layout.PushConstantLayoutHash = h.Get();
+
+	_pipelineLayout = _device.RequestPipelineLayout(_layout);
 
 	// Dump program resources to console.
 	{

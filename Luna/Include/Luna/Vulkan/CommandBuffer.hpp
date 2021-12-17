@@ -106,9 +106,11 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 
 	const RenderPass* _actualRenderPass = nullptr;
 	CommandBufferDirtyFlags _dirty;
+	uint32_t _dirtyDescriptorSets   = 0;
 	const Framebuffer* _framebuffer = nullptr;
 	vk::Pipeline _pipeline;
-	static vk::PipelineLayout _pipelineLayout;
+	vk::PipelineLayout _pipelineLayout;
+	PipelineLayout* _programLayout          = nullptr;
 	vk::Rect2D _scissor                     = {{0, 0}, {0, 0}};
 	vk::PipelineStageFlags _swapchainStages = {};
 	vk::Viewport _viewport                  = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};

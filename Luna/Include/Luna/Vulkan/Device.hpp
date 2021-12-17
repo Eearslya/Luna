@@ -66,6 +66,7 @@ class Device final : NonCopyable {
 	ImageHandle CreateImage(const ImageCreateInfo& createInfo, const InitialImageData* initialData = nullptr);
 	ImageViewHandle CreateImageView(const ImageViewCreateInfo& createInfo);
 	FenceHandle RequestFence();
+	PipelineLayout* RequestPipelineLayout(const ProgramResourceLayout& layout);
 	Program* RequestProgram(size_t vertCodeSize, const void* vertCode, size_t fragCodeSize, const void* fragCode);
 	const Sampler& RequestSampler(const SamplerCreateInfo& createInfo);
 	const Sampler& RequestSampler(StockSampler type);
@@ -212,6 +213,7 @@ class Device final : NonCopyable {
 	VulkanObjectPool<Semaphore> _semaphorePool;
 
 	// Vulkan hashed caches.
+	VulkanCache<PipelineLayout> _pipelineLayouts;
 	VulkanCache<Program> _programs;
 	VulkanCache<RenderPass> _renderPasses;
 	VulkanCache<Sampler> _samplers;

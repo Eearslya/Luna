@@ -9,8 +9,6 @@
 
 namespace Luna {
 namespace Vulkan {
-vk::PipelineLayout CommandBuffer::_pipelineLayout = VK_NULL_HANDLE;
-
 void CommandBufferDeleter::operator()(CommandBuffer* buffer) {
 	buffer->_device.ReleaseCommandBuffer({}, buffer);
 }
@@ -225,11 +223,25 @@ void CommandBuffer::SetProgram(const Program* program) {
 	_dirty |= CommandBufferDirtyFlagBits::Pipeline | CommandBufferDirtyFlagBits::DynamicState;
 	if (!program) { return; }
 
-	// FIXME: Temporary empty pipeline layout.
 	if (!_pipelineLayout) {
-		const vk::PipelineLayoutCreateInfo layoutCI;
-		_pipelineLayout = _device.GetDevice().createPipelineLayout(layoutCI);
+		_dirty |= CommandBufferDirtyFlagBits::PushConstants;
+		_dirtyDescriptorSets = ~0u;
+
+	} else if (program->GetPipelineLayout()->GetHash() != _programLayout->GetHash()) {
+		auto& newLayout = program->GetPipelineLayout()->GetResourceLayout();
+		auto& oldLayout = _programLayout->GetResourceLayout();
+
+		if (newLayout.PushConstantLayoutHash != oldLayout.PushConstantLayoutHash) {
+			_dirty |= CommandBufferDirtyFlagBits::PushConstants;
+			_dirtyDescriptorSets = ~0u;
+		} else {
+			auto* newPipelineLayout = program->GetPipelineLayout();
+			for (uint32_t set = 0; set < MaxDescriptorSets; ++set) {}
+		}
 	}
+
+	_programLayout  = _pipelineCompileInfo.Program->GetPipelineLayout();
+	_pipelineLayout = _programLayout->GetPipelineLayout();
 }
 
 vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
