@@ -694,7 +694,7 @@ RenderPass::~RenderPass() noexcept {
 }
 
 Framebuffer::Framebuffer(Device& device, const RenderPass& renderPass, const RenderPassInfo& renderPassInfo)
-		: Cookie(device), _device(device) {
+		: Cookie(device), _device(device), _renderPass(renderPass) {
 	Log::Trace("[Vulkan::Framebuffer] Creating new Framebuffer.");
 
 	uint32_t viewCount = 0;

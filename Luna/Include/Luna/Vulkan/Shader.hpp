@@ -71,9 +71,6 @@ class Program : public HashedObject<Program>, NonCopyable {
 	Program(Hash hash, Device& device, Shader* compute);
 	~Program() noexcept;
 
-	vk::Pipeline GetPipeline() const {
-		return _pipeline;
-	}
 	PipelineLayout* GetPipelineLayout() const {
 		return _pipelineLayout;
 	}
@@ -84,9 +81,8 @@ class Program : public HashedObject<Program>, NonCopyable {
 		return _shaders[static_cast<int>(stage)];
 	}
 
-	void SetPipeline(vk::Pipeline pipeline) const {
-		_pipeline = pipeline;
-	}
+	vk::Pipeline GetPipeline(Hash hash) const;
+	vk::Pipeline AddPipeline(Hash hash, vk::Pipeline pipeline) const;
 
  private:
 	void Bake();
@@ -94,8 +90,8 @@ class Program : public HashedObject<Program>, NonCopyable {
 	Device& _device;
 	ProgramResourceLayout _layout;
 	std::array<Shader*, ShaderStageCount> _shaders = {};
-	mutable vk::Pipeline _pipeline;
-	PipelineLayout* _pipelineLayout = nullptr;
+	PipelineLayout* _pipelineLayout                = nullptr;
+	mutable VulkanCache<IntrusivePODWrapper<vk::Pipeline>> _pipelines;
 };
 }  // namespace Vulkan
 }  // namespace Luna

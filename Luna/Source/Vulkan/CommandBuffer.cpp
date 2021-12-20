@@ -1,4 +1,5 @@
 #include <Luna/Core/Log.hpp>
+#include <Luna/Utility/BitOps.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Device.hpp>
@@ -9,6 +10,29 @@
 
 namespace Luna {
 namespace Vulkan {
+Hash PipelineCompileInfo::GetHash() const {
+	Hasher h;
+
+	const auto& layout  = Program->GetPipelineLayout()->GetResourceLayout();
+	ActiveVertexBuffers = 0;
+	ForEachBit(layout.AttributeMask, [&](uint32_t bit) {
+		ActiveVertexBuffers |= 1u << VertexAttributes[bit].Binding;
+		h(bit);
+		h(VertexAttributes[bit].Binding);
+		h(VertexAttributes[bit].Format);
+		h(VertexAttributes[bit].Offset);
+	});
+	ForEachBit(ActiveVertexBuffers, [&](uint32_t bit) {
+		h(VertexInputRates[bit]);
+		h(VertexStrides[bit]);
+	});
+
+	h(CompatibleRenderPass->GetHash());
+	h(Program->GetHash());
+
+	return h.Get();
+}
+
 void CommandBufferDeleter::operator()(CommandBuffer* buffer) {
 	buffer->_device.ReleaseCommandBuffer({}, buffer);
 }
@@ -177,8 +201,9 @@ void CommandBuffer::ImageBarrier(Image& image,
 }
 
 void CommandBuffer::BeginRenderPass(const RenderPassInfo& info) {
-	_framebuffer      = &_device.RequestFramebuffer({}, info);
-	_actualRenderPass = &_device.RequestRenderPass(Badge<CommandBuffer>{}, info, false);
+	_framebuffer                              = &_device.RequestFramebuffer({}, info);
+	_pipelineCompileInfo.CompatibleRenderPass = &_framebuffer->GetCompatibleRenderPass();
+	_actualRenderPass                         = &_device.RequestRenderPass(Badge<CommandBuffer>{}, info, false);
 
 	uint32_t clearValueCount = 0;
 	std::array<vk::ClearValue, MaxColorAttachments + 1> clearValues;
@@ -206,12 +231,32 @@ void CommandBuffer::BeginRenderPass(const RenderPassInfo& info) {
 void CommandBuffer::EndRenderPass() {
 	_commandBuffer.endRenderPass();
 
-	_framebuffer      = nullptr;
-	_actualRenderPass = nullptr;
+	_framebuffer                              = nullptr;
+	_pipelineCompileInfo.CompatibleRenderPass = nullptr;
+	_actualRenderPass                         = nullptr;
 }
 
 void CommandBuffer::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
 	if (FlushRenderState(true)) { _commandBuffer.draw(vertexCount, instanceCount, firstVertex, firstInstance); }
+}
+
+void CommandBuffer::DrawIndexed(
+	uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
+	if (FlushRenderState(true)) {
+		_commandBuffer.drawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+	}
+}
+
+void CommandBuffer::SetIndexBuffer(const Buffer& buffer, vk::DeviceSize offset, vk::IndexType indexType) {
+	if (_indexBuffer.Buffer == buffer.GetBuffer() && _indexBuffer.Offset == offset &&
+	    _indexBuffer.IndexType == indexType) {
+		return;
+	}
+
+	_indexBuffer.Buffer    = buffer.GetBuffer();
+	_indexBuffer.Offset    = offset;
+	_indexBuffer.IndexType = indexType;
+	_commandBuffer.bindIndexBuffer(_indexBuffer.Buffer, _indexBuffer.Offset, _indexBuffer.IndexType);
 }
 
 void CommandBuffer::SetProgram(const Program* program) {
@@ -244,25 +289,96 @@ void CommandBuffer::SetProgram(const Program* program) {
 	_pipelineLayout = _programLayout->GetPipelineLayout();
 }
 
+void CommandBuffer::SetVertexAttribute(uint32_t attribute, uint32_t binding, vk::Format format, vk::DeviceSize offset) {
+	auto& attr = _pipelineCompileInfo.VertexAttributes[attribute];
+
+	if (attr.Binding != binding || attr.Format != format || attr.Offset != offset) {
+		_dirty |= CommandBufferDirtyFlagBits::StaticVertex;
+	}
+
+	attr.Binding = binding;
+	attr.Format  = format;
+	attr.Offset  = offset;
+}
+
+void CommandBuffer::SetVertexBinding(
+	uint32_t binding, const Buffer& buffer, vk::DeviceSize offset, vk::DeviceSize stride, vk::VertexInputRate inputRate) {
+	vk::Buffer vkBuffer = buffer.GetBuffer();
+
+	if (_vertexBindings.Buffers[binding] != vkBuffer || _vertexBindings.Offsets[binding] != offset) {
+		_dirtyVertexBuffers |= 1u << binding;
+	}
+	if (_pipelineCompileInfo.VertexStrides[binding] != stride ||
+	    _pipelineCompileInfo.VertexInputRates[binding] != inputRate) {
+		_dirty |= CommandBufferDirtyFlagBits::StaticVertex;
+	}
+
+	_vertexBindings.Buffers[binding]               = vkBuffer;
+	_vertexBindings.Offsets[binding]               = offset;
+	_pipelineCompileInfo.VertexInputRates[binding] = inputRate;
+	_pipelineCompileInfo.VertexStrides[binding]    = stride;
+}
+
 vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
+	const auto& rp = _pipelineCompileInfo.CompatibleRenderPass;
+
 	const vk::PipelineViewportStateCreateInfo viewport({}, 1, nullptr, 1, nullptr);
+
 	const std::vector<vk::DynamicState> dynamicStates{vk::DynamicState::eScissor, vk::DynamicState::eViewport};
 	const vk::PipelineDynamicStateCreateInfo dynamic({}, dynamicStates);
-	const vk::PipelineColorBlendAttachmentState blend1(VK_FALSE,
-	                                                   vk::BlendFactor::eOne,
-	                                                   vk::BlendFactor::eZero,
-	                                                   vk::BlendOp::eAdd,
-	                                                   vk::BlendFactor::eOne,
-	                                                   vk::BlendFactor::eZero,
-	                                                   vk::BlendOp::eAdd,
-	                                                   vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-	                                                     vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
+
+	std::array<vk::PipelineColorBlendAttachmentState, MaxColorAttachments> blendAttachments = {};
+	const uint32_t colorAttachmentCount = rp->GetColorAttachmentCount(0);
 	const vk::PipelineColorBlendStateCreateInfo blending(
-		{}, VK_FALSE, vk::LogicOp::eCopy, blend1, {1.0f, 1.0f, 1.0f, 1.0f});
-	const vk::PipelineVertexInputStateCreateInfo vertexInput({}, nullptr, nullptr);
+		{}, VK_FALSE, vk::LogicOp::eCopy, colorAttachmentCount, blendAttachments.data(), {1.0f, 1.0f, 1.0f, 1.0f});
+	for (uint32_t i = 0; i < colorAttachmentCount; ++i) {
+		auto& att = blendAttachments[i];
+
+		if (_pipelineCompileInfo.CompatibleRenderPass->GetColorAttachment(0, i).attachment != VK_ATTACHMENT_UNUSED &&
+		    (_pipelineCompileInfo.Program->GetPipelineLayout()->GetResourceLayout().RenderTargetMask & (1u << i))) {
+			att = vk::PipelineColorBlendAttachmentState(VK_FALSE,
+			                                            vk::BlendFactor::eOne,
+			                                            vk::BlendFactor::eZero,
+			                                            vk::BlendOp::eAdd,
+			                                            vk::BlendFactor::eOne,
+			                                            vk::BlendFactor::eZero,
+			                                            vk::BlendOp::eAdd,
+			                                            vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+			                                              vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
+		}
+	}
+
+	vk::PipelineDepthStencilStateCreateInfo depthStencil(
+		{}, rp->HasDepth(0), rp->HasDepth(0), {}, {}, rp->HasStencil(0), {}, {}, 0.0f, 1.0f);
+	if (depthStencil.depthTestEnable) { depthStencil.depthCompareOp = vk::CompareOp::eLessOrEqual; }
+
+	uint32_t vertexAttributeCount                                                         = 0;
+	std::array<vk::VertexInputAttributeDescription, MaxVertexAttributes> vertexAttributes = {};
+	const uint32_t attributeMask = _pipelineCompileInfo.Program->GetPipelineLayout()->GetResourceLayout().AttributeMask;
+	ForEachBit(attributeMask, [&](uint32_t bit) {
+		auto& attr    = vertexAttributes[vertexAttributeCount++];
+		attr.location = bit;
+		attr.binding  = _pipelineCompileInfo.VertexAttributes[bit].Binding;
+		attr.format   = _pipelineCompileInfo.VertexAttributes[bit].Format;
+		attr.offset   = _pipelineCompileInfo.VertexAttributes[bit].Offset;
+	});
+	uint32_t vertexBindingCount                                                    = 0;
+	std::array<vk::VertexInputBindingDescription, MaxVertexBuffers> vertexBindings = {};
+	const uint32_t bindingMask = _pipelineCompileInfo.ActiveVertexBuffers;
+	ForEachBit(bindingMask, [&](uint32_t bit) {
+		auto& bind     = vertexBindings[vertexBindingCount++];
+		bind.binding   = bit;
+		bind.inputRate = _pipelineCompileInfo.VertexInputRates[bit];
+		bind.stride    = _pipelineCompileInfo.VertexStrides[bit];
+	});
+	const vk::PipelineVertexInputStateCreateInfo vertexInput(
+		{}, vertexBindingCount, vertexBindings.data(), vertexAttributeCount, vertexAttributes.data());
+
 	const vk::PipelineInputAssemblyStateCreateInfo assembly({}, vk::PrimitiveTopology::eTriangleList, VK_FALSE);
+
 	const vk::PipelineMultisampleStateCreateInfo multisample(
 		{}, vk::SampleCountFlagBits::e1, VK_FALSE, 0.0f, nullptr, VK_FALSE, VK_FALSE);
+
 	const vk::PipelineRasterizationStateCreateInfo rasterizer({},
 	                                                          VK_FALSE,
 	                                                          VK_FALSE,
@@ -274,6 +390,7 @@ vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 	                                                          0.0f,
 	                                                          0.0f,
 	                                                          1.0f);
+
 	std::vector<vk::PipelineShaderStageCreateInfo> stages;
 	stages.push_back(
 		vk::PipelineShaderStageCreateInfo({},
@@ -296,23 +413,26 @@ vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 	                                                &viewport,
 	                                                &rasterizer,
 	                                                &multisample,
-	                                                nullptr,
+	                                                &depthStencil,
 	                                                &blending,
 	                                                &dynamic,
 	                                                _pipelineLayout,
-	                                                _actualRenderPass->GetRenderPass(),
+	                                                _pipelineCompileInfo.CompatibleRenderPass->GetRenderPass(),
 	                                                0,
 	                                                VK_NULL_HANDLE,
 	                                                0);
 	Log::Trace("[Vulkan::CommandBuffer] Creating new Pipeline.");
 	const auto pipelineResult = _device.GetDevice().createGraphicsPipeline(VK_NULL_HANDLE, pipelineCI);
-	_pipelineCompileInfo.Program->SetPipeline(pipelineResult.value);
+	const auto returnedPipeline =
+		_pipelineCompileInfo.Program->AddPipeline(_pipelineCompileInfo.CachedHash, pipelineResult.value);
+	if (returnedPipeline != pipelineResult.value) { _device.GetDevice().destroyPipeline(pipelineResult.value); }
 
-	return pipelineResult.value;
+	return returnedPipeline;
 }
 
 bool CommandBuffer::FlushGraphicsPipeline(bool synchronous) {
-	_pipeline = _pipelineCompileInfo.Program->GetPipeline();
+	_pipelineCompileInfo.CachedHash = _pipelineCompileInfo.GetHash();
+	_pipeline                       = _pipelineCompileInfo.Program->GetPipeline(_pipelineCompileInfo.CachedHash);
 	if (!_pipeline) { _pipeline = BuildGraphicsPipeline(synchronous); }
 	return bool(_pipeline);
 }
@@ -341,6 +461,13 @@ bool CommandBuffer::FlushRenderState(bool synchronous) {
 
 	if (_dirty & CommandBufferDirtyFlagBits::Scissor) { _commandBuffer.setScissor(0, _scissor); }
 	_dirty &= ~CommandBufferDirtyFlagBits::Scissor;
+
+	const uint32_t updateVBOs = _dirtyVertexBuffers & _pipelineCompileInfo.ActiveVertexBuffers;
+	ForEachBitRange(updateVBOs, [&](uint32_t binding, uint32_t bindingCount) {
+		_commandBuffer.bindVertexBuffers(
+			binding, bindingCount, &_vertexBindings.Buffers[binding], &_vertexBindings.Offsets[binding]);
+	});
+	_dirtyVertexBuffers &= ~updateVBOs;
 
 	return true;
 }

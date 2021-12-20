@@ -305,7 +305,12 @@ Program::Program(Hash hash, Device& device, Shader* compute) : HashedObject<Prog
 }
 
 Program::~Program() noexcept {
-	if (_pipeline) { _device.GetDevice().destroyPipeline(_pipeline); }
+#ifdef LUNA_VULKAN_MT
+	for (auto& pipeline : _pipelines.GetReadOnly()) { _device.GetDevice().destroyPipeline(pipeline.Value); }
+	for (auto& pipeline : _pipelines.GetReadWrite()) { _device.GetDevice().destroyPipeline(pipeline.Value); }
+#else
+	for (auto& pipeline : _pipelines) { _device.GetDevice().destroyPipeline(pipeline.Value); }
+#endif
 }
 
 void Program::Bake() {
@@ -480,6 +485,15 @@ void Program::Bake() {
 			           vk::to_string(_layout.PushConstantRange.stageFlags));
 		}
 	}
+}
+
+vk::Pipeline Program::AddPipeline(Hash hash, vk::Pipeline pipeline) const {
+	return _pipelines.EmplaceYield(hash, pipeline)->Value;
+}
+
+vk::Pipeline Program::GetPipeline(Hash hash) const {
+	auto* ret = _pipelines.Find(hash);
+	return ret ? ret->Value : VK_NULL_HANDLE;
 }
 }  // namespace Vulkan
 }  // namespace Luna

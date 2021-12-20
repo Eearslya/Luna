@@ -24,9 +24,21 @@ Graphics::Graphics() {
 	_device    = std::make_unique<Vulkan::Device>(*_context);
 	_swapchain = std::make_unique<Vulkan::Swapchain>(*_device);
 
-	uint8_t data[128] = {0, 1, 2, 3, 4, 5, 6, 7, 8};
-	auto buffer       = _device->CreateBuffer(
-    Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Device, 128, vk::BufferUsageFlagBits::eStorageBuffer), data);
+	const std::vector<float> colors     = {0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f};
+	const std::vector<float> vertices   = {1.0f, 1.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, -1.0f, 0.0f};
+	const std::vector<uint32_t> indices = {0, 1, 2};
+	_colorBuffer                        = _device->CreateBuffer(
+    Vulkan::BufferCreateInfo(
+      Vulkan::BufferDomain::Device, sizeof(float) * colors.size(), vk::BufferUsageFlagBits::eVertexBuffer),
+    colors.data());
+	_indexBuffer = _device->CreateBuffer(
+		Vulkan::BufferCreateInfo(
+			Vulkan::BufferDomain::Device, sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer),
+		indices.data());
+	_vertexBuffer = _device->CreateBuffer(
+		Vulkan::BufferCreateInfo(
+			Vulkan::BufferDomain::Device, sizeof(float) * vertices.size(), vk::BufferUsageFlagBits::eVertexBuffer),
+		vertices.data());
 
 	auto imageData = filesystem->ReadBytes("Images/Test.jpg");
 	if (imageData.has_value()) {
@@ -62,7 +74,12 @@ void Graphics::Update() {
 	rpInfo.ClearColors[0].setFloat32({clearColor, clearColor, clearColor, 1.0f});
 	cmd->BeginRenderPass(rpInfo);
 	cmd->SetProgram(_program);
-	cmd->Draw(3);
+	cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
+	cmd->SetVertexAttribute(1, 1, vk::Format::eR32G32B32Sfloat, 0);
+	cmd->SetVertexBinding(0, *_vertexBuffer, 0, sizeof(float) * 3, vk::VertexInputRate::eVertex);
+	cmd->SetVertexBinding(1, *_colorBuffer, 0, sizeof(float) * 3, vk::VertexInputRate::eVertex);
+	cmd->SetIndexBuffer(*_indexBuffer, 0, vk::IndexType::eUint32);
+	cmd->DrawIndexed(3);
 	cmd->EndRenderPass();
 
 	_device->Submit(cmd);

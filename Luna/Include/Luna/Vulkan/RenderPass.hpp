@@ -111,10 +111,14 @@ class Framebuffer : public Cookie, public InternalSyncEnabled, NonCopyable {
 	vk::Framebuffer GetFramebuffer() const {
 		return _framebuffer;
 	}
+	const RenderPass& GetCompatibleRenderPass() const {
+		return _renderPass;
+	}
 
  private:
 	Device& _device;
 	vk::Framebuffer _framebuffer;
+	const RenderPass& _renderPass;
 	vk::Extent2D _extent;
 };
 
