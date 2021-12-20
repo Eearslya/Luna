@@ -31,6 +31,7 @@ class CommandBuffer;
 struct CommandBufferDeleter;
 class CommandPool;
 class Context;
+class DescriptorSetAllocator;
 class Device;
 class Fence;
 struct FenceDeleter;
@@ -85,6 +86,7 @@ using VulkanObjectPool = ObjectPool<T>;
 #endif
 
 // Enums and constants.
+constexpr static const int DescriptorSetsPerPool      = 16;
 constexpr static const int MaxColorAttachments        = 8;
 constexpr static const int MaxDescriptorBindings      = 32;
 constexpr static const int MaxDescriptorSets          = 4;

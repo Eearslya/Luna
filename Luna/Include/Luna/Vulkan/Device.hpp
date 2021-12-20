@@ -213,6 +213,7 @@ class Device final : NonCopyable {
 	VulkanObjectPool<Semaphore> _semaphorePool;
 
 	// Vulkan hashed caches.
+	VulkanCache<DescriptorSetAllocator> _descriptorSetAllocators;
 	VulkanCache<PipelineLayout> _pipelineLayouts;
 	VulkanCache<Program> _programs;
 	VulkanCache<RenderPass> _renderPasses;

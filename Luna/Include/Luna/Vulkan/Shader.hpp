@@ -44,6 +44,7 @@ class PipelineLayout : public HashedObject<PipelineLayout>, NonCopyable {
 	Device& _device;
 	vk::PipelineLayout _pipelineLayout;
 	ProgramResourceLayout _resourceLayout;
+	std::array<DescriptorSetAllocator*, MaxDescriptorSets> _setAllocators;
 };
 
 class Shader : public HashedObject<Shader>, NonCopyable {
