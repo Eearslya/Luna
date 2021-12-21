@@ -25,6 +25,7 @@ Graphics::Graphics() {
 	_swapchain = std::make_unique<Vulkan::Swapchain>(*_device);
 
 	const std::vector<float> colors     = {0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f};
+	const std::vector<float> texCoords  = {1.0f, 1.0f, 0.0f, 1.0f, 0.5f, 0.0f};
 	const std::vector<float> vertices   = {1.0f, 1.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, -1.0f, 0.0f};
 	const std::vector<uint32_t> indices = {0, 1, 2};
 	_colorBuffer                        = _device->CreateBuffer(
@@ -35,6 +36,10 @@ Graphics::Graphics() {
 		Vulkan::BufferCreateInfo(
 			Vulkan::BufferDomain::Device, sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer),
 		indices.data());
+	_texCoordBuffer = _device->CreateBuffer(
+		Vulkan::BufferCreateInfo(
+			Vulkan::BufferDomain::Device, sizeof(float) * texCoords.size(), vk::BufferUsageFlagBits::eVertexBuffer),
+		texCoords.data());
 	_vertexBuffer = _device->CreateBuffer(
 		Vulkan::BufferCreateInfo(
 			Vulkan::BufferDomain::Device, sizeof(float) * vertices.size(), vk::BufferUsageFlagBits::eVertexBuffer),
@@ -47,7 +52,7 @@ Graphics::Graphics() {
 			reinterpret_cast<const stbi_uc*>(imageData->data()), imageData->size(), &w, &h, nullptr, STBI_rgb_alpha);
 		if (pixels) {
 			const Vulkan::InitialImageData initialImage{.Data = pixels};
-			auto image = _device->CreateImage(
+			_texture = _device->CreateImage(
 				Vulkan::ImageCreateInfo::Immutable2D(vk::Format::eR8G8B8A8Unorm, vk::Extent2D(w, h), true), &initialImage);
 		} else {
 			Log::Error("[Graphics] Failed to load test texture: {}", stbi_failure_reason());
@@ -76,9 +81,12 @@ void Graphics::Update() {
 	cmd->SetProgram(_program);
 	cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
 	cmd->SetVertexAttribute(1, 1, vk::Format::eR32G32B32Sfloat, 0);
+	cmd->SetVertexAttribute(2, 2, vk::Format::eR32G32Sfloat, 0);
 	cmd->SetVertexBinding(0, *_vertexBuffer, 0, sizeof(float) * 3, vk::VertexInputRate::eVertex);
 	cmd->SetVertexBinding(1, *_colorBuffer, 0, sizeof(float) * 3, vk::VertexInputRate::eVertex);
+	cmd->SetVertexBinding(2, *_texCoordBuffer, 0, sizeof(float) * 2, vk::VertexInputRate::eVertex);
 	cmd->SetIndexBuffer(*_indexBuffer, 0, vk::IndexType::eUint32);
+	cmd->SetTexture(0, 0, *_texture->GetView(), Vulkan::StockSampler::DefaultGeometryFilterClamp);
 	cmd->DrawIndexed(3);
 	cmd->EndRenderPass();
 

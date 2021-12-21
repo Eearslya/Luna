@@ -30,6 +30,8 @@ class Graphics : public Module::Registrar<Graphics> {
 	Vulkan::Program* _program = nullptr;
 	Vulkan::BufferHandle _colorBuffer;
 	Vulkan::BufferHandle _indexBuffer;
+	Vulkan::BufferHandle _texCoordBuffer;
 	Vulkan::BufferHandle _vertexBuffer;
+	Vulkan::ImageHandle _texture;
 };
 }  // namespace Luna

@@ -28,7 +28,21 @@ PipelineLayout::PipelineLayout(Hash hash, Device& device, const ProgramResourceL
 		: HashedObject<PipelineLayout>(hash), _device(device), _resourceLayout(resourceLayout) {
 	Log::Trace("[Vulkan::PipelineLayout] Creating new PipelineLayout.");
 
-	const vk::PipelineLayoutCreateInfo layoutCI;
+	std::array<vk::DescriptorSetLayout, MaxDescriptorSets> layouts = {};
+	uint32_t setCount                                              = 0;
+	for (uint32_t i = 0; i < MaxDescriptorSets; ++i) {
+		_setAllocators[i] =
+			_device.RequestDescriptorSetAllocator(resourceLayout.SetLayouts[i], resourceLayout.StagesForBindings[i]);
+		layouts[i] = _setAllocators[i]->GetSetLayout();
+		if (_resourceLayout.DescriptorSetMask & (1u << i)) { setCount = i + 1; }
+	}
+
+	const vk::PipelineLayoutCreateInfo layoutCI(
+		{},
+		setCount,
+		layouts.data(),
+		_resourceLayout.PushConstantRange.stageFlags ? 1 : 0,
+		_resourceLayout.PushConstantRange.stageFlags ? &_resourceLayout.PushConstantRange : nullptr);
 	_pipelineLayout = _device.GetDevice().createPipelineLayout(layoutCI);
 }
 

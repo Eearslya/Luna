@@ -33,6 +33,29 @@ struct PipelineCompileInfo {
 	Hash GetHash() const;
 };
 
+struct ResourceBinding {
+	union {
+		vk::DescriptorBufferInfo Buffer;
+		struct {
+			vk::DescriptorImageInfo Float;
+			vk::DescriptorImageInfo Integer;
+		} Image;
+		vk::BufferView BufferView;
+	};
+	vk::DeviceSize DynamicOffset = 0;
+};
+
+struct DescriptorSetBindings {
+	std::array<ResourceBinding, MaxDescriptorBindings> Bindings;
+	std::array<uint64_t, MaxDescriptorBindings> Cookies;
+	std::array<uint64_t, MaxDescriptorBindings> SecondaryCookies;
+};
+
+struct DescriptorBindingState {
+	std::array<DescriptorSetBindings, MaxDescriptorSets> Sets;
+	uint8_t PushConstantData[MaxPushConstantSize] = {};
+};
+
 enum class CommandBufferDirtyFlagBits {
 	StaticState      = 1 << 0,
 	Pipeline         = 1 << 1,
@@ -121,6 +144,10 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	                 uint32_t firstInstance = 0);
 	void SetIndexBuffer(const Buffer& buffer, vk::DeviceSize offset, vk::IndexType indexType);
 	void SetProgram(const Program* program);
+	void SetSampler(uint32_t set, uint32_t binding, const Sampler& sampler);
+	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view);
+	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler);
+	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler);
 	void SetVertexAttribute(uint32_t attribute, uint32_t binding, vk::Format format, vk::DeviceSize offset);
 	void SetVertexBinding(uint32_t binding,
 	                      const Buffer& buffer,
@@ -141,8 +168,9 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	CommandBufferType _commandBufferType;
 	uint32_t _threadIndex;
 
-	uint32_t _activeVertexBuffers       = 0;
-	const RenderPass* _actualRenderPass = nullptr;
+	uint32_t _activeVertexBuffers             = 0;
+	const RenderPass* _actualRenderPass       = nullptr;
+	DescriptorBindingState _descriptorBinding = {};
 	CommandBufferDirtyFlags _dirty;
 	uint32_t _dirtyDescriptorSets   = 0;
 	uint32_t _dirtyVertexBuffers    = 0;

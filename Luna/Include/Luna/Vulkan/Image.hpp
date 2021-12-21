@@ -241,11 +241,17 @@ class ImageView : public IntrusivePtrEnabled<ImageView, ImageViewDeleter, Handle
 	const ImageViewCreateInfo& GetCreateInfo() const {
 		return _createInfo;
 	}
+	vk::ImageView GetFloatView() const {
+		return _depthView ? _depthView : _imageView;
+	}
 	const Image& GetImage() const {
 		return *_createInfo.Image;
 	}
 	vk::ImageView GetImageView() const {
 		return _imageView;
+	}
+	vk::ImageView GetIntegerView() const {
+		return _stencilView ? _stencilView : _imageView;
 	}
 
 	vk::ImageView GetRenderTargetView(uint32_t layer) const;
@@ -254,8 +260,10 @@ class ImageView : public IntrusivePtrEnabled<ImageView, ImageViewDeleter, Handle
 	ImageView(Device& device, const ImageViewCreateInfo& createInfo);
 
 	Device& _device;
-	vk::ImageView _imageView;
 	ImageViewCreateInfo _createInfo;
+	vk::ImageView _imageView;
+	vk::ImageView _depthView;
+	vk::ImageView _stencilView;
 	std::vector<vk::ImageView> _renderTargetViews;
 };
 }  // namespace Vulkan

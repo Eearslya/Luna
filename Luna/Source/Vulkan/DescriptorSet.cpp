@@ -15,7 +15,7 @@ DescriptorSetAllocator::DescriptorSetAllocator(Hash hash,
 
 	if (!_bindless) {
 		const uint32_t threadCount = Threading::Get()->GetThreadCount();
-		for (uint32_t i = 0; i < threadCount; ++i) { _perThread.emplace_back(); }
+		for (uint32_t i = 0; i < threadCount; ++i) { _perThread.emplace_back(new PerThread()); }
 	}
 
 	std::vector<vk::DescriptorSetLayoutBinding> bindings;

@@ -65,6 +65,8 @@ class Device final : NonCopyable {
 	BufferHandle CreateBuffer(const BufferCreateInfo& createInfo, const void* initialData = nullptr);
 	ImageHandle CreateImage(const ImageCreateInfo& createInfo, const InitialImageData* initialData = nullptr);
 	ImageViewHandle CreateImageView(const ImageViewCreateInfo& createInfo);
+	DescriptorSetAllocator* RequestDescriptorSetAllocator(const DescriptorSetLayout& layout,
+	                                                      const uint32_t* stagesForBindings);
 	FenceHandle RequestFence();
 	PipelineLayout* RequestPipelineLayout(const ProgramResourceLayout& layout);
 	Program* RequestProgram(size_t vertCodeSize, const void* vertCode, size_t fragCodeSize, const void* fragCode);

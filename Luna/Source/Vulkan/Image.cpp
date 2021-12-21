@@ -85,11 +85,53 @@ ImageView::ImageView(Device& device, const ImageViewCreateInfo& createInfo)
 	                                                               _createInfo.MipLevels,
 	                                                               _createInfo.BaseArrayLayer,
 	                                                               _createInfo.ArrayLayers));
+
+	// Create our main, "default" view.
 	_imageView = _device.GetDevice().createImageView(viewCI);
+
+	// If applicable, create depth and stencil views.
+	{
+		if (_createInfo.Type != vk::ImageViewType::eCube && _createInfo.Type != vk::ImageViewType::eCubeArray &&
+		    _createInfo.Type != vk::ImageViewType::e3D &&
+		    viewCI.subresourceRange.aspectMask == (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil) &&
+		    imageCI.Usage & ~vk::ImageUsageFlagBits::eDepthStencilAttachment) {
+			Log::Trace("[Vulkan::ImageView] - Creating Depth/Stencil views.");
+			auto dsView = viewCI;
+
+			dsView.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
+			_depthView                         = _device.GetDevice().createImageView(dsView);
+
+			dsView.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eStencil;
+			_stencilView                       = _device.GetDevice().createImageView(dsView);
+		}
+	}
+
+	// If applicable, create render target views.
+	{
+		if (viewCI.viewType != vk::ImageViewType::e3D &&
+		    (imageCI.Usage &
+		     (vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eDepthStencilAttachment)) &&
+		    ((viewCI.subresourceRange.levelCount > 1) || (viewCI.subresourceRange.layerCount > 1))) {
+			Log::Trace("[Vulkan::ImageView] - Creating Render Target views.");
+			_renderTargetViews.reserve(viewCI.subresourceRange.layerCount);
+
+			auto rtView                        = viewCI;
+			rtView.viewType                    = vk::ImageViewType::e2D;
+			rtView.subresourceRange.levelCount = 1;
+			rtView.subresourceRange.layerCount = 1;
+			for (uint32_t layer = 0; layer < viewCI.subresourceRange.layerCount; ++layer) {
+				rtView.subresourceRange.baseArrayLayer = layer + viewCI.subresourceRange.baseArrayLayer;
+				_renderTargetViews.push_back(_device.GetDevice().createImageView(rtView));
+			}
+		}
+	}
 }
 
 ImageView::~ImageView() noexcept {
 	if (_imageView) { _device.GetDevice().destroyImageView(_imageView); }
+	if (_depthView) { _device.GetDevice().destroyImageView(_depthView); }
+	if (_stencilView) { _device.GetDevice().destroyImageView(_stencilView); }
+	for (auto& view : _renderTargetViews) { _device.GetDevice().destroyImageView(view); }
 }
 
 vk::ImageView ImageView::GetRenderTargetView(uint32_t layer) const {

@@ -33,6 +33,9 @@ class PipelineLayout : public HashedObject<PipelineLayout>, NonCopyable {
 	PipelineLayout(Hash hash, Device& device, const ProgramResourceLayout& resourceLayout);
 	~PipelineLayout() noexcept;
 
+	DescriptorSetAllocator* GetAllocator(uint32_t set) const {
+		return _setAllocators[set];
+	}
 	vk::PipelineLayout GetPipelineLayout() const {
 		return _pipelineLayout;
 	}

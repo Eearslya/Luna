@@ -32,6 +32,7 @@ struct CommandBufferDeleter;
 class CommandPool;
 class Context;
 class DescriptorSetAllocator;
+struct DescriptorSetLayout;
 class Device;
 class Fence;
 struct FenceDeleter;

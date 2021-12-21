@@ -20,8 +20,10 @@
 static uint32_t GetThreadID() {
 	return ::Luna::Threading::GetThreadID();
 }
+
 // One mutex to rule them all. This might be able to be optimized to several smaller mutexes at some point.
 #	define LOCK() std::lock_guard<std::mutex> _DeviceLock(_mutex)
+
 // Used for objects that can be internally synchronized. If the object has the internal sync flag, no lock is performed.
 // Otherwise, the lock is made.
 #	define MAYBE_LOCK(obj) \
@@ -60,59 +62,78 @@ Device::Device(const Context& context)
 			_device(context.GetDevice()) {
 	Threading::SetThreadID(0);
 
-#define FN(name) .name                  = VULKAN_HPP_DEFAULT_DISPATCHER.name
-	const VmaVulkanFunctions vmaFunctions = {FN(vkGetInstanceProcAddr),
-	                                         FN(vkGetDeviceProcAddr),
-	                                         FN(vkGetPhysicalDeviceProperties),
-	                                         FN(vkGetPhysicalDeviceMemoryProperties),
-	                                         FN(vkAllocateMemory),
-	                                         FN(vkFreeMemory),
-	                                         FN(vkMapMemory),
-	                                         FN(vkUnmapMemory),
-	                                         FN(vkFlushMappedMemoryRanges),
-	                                         FN(vkInvalidateMappedMemoryRanges),
-	                                         FN(vkBindBufferMemory),
-	                                         FN(vkBindImageMemory),
-	                                         FN(vkGetBufferMemoryRequirements),
-	                                         FN(vkGetImageMemoryRequirements),
-	                                         FN(vkCreateBuffer),
-	                                         FN(vkDestroyBuffer),
-	                                         FN(vkCreateImage),
-	                                         FN(vkDestroyImage),
-	                                         FN(vkCmdCopyBuffer)};
+	// Initialize our VMA allocator.
+	{
+#define FN(name) .name = VULKAN_HPP_DEFAULT_DISPATCHER.name
+		const VmaVulkanFunctions vmaFunctions = {FN(vkGetInstanceProcAddr),
+		                                         FN(vkGetDeviceProcAddr),
+		                                         FN(vkGetPhysicalDeviceProperties),
+		                                         FN(vkGetPhysicalDeviceMemoryProperties),
+		                                         FN(vkAllocateMemory),
+		                                         FN(vkFreeMemory),
+		                                         FN(vkMapMemory),
+		                                         FN(vkUnmapMemory),
+		                                         FN(vkFlushMappedMemoryRanges),
+		                                         FN(vkInvalidateMappedMemoryRanges),
+		                                         FN(vkBindBufferMemory),
+		                                         FN(vkBindImageMemory),
+		                                         FN(vkGetBufferMemoryRequirements),
+		                                         FN(vkGetImageMemoryRequirements),
+		                                         FN(vkCreateBuffer),
+		                                         FN(vkDestroyBuffer),
+		                                         FN(vkCreateImage),
+		                                         FN(vkDestroyImage),
+		                                         FN(vkCmdCopyBuffer)};
 #undef FN
-	const VmaAllocatorCreateInfo allocatorCI = {.physicalDevice   = _gpu,
-	                                            .device           = _device,
-	                                            .frameInUseCount  = 1,
-	                                            .pVulkanFunctions = &vmaFunctions,
-	                                            .instance         = _instance,
-	                                            .vulkanApiVersion = VK_API_VERSION_1_0};
-	const auto allocatorResult               = vmaCreateAllocator(&allocatorCI, &_allocator);
-	if (allocatorResult != VK_SUCCESS) {
-		throw std::runtime_error("[Vulkan::Device] Failed to create memory allocator!");
+		const VmaAllocatorCreateInfo allocatorCI = {.physicalDevice   = _gpu,
+		                                            .device           = _device,
+		                                            .frameInUseCount  = 1,
+		                                            .pVulkanFunctions = &vmaFunctions,
+		                                            .instance         = _instance,
+		                                            .vulkanApiVersion = VK_API_VERSION_1_0};
+		const auto allocatorResult               = vmaCreateAllocator(&allocatorCI, &_allocator);
+		if (allocatorResult != VK_SUCCESS) {
+			throw std::runtime_error("[Vulkan::Device] Failed to create memory allocator!");
+		}
 	}
 
+	// Create our timeline semaphores for frame synchronization, if available.
 	CreateTimelineSemaphores();
+
+	// Create a handful of "stock" samplers that cover most of the common use cases.
 	CreateStockSamplers();
+
+	// Initialize our helper classes.
 	_framebufferAllocator = std::make_unique<FramebufferAllocator>(*this);
+
+	// Create our frame contexts.
 	CreateFrameContexts(2);
 }
 
 Device::~Device() noexcept {
+	// First ensure all work on the GPU has been completed.
+	// This will also clear all pending deletions from our FrameContexts.
 	WaitIdle();
 
+	// Destroy our pooled sync objects.
 	for (auto& fence : _availableFences) { _device.destroyFence(fence); }
 	for (auto& semaphore : _availableSemaphores) { _device.destroySemaphore(semaphore); }
 
+	// Reset all of our WSI synchronization.
 	_swapchainAcquire.Reset();
 	_swapchainRelease.Reset();
 	_swapchainImages.clear();
 
+	// Reset all of our helper classes.
 	_framebufferAllocator.reset();
 
+	// Clean up our VMA allocator.
 	vmaDestroyAllocator(_allocator);
 
+	// Destroy our timeline semaphores, if we ever made them.
 	DestroyTimelineSemaphores();
+
+	// Any objects that are still lingering will be destroyed as the FrameContext objects go through their destructor.
 }
 
 /* **********
@@ -121,6 +142,7 @@ Device::~Device() noexcept {
 
 // ===== Frame management =====
 
+// Add a semaphore that needs to be waited on for the specified command buffer's queue.
 void Device::AddWaitSemaphore(CommandBufferType bufferType,
                               SemaphoreHandle semaphore,
                               vk::PipelineStageFlags stages,
@@ -129,6 +151,7 @@ void Device::AddWaitSemaphore(CommandBufferType bufferType,
 	AddWaitSemaphoreNoLock(GetQueueType(bufferType), semaphore, stages, flush);
 }
 
+// End our frame's work and submit all work to the GPU.
 void Device::EndFrame() {
 	WAIT_FOR_PENDING_COMMAND_BUFFERS();
 	EndFrameNoLock();
@@ -458,6 +481,19 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 
 ImageViewHandle Device::CreateImageView(const ImageViewCreateInfo& createInfo) {
 	return ImageViewHandle(_imageViewPool.Allocate(*this, createInfo));
+}
+
+DescriptorSetAllocator* Device::RequestDescriptorSetAllocator(const DescriptorSetLayout& layout,
+                                                              const uint32_t* stagesForBindings) {
+	Hasher h;
+	h.Data(sizeof(DescriptorSetLayout), &layout);
+	h.Data(sizeof(uint32_t) * MaxDescriptorBindings, stagesForBindings);
+	const auto hash = h.Get();
+
+	auto* ret = _descriptorSetAllocators.Find(hash);
+	if (!ret) { ret = _descriptorSetAllocators.EmplaceYield(hash, hash, *this, layout, stagesForBindings); }
+
+	return ret;
 }
 
 FenceHandle Device::RequestFence() {
@@ -1113,6 +1149,7 @@ RenderPass& Device::RequestRenderPass(const RenderPassInfo& info, bool compatibl
 }
 
 #ifdef LUNA_DEBUG
+// Set an object's debug name for validation layers and RenderDoc functionality.
 void Device::SetObjectNameImpl(vk::ObjectType type, uint64_t handle, const std::string& name) {
 	if (!_extensions.DebugUtils) { return; }
 

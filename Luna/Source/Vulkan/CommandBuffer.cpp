@@ -6,6 +6,7 @@
 #include <Luna/Vulkan/Format.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
+#include <Luna/Vulkan/Sampler.hpp>
 #include <Luna/Vulkan/Shader.hpp>
 
 namespace Luna {
@@ -289,6 +290,44 @@ void CommandBuffer::SetProgram(const Program* program) {
 	_pipelineLayout = _programLayout->GetPipelineLayout();
 }
 
+void CommandBuffer::SetSampler(uint32_t set, uint32_t binding, const Sampler& sampler) {
+	const auto cookie = sampler.GetCookie();
+	if (cookie == _descriptorBinding.Sets[set].SecondaryCookies[binding]) { return; }
+
+	auto& bind                 = _descriptorBinding.Sets[set].Bindings[binding];
+	bind.Image.Float.sampler   = sampler.GetSampler();
+	bind.Image.Integer.sampler = sampler.GetSampler();
+	_dirtyDescriptorSets |= 1u << set;
+	_descriptorBinding.Sets[set].SecondaryCookies[binding] = cookie;
+}
+
+void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view) {
+	const auto layout = view.GetImage().GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
+	const auto cookie = view.GetCookie();
+	if (_descriptorBinding.Sets[set].Cookies[binding] == cookie &&
+	    _descriptorBinding.Sets[set].Bindings[binding].Image.Float.imageLayout == layout) {
+		return;
+	}
+
+	auto& bind                                    = _descriptorBinding.Sets[set].Bindings[binding];
+	bind.Image.Float.imageLayout                  = layout;
+	bind.Image.Float.imageView                    = view.GetFloatView();
+	bind.Image.Integer.imageLayout                = layout;
+	bind.Image.Integer.imageView                  = view.GetIntegerView();
+	_descriptorBinding.Sets[set].Cookies[binding] = cookie;
+	_dirtyDescriptorSets |= 1u << set;
+}
+
+void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler) {
+	SetTexture(set, binding, view);
+	SetSampler(set, binding, sampler);
+}
+
+void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler stockSampler) {
+	const auto& sampler = _device.RequestSampler(stockSampler);
+	SetTexture(set, binding, view, sampler);
+}
+
 void CommandBuffer::SetVertexAttribute(uint32_t attribute, uint32_t binding, vk::Format format, vk::DeviceSize offset) {
 	auto& attr = _pipelineCompileInfo.VertexAttributes[attribute];
 
@@ -455,6 +494,71 @@ bool CommandBuffer::FlushRenderState(bool synchronous) {
 	            CommandBufferDirtyFlagBits::StaticVertex);
 
 	if (!_pipeline) { return false; }
+
+	// Flush descriptor sets.
+	{
+		const auto& layout = _programLayout->GetResourceLayout();
+
+		uint32_t setUpdate = layout.DescriptorSetMask & _dirtyDescriptorSets;
+		ForEachBit(setUpdate, [&](uint32_t bit) {
+			const auto& setLayout = layout.SetLayouts[bit];
+			Hasher h;
+			h(setLayout.FloatMask);
+
+			ForEachBit(setLayout.SampledImageMask, [&](uint32_t binding) {
+				const auto arraySize = setLayout.ArraySizes[binding];
+				for (uint32_t i = 0; i < arraySize; ++i) {
+					h(_descriptorBinding.Sets[bit].Cookies[binding + i]);
+					h(_descriptorBinding.Sets[bit].SecondaryCookies[binding + i]);
+					h(_descriptorBinding.Sets[bit].Bindings[binding + i].Image.Float.imageLayout);
+				}
+			});
+
+			const auto hash = h.Get();
+			auto allocated  = _programLayout->GetAllocator(bit)->Find(_threadIndex, hash);
+
+			// If we didn't get an existing set, we need to write it.
+			if (!allocated.second) {
+				std::vector<vk::WriteDescriptorSet> writes;
+
+				ForEachBit(setLayout.UniformBufferMask, [&](uint32_t binding) {
+					const auto arraySize = setLayout.ArraySizes[binding];
+					for (uint32_t i = 0; i < arraySize; ++i) {
+						writes.push_back(vk::WriteDescriptorSet(allocated.first,
+						                                        binding,
+						                                        i,
+						                                        1,
+						                                        vk::DescriptorType::eUniformBuffer,
+						                                        nullptr,
+						                                        &_descriptorBinding.Sets[bit].Bindings[binding + i].Buffer,
+						                                        nullptr));
+					}
+				});
+
+				ForEachBit(setLayout.SampledImageMask, [&](uint32_t binding) {
+					const auto arraySize = setLayout.ArraySizes[binding];
+					for (uint32_t i = 0; i < arraySize; ++i) {
+						writes.push_back(
+							vk::WriteDescriptorSet(allocated.first,
+						                         binding,
+						                         i,
+						                         1,
+						                         vk::DescriptorType::eCombinedImageSampler,
+						                         (setLayout.FloatMask & (1u << binding)
+						                            ? &_descriptorBinding.Sets[bit].Bindings[binding + i].Image.Float
+						                            : &_descriptorBinding.Sets[bit].Bindings[binding + i].Image.Integer),
+						                         nullptr,
+						                         nullptr));
+					}
+				});
+
+				_device.GetDevice().updateDescriptorSets(writes, {});
+			}
+
+			_commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, _pipelineLayout, bit, allocated.first, {});
+		});
+		_dirtyDescriptorSets &= ~setUpdate;
+	}
 
 	if (_dirty & CommandBufferDirtyFlagBits::Viewport) { _commandBuffer.setViewport(0, _viewport); }
 	_dirty &= ~CommandBufferDirtyFlagBits::Viewport;
