@@ -116,6 +116,20 @@ struct ImageCreateInfo {
 		                                                         : vk::ImageLayout::eColorAttachmentOptimal};
 	}
 
+	static ImageCreateInfo TransientRenderTarget(vk::Format format, const vk::Extent2D& extent) {
+		return {.Domain = ImageDomain::Transient,
+		        .Format = format,
+		        .Type   = vk::ImageType::e2D,
+		        .Usage  = (FormatHasDepthOrStencil(format) ? vk::ImageUsageFlagBits::eDepthStencilAttachment
+		                                                   : vk::ImageUsageFlags()) |
+		                 vk::ImageUsageFlagBits::eInputAttachment,
+		        .Extent        = vk::Extent3D(extent.width, extent.height, 1),
+		        .ArrayLayers   = 1,
+		        .MipLevels     = 1,
+		        .Samples       = vk::SampleCountFlagBits::e1,
+		        .InitialLayout = vk::ImageLayout::eUndefined};
+	}
+
 	ImageDomain Domain              = ImageDomain::Physical;
 	vk::Format Format               = vk::Format::eUndefined;
 	vk::ImageType Type              = vk::ImageType::e2D;

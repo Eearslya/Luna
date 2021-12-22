@@ -145,6 +145,34 @@ class FramebufferAllocator {
 	std::mutex _mutex;
 #endif
 };
+
+class TransientAttachmentAllocator {
+	constexpr static const int TransientAttachmentRingSize = 8;
+
+ public:
+	explicit TransientAttachmentAllocator(Device& device);
+
+	void BeginFrame();
+	void Clear();
+	ImageHandle RequestAttachment(const vk::Extent2D& extent,
+	                              vk::Format format,
+	                              uint32_t index                  = 0,
+	                              vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1,
+	                              uint32_t layers                 = 1);
+
+ private:
+	struct TransientNode : TemporaryHashMapEnabled<TransientNode>, IntrusiveListEnabled<TransientNode> {
+		explicit TransientNode(ImageHandle image);
+
+		ImageHandle Image;
+	};
+
+	Device& _device;
+	TemporaryHashMap<TransientNode, TransientAttachmentRingSize, false> _attachments;
+#ifdef LUNA_VULKAN_MT
+	std::mutex _mutex;
+#endif
+};
 }  // namespace Vulkan
 
 template <>

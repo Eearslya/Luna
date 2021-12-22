@@ -55,6 +55,7 @@ class Semaphore;
 struct SemaphoreDeleter;
 class Shader;
 class Swapchain;
+class TransientAttachmentAllocator;
 
 // Handle declarations.
 using BufferHandle        = IntrusivePtr<Buffer>;

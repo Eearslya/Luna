@@ -58,7 +58,10 @@ class Device final : NonCopyable {
 	            std::vector<SemaphoreHandle>* semaphores = nullptr);
 
 	// General functionality.
+	vk::Format GetDefaultDepthFormat() const;
+	vk::Format GetDefaultDepthStencilFormat() const;
 	RenderPassInfo GetStockRenderPass(StockRenderPass type) const;
+	bool ImageFormatSupported(vk::Format format, vk::FormatFeatureFlags features, vk::ImageTiling tiling) const;
 	void WaitIdle();
 
 	// Object management.
@@ -74,6 +77,11 @@ class Device final : NonCopyable {
 	const Sampler& RequestSampler(StockSampler type);
 	SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
 	Shader& RequestShader(size_t codeSize, const void* code);
+	ImageHandle RequestTransientAttachment(const vk::Extent2D& extent,
+	                                       vk::Format format,
+	                                       uint32_t index                  = 0,
+	                                       vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1,
+	                                       uint32_t layers                 = 1) const;
 
 	// Internal functions for other Vulkan classes.
 	uint64_t AllocateCookie(Badge<Cookie>);
@@ -225,6 +233,7 @@ class Device final : NonCopyable {
 	// Management objects.
 	std::unique_ptr<FramebufferAllocator> _framebufferAllocator;
 	std::array<const Sampler*, StockSamplerCount> _stockSamplers;
+	std::unique_ptr<TransientAttachmentAllocator> _transientAttachmentAllocator;
 
 	// Frame contexts.
 	uint32_t _currentFrameContext = 0;

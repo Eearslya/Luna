@@ -776,5 +776,42 @@ FramebufferAllocator::FramebufferNode::FramebufferNode(Device& device,
 		: Framebuffer(device, renderPass, renderPassInfo) {
 	_internalSync = true;
 }
+
+TransientAttachmentAllocator::TransientAttachmentAllocator(Device& device) : _device(device) {}
+
+void TransientAttachmentAllocator::BeginFrame() {
+	_attachments.BeginFrame();
+}
+
+void TransientAttachmentAllocator::Clear() {
+	_attachments.Clear();
+}
+
+ImageHandle TransientAttachmentAllocator::RequestAttachment(
+	const vk::Extent2D& extent, vk::Format format, uint32_t index, vk::SampleCountFlagBits samples, uint32_t layers) {
+	Hasher h;
+	h(extent.width);
+	h(extent.height);
+	h(format);
+	h(index);
+	h(samples);
+	h(layers);
+	const auto hash = h.Get();
+
+#ifdef LUNA_VULKAN_MT
+	std::lock_guard<std::mutex> lock(_mutex);
+#endif
+	auto* node = _attachments.Request(hash);
+	if (node) { return node->Image; }
+
+	auto imageCI        = ImageCreateInfo::TransientRenderTarget(format, extent);
+	imageCI.Samples     = samples;
+	imageCI.ArrayLayers = layers;
+	node                = _attachments.Emplace(hash, _device.CreateImage(imageCI));
+
+	return node->Image;
+}
+
+TransientAttachmentAllocator::TransientNode::TransientNode(ImageHandle image) : Image(image) {}
 }  // namespace Vulkan
 }  // namespace Luna

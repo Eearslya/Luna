@@ -26,7 +26,7 @@ Graphics::Graphics() {
 
 	const std::vector<float> colors     = {0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f};
 	const std::vector<float> texCoords  = {1.0f, 1.0f, 0.0f, 1.0f, 0.5f, 0.0f};
-	const std::vector<float> vertices   = {1.0f, 1.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, -1.0f, 0.0f};
+	const std::vector<float> vertices   = {0.8f, 0.8f, 0.0f, -0.8f, 0.8f, 0.0f, 0.0f, -0.8f, 0.0f};
 	const std::vector<uint32_t> indices = {0, 1, 2};
 	_colorBuffer                        = _device->CreateBuffer(
     Vulkan::BufferCreateInfo(
@@ -75,8 +75,9 @@ void Graphics::Update() {
 
 	const auto clearColor = std::pow(0.1f, 2.2f);
 
-	auto rpInfo = _device->GetStockRenderPass(Vulkan::StockRenderPass::ColorOnly);
+	auto rpInfo = _device->GetStockRenderPass(Vulkan::StockRenderPass::Depth);
 	rpInfo.ClearColors[0].setFloat32({clearColor, clearColor, clearColor, 1.0f});
+	rpInfo.ClearDepthStencil.setDepth(1.0f);
 	cmd->BeginRenderPass(rpInfo);
 	cmd->SetProgram(_program);
 	cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);

@@ -104,7 +104,8 @@ Device::Device(const Context& context)
 	CreateStockSamplers();
 
 	// Initialize our helper classes.
-	_framebufferAllocator = std::make_unique<FramebufferAllocator>(*this);
+	_framebufferAllocator         = std::make_unique<FramebufferAllocator>(*this);
+	_transientAttachmentAllocator = std::make_unique<TransientAttachmentAllocator>(*this);
 
 	// Create our frame contexts.
 	CreateFrameContexts(2);
@@ -126,6 +127,7 @@ Device::~Device() noexcept {
 
 	// Reset all of our helper classes.
 	_framebufferAllocator.reset();
+	_transientAttachmentAllocator.reset();
 
 	// Clean up our VMA allocator.
 	vmaDestroyAllocator(_allocator);
@@ -164,6 +166,7 @@ void Device::NextFrame() {
 	EndFrameNoLock();
 
 	_framebufferAllocator->BeginFrame();
+	_transientAttachmentAllocator->BeginFrame();
 
 	_currentFrameContext = (_currentFrameContext + 1) % (_frameContexts.size());
 	Frame().Begin();
@@ -185,20 +188,70 @@ void Device::Submit(CommandBufferHandle& cmd, FenceHandle* fence, std::vector<Se
 
 // ===== General Functionality =====
 
+vk::Format Device::GetDefaultDepthFormat() const {
+	if (ImageFormatSupported(
+				vk::Format::eD32Sfloat, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eD32Sfloat;
+	}
+	if (ImageFormatSupported(
+				vk::Format::eX8D24UnormPack32, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eX8D24UnormPack32;
+	}
+	if (ImageFormatSupported(
+				vk::Format::eD16Unorm, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eD16Unorm;
+	}
+
+	return vk::Format::eUndefined;
+}
+
+vk::Format Device::GetDefaultDepthStencilFormat() const {
+	if (ImageFormatSupported(
+				vk::Format::eD24UnormS8Uint, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eD24UnormS8Uint;
+	}
+	if (ImageFormatSupported(
+				vk::Format::eD32SfloatS8Uint, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eD32SfloatS8Uint;
+	}
+
+	return vk::Format::eUndefined;
+}
+
 RenderPassInfo Device::GetStockRenderPass(StockRenderPass type) const {
 	RenderPassInfo info{.ColorAttachmentCount = 1, .ClearAttachments = 1, .StoreAttachments = 1};
 	info.ColorAttachments[0] = _swapchainImages[_swapchainIndex]->GetView().Get();
 
 	switch (type) {
-		case StockRenderPass::Depth:
+		case StockRenderPass::Depth: {
+			info.DSOps |= DepthStencilOpBits::ClearDepthStencil;
+			auto depth = RequestTransientAttachment(_swapchainImages[_swapchainIndex]->GetExtent(), GetDefaultDepthFormat());
+			info.DepthStencilAttachment = &(*depth->GetView());
 			break;
-		case StockRenderPass::DepthStencil:
+		}
+
+		case StockRenderPass::DepthStencil: {
+			info.DSOps |= DepthStencilOpBits::ClearDepthStencil;
+			auto depthStencil =
+				RequestTransientAttachment(_swapchainImages[_swapchainIndex]->GetExtent(), GetDefaultDepthStencilFormat());
+			info.DepthStencilAttachment = &(*depthStencil->GetView());
 			break;
+		}
+
 		default:
 			break;
 	}
 
 	return info;
+}
+
+bool Device::ImageFormatSupported(vk::Format format, vk::FormatFeatureFlags features, vk::ImageTiling tiling) const {
+	const auto props = _gpu.getFormatProperties(format);
+	if (tiling == vk::ImageTiling::eOptimal) {
+		return (props.optimalTilingFeatures & features) == features;
+	} else {
+		return (props.linearTilingFeatures & features) == features;
+	}
 }
 
 // The great big "make it go slow" button. This function will wait for all work on the GPU to be completed and perform
@@ -360,8 +413,13 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 		                    vk::ImageUsageFlagBits::eInputAttachment | vk::ImageUsageFlagBits::eSampled |
 		                    vk::ImageUsageFlagBits::eStorage));
 		if (hasView) {
-			const ImageViewCreateInfo viewCI{
-				.Image = handle.Get(), .Format = createInfo.Format, .Type = GetImageViewType(createInfo)};
+			const ImageViewCreateInfo viewCI{.Image          = handle.Get(),
+			                                 .Format         = createInfo.Format,
+			                                 .Type           = GetImageViewType(createInfo),
+			                                 .BaseMipLevel   = 0,
+			                                 .MipLevels      = actualInfo.MipLevels,
+			                                 .BaseArrayLayer = 0,
+			                                 .ArrayLayers    = actualInfo.ArrayLayers};
 			auto view = CreateImageView(viewCI);
 			handle->SetDefaultView(view);
 		}
@@ -546,6 +604,14 @@ Shader& Device::RequestShader(size_t codeSize, const void* code) {
 	if (!shader) { shader = _shaders.EmplaceYield(hash, hash, *this, codeSize, code); }
 
 	return *shader;
+}
+
+ImageHandle Device::RequestTransientAttachment(const vk::Extent2D& extent,
+                                               vk::Format format,
+                                               uint32_t index,
+                                               vk::SampleCountFlagBits samples,
+                                               uint32_t layers) const {
+	return _transientAttachmentAllocator->RequestAttachment(extent, format, index, samples, layers);
 }
 
 // ===== Internal functions for other Vulkan classes =====
@@ -1016,6 +1082,7 @@ void Device::WaitIdleNoLock() {
 	if (_device) { _device.waitIdle(); }
 
 	_framebufferAllocator->Clear();
+	_transientAttachmentAllocator->Clear();
 
 	// Now that we know the device is doing nothing, we can go through all of our frame contexts and clean up all deferred
 	// deletions.
