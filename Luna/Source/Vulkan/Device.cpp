@@ -722,6 +722,8 @@ void Device::SetupSwapchain(Badge<Swapchain>, Swapchain& swapchain) {
 	const auto format     = swapchain.GetFormat();
 	const auto& images    = swapchain.GetImages();
 	const auto createInfo = ImageCreateInfo::RenderTarget(format, extent);
+	_swapchainImages.clear();
+	_swapchainImages.reserve(images.size());
 
 	for (size_t i = 0; i < images.size(); ++i) {
 		const auto& image = images[i];
