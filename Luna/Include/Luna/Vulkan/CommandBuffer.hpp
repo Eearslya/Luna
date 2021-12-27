@@ -142,12 +142,15 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	                 uint32_t firstIndex    = 0,
 	                 int32_t vertexOffset   = 0,
 	                 uint32_t firstInstance = 0);
+	void PushConstants(const void* data, vk::DeviceSize offset, vk::DeviceSize range);
 	void SetIndexBuffer(const Buffer& buffer, vk::DeviceSize offset, vk::IndexType indexType);
 	void SetProgram(const Program* program);
 	void SetSampler(uint32_t set, uint32_t binding, const Sampler& sampler);
 	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view);
 	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler);
 	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler);
+	void SetUniformBuffer(
+		uint32_t set, uint32_t binding, const Buffer& buffer, vk::DeviceSize offset = 0, vk::DeviceSize range = 0);
 	void SetVertexAttribute(uint32_t attribute, uint32_t binding, vk::Format format, vk::DeviceSize offset);
 	void SetVertexBinding(uint32_t binding,
 	                      const Buffer& buffer,

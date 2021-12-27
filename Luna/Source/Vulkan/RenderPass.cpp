@@ -575,28 +575,30 @@ RenderPass::RenderPass(Hash hash, Device& device, const RenderPassInfo& info)
 		for (uint32_t subpass = 0; subpass < subpassCount; ++subpass) {
 			auto& sp = subpasses[subpass];
 			_subpasses.emplace_back();
-			auto& info = _subpasses.back();
+			auto& subpassInfo = _subpasses.back();
 
-			info.ColorAttachmentCount   = sp.colorAttachmentCount;
-			info.InputAttachmentCount   = sp.inputAttachmentCount;
-			info.DepthStencilAttachment = *sp.pDepthStencilAttachment;
-			memcpy(
-				info.ColorAttachments.data(), sp.pColorAttachments, sizeof(*sp.pColorAttachments) * sp.colorAttachmentCount);
-			memcpy(
-				info.InputAttachments.data(), sp.pInputAttachments, sizeof(*sp.pInputAttachments) * sp.inputAttachmentCount);
+			subpassInfo.ColorAttachmentCount   = sp.colorAttachmentCount;
+			subpassInfo.InputAttachmentCount   = sp.inputAttachmentCount;
+			subpassInfo.DepthStencilAttachment = *sp.pDepthStencilAttachment;
+			memcpy(subpassInfo.ColorAttachments.data(),
+			       sp.pColorAttachments,
+			       sizeof(*sp.pColorAttachments) * sp.colorAttachmentCount);
+			memcpy(subpassInfo.InputAttachments.data(),
+			       sp.pInputAttachments,
+			       sizeof(*sp.pInputAttachments) * sp.inputAttachmentCount);
 
 			vk::SampleCountFlagBits sampleCount{};
-			for (uint32_t attachment = 0; attachment < info.ColorAttachmentCount; ++attachment) {
-				if (info.ColorAttachments[attachment].attachment == VK_ATTACHMENT_UNUSED) { continue; }
+			for (uint32_t attachment = 0; attachment < subpassInfo.ColorAttachmentCount; ++attachment) {
+				if (subpassInfo.ColorAttachments[attachment].attachment == VK_ATTACHMENT_UNUSED) { continue; }
 
-				const auto samples = attachments[info.ColorAttachments[attachment].attachment].samples;
+				const auto samples = attachments[subpassInfo.ColorAttachments[attachment].attachment].samples;
 				if (vk::SampleCountFlags(sampleCount) && (samples != sampleCount)) {
 					assert(samples != sampleCount && "Mismatch of sample counts within subpass!");
 				}
 				sampleCount = samples;
 			}
-			if (info.DepthStencilAttachment.attachment != VK_ATTACHMENT_UNUSED) {
-				const auto samples = attachments[info.DepthStencilAttachment.attachment].samples;
+			if (subpassInfo.DepthStencilAttachment.attachment != VK_ATTACHMENT_UNUSED) {
+				const auto samples = attachments[subpassInfo.DepthStencilAttachment.attachment].samples;
 				if (vk::SampleCountFlags(sampleCount) && (samples != sampleCount)) {
 					assert(samples != sampleCount && "Mismatch of sample counts within subpass!");
 				}
@@ -604,7 +606,7 @@ RenderPass::RenderPass(Hash hash, Device& device, const RenderPassInfo& info)
 			}
 
 			assert(vk::SampleCountFlags(sampleCount) && "No sample counts given for subpass!");
-			info.Samples = sampleCount;
+			subpassInfo.Samples = sampleCount;
 		}
 	}
 

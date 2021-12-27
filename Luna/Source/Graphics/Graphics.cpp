@@ -1,4 +1,5 @@
 #include <stb_image.h>
+#include <tiny_gltf.h>
 
 #include <Luna/Core/Log.hpp>
 #include <Luna/Graphics/Graphics.hpp>
@@ -11,6 +12,9 @@
 #include <Luna/Vulkan/RenderPass.hpp>
 #include <Luna/Vulkan/Shader.hpp>
 #include <Luna/Vulkan/Swapchain.hpp>
+#include <filesystem>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace Luna {
 Graphics::Graphics() {
@@ -24,26 +28,172 @@ Graphics::Graphics() {
 	_device    = std::make_unique<Vulkan::Device>(*_context);
 	_swapchain = std::make_unique<Vulkan::Swapchain>(*_device);
 
-	const std::vector<float> colors     = {0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f};
-	const std::vector<float> texCoords  = {1.0f, 1.0f, 0.0f, 1.0f, 0.5f, 0.0f};
-	const std::vector<float> vertices   = {0.8f, 0.8f, 0.0f, -0.8f, 0.8f, 0.0f, 0.0f, -0.8f, 0.0f};
-	const std::vector<uint32_t> indices = {0, 1, 2};
-	_colorBuffer                        = _device->CreateBuffer(
-    Vulkan::BufferCreateInfo(
-      Vulkan::BufferDomain::Device, sizeof(float) * colors.size(), vk::BufferUsageFlagBits::eVertexBuffer),
-    colors.data());
+	// Load glTF model.
+	const std::string gltfFile = "Models/Sponza/Sponza.gltf";
+	tinygltf::Model model;
+	{
+		tinygltf::TinyGLTF loader;
+		tinygltf::FsCallbacks fsCallbacks;
+		fsCallbacks.FileExists = [](const std::string& filename, void* userData) -> bool {
+			return Filesystem::Get()->Exists(filename);
+		};
+		fsCallbacks.ExpandFilePath = [](const std::string& path, void* userData) -> std::string { return path; };
+		fsCallbacks.ReadWholeFile =
+			[](std::vector<unsigned char>* bytes, std::string* err, const std::string& path, void* userData) -> bool {
+			auto fs = Filesystem::Get();
+			if (!fs->Exists(path)) {
+				*err = "File not found";
+				return false;
+			}
+
+			auto data = fs->ReadBytes(path);
+			if (data.has_value()) {
+				*bytes = data.value();
+				return true;
+			} else {
+				*err = "Failed to open file for reading";
+				return false;
+			}
+		};
+		fsCallbacks.WriteWholeFile =
+			[](
+				std::string* err, const std::string& path, const std::vector<unsigned char>& contents, void* userData) -> bool {
+			*err = "Write not supported";
+			return false;
+		};
+		loader.SetFsCallbacks(fsCallbacks);
+		std::string gltfError;
+		std::string gltfWarning;
+
+		ElapsedTime gltfLoadTime;
+		const bool loaded = loader.LoadASCIIFromFile(&model, &gltfError, &gltfWarning, gltfFile);
+		gltfLoadTime.Update();
+		if (!gltfError.empty()) { Log::Error("[Graphics] glTF Error: {}", gltfError); }
+		if (!gltfWarning.empty()) { Log::Warning("[Graphics] glTF Warning: {}", gltfWarning); }
+		if (loaded) {
+			Log::Info("[Graphics] {} loaded in {}ms", gltfFile, gltfLoadTime.Get().Milliseconds());
+		} else {
+			Log::Error("[Graphics] Failed to load glTF model!");
+		}
+	}
+
+	// Parse model for meshes.
+	std::vector<glm::vec3> positions;
+	std::vector<glm::vec3> normals;
+	std::vector<glm::vec2> texcoords;
+	std::vector<uint16_t> indices;
+	{
+		Log::Trace("[Graphics] Parsing glTF file.");
+
+		const int defaultScene = model.defaultScene == -1 ? 0 : model.defaultScene;
+		Log::Trace("[Graphics] - Loading glTF scene {}.", defaultScene);
+		const auto& scene = model.scenes[defaultScene];
+
+		Log::Trace("[Graphics] - Scene contains {} nodes.", scene.nodes.size());
+		const std::function<void(int)> ParseNode = [&](int nodeID) -> void {
+			Log::Trace("[Graphics] - Parsing node {}.", nodeID);
+			const auto& gltfNode = model.nodes[nodeID];
+
+			if (gltfNode.mesh >= 0) {
+				Log::Trace("[Graphics]   - Node has mesh {}.", gltfNode.mesh);
+				const auto& gltfMesh = model.meshes[gltfNode.mesh];
+
+				Log::Trace("[Graphics]   - Mesh has {} primitives.", gltfMesh.primitives.size());
+				for (const auto& gltfPrimitive : gltfMesh.primitives) {
+					if (gltfPrimitive.mode != 4) {
+						Log::Error("[Graphics] Unsupported primitive mode {}.", gltfPrimitive.mode);
+						continue;
+					}
+
+					auto& submesh       = _mesh.SubMeshes.emplace_back();
+					submesh.FirstVertex = positions.size();
+					submesh.FirstIndex  = indices.size();
+					submesh.Material    = gltfPrimitive.material;
+
+					for (const auto& [attributeType, attributeAccessorID] : gltfPrimitive.attributes) {
+						const auto& gltfAccessor   = model.accessors[attributeAccessorID];
+						const auto& gltfBufferView = model.bufferViews[gltfAccessor.bufferView];
+						const auto& gltfBuffer     = model.buffers[gltfBufferView.buffer];
+						const unsigned char* data  = &gltfBuffer.data[gltfBufferView.byteOffset + gltfAccessor.byteOffset];
+						const size_t dataStride    = gltfAccessor.ByteStride(gltfBufferView);
+						const size_t dataSize      = dataStride * gltfAccessor.count;
+
+						if (attributeType.compare("POSITION") == 0) {
+							const glm::vec3* posData = reinterpret_cast<const glm::vec3*>(data);
+							positions.insert(positions.end(), posData, posData + gltfAccessor.count);
+						} else if (attributeType.compare("NORMAL") == 0) {
+							const glm::vec3* norData = reinterpret_cast<const glm::vec3*>(data);
+							normals.insert(normals.end(), norData, norData + gltfAccessor.count);
+						} else if (attributeType.compare("TEXCOORD_0") == 0) {
+							const glm::vec2* tc0Data = reinterpret_cast<const glm::vec2*>(data);
+							texcoords.insert(texcoords.end(), tc0Data, tc0Data + gltfAccessor.count);
+						}
+					}
+
+					if (gltfPrimitive.indices >= 0) {
+						const auto& gltfAccessor   = model.accessors[gltfPrimitive.indices];
+						const auto& gltfBufferView = model.bufferViews[gltfAccessor.bufferView];
+						const auto& gltfBuffer     = model.buffers[gltfBufferView.buffer];
+						const unsigned char* data  = &gltfBuffer.data.at(gltfBufferView.byteOffset + gltfAccessor.byteOffset);
+						const size_t dataStride    = gltfAccessor.ByteStride(gltfBufferView);
+						const size_t dataSize      = dataStride * gltfAccessor.count;
+						assert(dataStride == 2);
+
+						const uint16_t* indData = reinterpret_cast<const uint16_t*>(data);
+						indices.insert(indices.end(), indData, indData + gltfAccessor.count);
+						submesh.IndexCount = gltfAccessor.count;
+					}
+				}
+			}
+
+			for (const auto& childID : gltfNode.children) { ParseNode(childID); }
+		};
+		for (const auto& nodeID : scene.nodes) { ParseNode(nodeID); }
+
+		Log::Trace("[Graphics] - Scene contains {} materials.", model.materials.size());
+		for (const auto& gltfMaterial : model.materials) {
+			auto& material = _mesh.Materials.emplace_back();
+
+			MaterialData data;
+			data.AlphaCutoff = gltfMaterial.alphaCutoff;
+
+			material.Data = _device->CreateBuffer(
+				Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, sizeof(data), vk::BufferUsageFlagBits::eUniformBuffer),
+				&data);
+
+			const auto& gltfTexture     = model.textures[gltfMaterial.pbrMetallicRoughness.baseColorTexture.index];
+			const auto& gltfImage       = model.images[gltfTexture.source];
+			const unsigned char* pixels = gltfImage.image.data();
+			if (pixels) {
+				const Vulkan::InitialImageData initialImage{.Data = pixels};
+				const vk::Format format = gltfImage.component == 4 ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8Srgb;
+				material.Albedo         = _device->CreateImage(
+          Vulkan::ImageCreateInfo::Immutable2D(format, vk::Extent2D(gltfImage.width, gltfImage.height), true),
+          &initialImage);
+			} else {
+				Log::Error("[Graphics] Failed to load texture: {}", stbi_failure_reason());
+			}
+		}
+	}
+
+	_positionBuffer = _device->CreateBuffer(
+		Vulkan::BufferCreateInfo(
+			Vulkan::BufferDomain::Device, sizeof(glm::vec3) * positions.size(), vk::BufferUsageFlagBits::eVertexBuffer),
+		positions.data());
+	_normalBuffer = _device->CreateBuffer(
+		Vulkan::BufferCreateInfo(
+			Vulkan::BufferDomain::Device, sizeof(glm::vec3) * normals.size(), vk::BufferUsageFlagBits::eVertexBuffer),
+		normals.data());
+	_texcoordBuffer = _device->CreateBuffer(
+		Vulkan::BufferCreateInfo(
+			Vulkan::BufferDomain::Device, sizeof(glm::vec2) * texcoords.size(), vk::BufferUsageFlagBits::eVertexBuffer),
+		texcoords.data());
 	_indexBuffer = _device->CreateBuffer(
 		Vulkan::BufferCreateInfo(
-			Vulkan::BufferDomain::Device, sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer),
+			Vulkan::BufferDomain::Device, sizeof(uint16_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer),
 		indices.data());
-	_texCoordBuffer = _device->CreateBuffer(
-		Vulkan::BufferCreateInfo(
-			Vulkan::BufferDomain::Device, sizeof(float) * texCoords.size(), vk::BufferUsageFlagBits::eVertexBuffer),
-		texCoords.data());
-	_vertexBuffer = _device->CreateBuffer(
-		Vulkan::BufferCreateInfo(
-			Vulkan::BufferDomain::Device, sizeof(float) * vertices.size(), vk::BufferUsageFlagBits::eVertexBuffer),
-		vertices.data());
+	_sceneBuffer = _device->CreateBuffer(
+		Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, sizeof(SceneData), vk::BufferUsageFlagBits::eUniformBuffer));
 
 	auto imageData = filesystem->ReadBytes("Images/Test.jpg");
 	if (imageData.has_value()) {
@@ -71,6 +221,20 @@ Graphics::~Graphics() noexcept {}
 void Graphics::Update() {
 	if (!BeginFrame()) { return; }
 
+	const auto swapchainExtent = _swapchain->GetExtent();
+	const float aspectRatio    = float(swapchainExtent.width) / float(swapchainExtent.height);
+	SceneData scene{.Projection = glm::perspective(glm::radians(70.0f), aspectRatio, 0.01f, 100.0f),
+	                .View       = glm::lookAt(glm::vec3(0, 1, 0), glm::vec3(1, 1, 0), glm::vec3(0, 1, 0))};
+	scene.Projection[1][1] *= -1.0f;
+	auto* data = _sceneBuffer->Map();
+	memcpy(data, &scene, sizeof(SceneData));
+	_sceneBuffer->Unmap();
+
+	struct PushConstant {
+		glm::mat4 Model;
+	};
+	PushConstant pc{.Model = glm::scale(glm::mat4(1.0f), glm::vec3(0.008f))};
+
 	auto cmd = _device->RequestCommandBuffer();
 
 	const auto clearColor = std::pow(0.1f, 2.2f);
@@ -83,12 +247,18 @@ void Graphics::Update() {
 	cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
 	cmd->SetVertexAttribute(1, 1, vk::Format::eR32G32B32Sfloat, 0);
 	cmd->SetVertexAttribute(2, 2, vk::Format::eR32G32Sfloat, 0);
-	cmd->SetVertexBinding(0, *_vertexBuffer, 0, sizeof(float) * 3, vk::VertexInputRate::eVertex);
-	cmd->SetVertexBinding(1, *_colorBuffer, 0, sizeof(float) * 3, vk::VertexInputRate::eVertex);
-	cmd->SetVertexBinding(2, *_texCoordBuffer, 0, sizeof(float) * 2, vk::VertexInputRate::eVertex);
-	cmd->SetIndexBuffer(*_indexBuffer, 0, vk::IndexType::eUint32);
-	cmd->SetTexture(0, 0, *_texture->GetView(), Vulkan::StockSampler::DefaultGeometryFilterClamp);
-	cmd->DrawIndexed(3);
+	cmd->SetVertexBinding(0, *_positionBuffer, 0, sizeof(glm::vec3), vk::VertexInputRate::eVertex);
+	cmd->SetVertexBinding(1, *_normalBuffer, 0, sizeof(glm::vec3), vk::VertexInputRate::eVertex);
+	cmd->SetVertexBinding(2, *_texcoordBuffer, 0, sizeof(glm::vec2), vk::VertexInputRate::eVertex);
+	cmd->SetIndexBuffer(*_indexBuffer, 0, vk::IndexType::eUint16);
+	cmd->SetUniformBuffer(0, 0, *_sceneBuffer);
+	cmd->PushConstants(&pc, 0, sizeof(pc));
+	for (const auto& submesh : _mesh.SubMeshes) {
+		const auto& material = _mesh.Materials[submesh.Material];
+		cmd->SetUniformBuffer(1, 0, *material.Data);
+		cmd->SetTexture(1, 1, *material.Albedo->GetView(), Vulkan::StockSampler::DefaultGeometryFilterWrap);
+		cmd->DrawIndexed(submesh.IndexCount, 1, submesh.FirstIndex, submesh.FirstVertex);
+	}
 	cmd->EndRenderPass();
 
 	_device->Submit(cmd);

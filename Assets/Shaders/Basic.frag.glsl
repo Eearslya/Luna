@@ -1,9 +1,12 @@
 #version 450 core
 
 layout(location = 0) in vec3 inColor;
-layout(location = 1) in vec2 inTexCoords;
+layout(location = 1) in vec2 inTexCoord;
 
-layout(set = 0, binding = 0) uniform sampler2D uTexture;
+layout(set = 1, binding = 0) uniform MaterialData {
+	float AlphaCutoff;
+} Material;
+layout(set = 1, binding = 1) uniform sampler2D texAlbedo;
 
 layout(location = 0) out vec4 outColor;
 
@@ -19,6 +22,7 @@ vec4 SrgbToLinear(vec4 srgb) {
 }
 
 void main() {
-	outColor = texture(uTexture, inTexCoords);
+	outColor = texture(texAlbedo, inTexCoord);
+	if (outColor.a < Material.AlphaCutoff) { discard; }
 	outColor = SrgbToLinear(outColor);
 }

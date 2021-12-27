@@ -1139,6 +1139,8 @@ void Device::CreateStockSamplers() {
 	for (int i = 0; i < StockSamplerCount; ++i) {
 		const auto type = static_cast<StockSampler>(i);
 		SamplerCreateInfo info{};
+		info.MinLod = 0.0f;
+		info.MaxLod = 8.0f;
 
 		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::DefaultGeometryFilterWrap ||
 		    type == StockSampler::LinearClamp || type == StockSampler::LinearShadow || type == StockSampler::LinearWrap ||

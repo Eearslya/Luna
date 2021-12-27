@@ -248,6 +248,12 @@ void CommandBuffer::DrawIndexed(
 	}
 }
 
+void CommandBuffer::PushConstants(const void* data, vk::DeviceSize offset, vk::DeviceSize range) {
+	assert(offset + range <= MaxPushConstantSize);
+	memcpy(_descriptorBinding.PushConstantData + offset, data, range);
+	_dirty |= CommandBufferDirtyFlagBits::PushConstants;
+}
+
 void CommandBuffer::SetIndexBuffer(const Buffer& buffer, vk::DeviceSize offset, vk::IndexType indexType) {
 	if (_indexBuffer.Buffer == buffer.GetBuffer() && _indexBuffer.Offset == offset &&
 	    _indexBuffer.IndexType == indexType) {
@@ -326,6 +332,20 @@ void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& 
 void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler stockSampler) {
 	const auto& sampler = _device.RequestSampler(stockSampler);
 	SetTexture(set, binding, view, sampler);
+}
+
+void CommandBuffer::SetUniformBuffer(
+	uint32_t set, uint32_t binding, const Buffer& buffer, vk::DeviceSize offset, vk::DeviceSize range) {
+	if (range == 0) { range = buffer.GetCreateInfo().Size; }
+
+	auto& bind = _descriptorBinding.Sets[set].Bindings[binding];
+
+	if (buffer.GetCookie() == _descriptorBinding.Sets[set].Cookies[binding] && bind.Buffer.range == range) { return; }
+
+	bind.Buffer                                            = vk::DescriptorBufferInfo(buffer.GetBuffer(), offset, range);
+	_descriptorBinding.Sets[set].Cookies[binding]          = buffer.GetCookie();
+	_descriptorBinding.Sets[set].SecondaryCookies[binding] = 0;
+	_dirtyDescriptorSets |= 1u << set;
 }
 
 void CommandBuffer::SetVertexAttribute(uint32_t attribute, uint32_t binding, vk::Format format, vk::DeviceSize offset) {
@@ -505,6 +525,13 @@ bool CommandBuffer::FlushRenderState(bool synchronous) {
 			Hasher h;
 			h(setLayout.FloatMask);
 
+			ForEachBit(setLayout.UniformBufferMask, [&](uint32_t binding) {
+				const auto arraySize = setLayout.ArraySizes[binding];
+				for (uint32_t i = 0; i < arraySize; ++i) {
+					h(_descriptorBinding.Sets[bit].Cookies[binding + i]);
+					h(_descriptorBinding.Sets[bit].Bindings[binding + i].Buffer.range);
+				}
+			});
 			ForEachBit(setLayout.SampledImageMask, [&](uint32_t binding) {
 				const auto arraySize = setLayout.ArraySizes[binding];
 				for (uint32_t i = 0; i < arraySize; ++i) {
@@ -558,6 +585,14 @@ bool CommandBuffer::FlushRenderState(bool synchronous) {
 			_commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, _pipelineLayout, bit, allocated.first, {});
 		});
 		_dirtyDescriptorSets &= ~setUpdate;
+	}
+
+	if (_dirty & CommandBufferDirtyFlagBits::PushConstants) {
+		const auto& range = _programLayout->GetResourceLayout().PushConstantRange;
+		if (range.stageFlags) {
+			_commandBuffer.pushConstants(
+				_pipelineLayout, range.stageFlags, 0, range.size, _descriptorBinding.PushConstantData);
+		}
 	}
 
 	if (_dirty & CommandBufferDirtyFlagBits::Viewport) { _commandBuffer.setViewport(0, _viewport); }
