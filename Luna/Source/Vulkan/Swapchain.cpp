@@ -56,25 +56,25 @@ bool Swapchain::AcquireNextImage() {
 	_acquiredImage = std::numeric_limits<uint32_t>::max();
 	while (retry < retryMax) {
 		auto acquire = _device.RequestSemaphore();
-		const auto acquireResult =
-			device.acquireNextImageKHR(_swapchain, std::numeric_limits<uint64_t>::max(), acquire->GetSemaphore(), nullptr);
+		try {
+			const auto acquireResult =
+				device.acquireNextImageKHR(_swapchain, std::numeric_limits<uint64_t>::max(), acquire->GetSemaphore(), nullptr);
 
-		if (acquireResult.result == vk::Result::eSuboptimalKHR) {
-			_suboptimal = true;
-			Log::Debug("[Vulkan::Swapchain] Swapchain is suboptimal, will recreate.");
-		}
+			if (acquireResult.result == vk::Result::eSuboptimalKHR) {
+				_suboptimal = true;
+				Log::Debug("[Vulkan::Swapchain] Swapchain is suboptimal, will recreate.");
+			}
 
-		if (acquireResult.result == vk::Result::eErrorOutOfDateKHR) {
+			acquire->SignalExternal();
+			_acquiredImage = acquireResult.value;
+			_releaseSemaphores[_acquiredImage].Reset();
+			_device.SetAcquireSemaphore({}, _acquiredImage, acquire);
+			break;
+		} catch (const vk::OutOfDateKHRError& e) {
 			RecreateSwapchain();
 			++retry;
 			continue;
 		}
-
-		acquire->SignalExternal();
-		_acquiredImage = acquireResult.value;
-		_releaseSemaphores[_acquiredImage].Reset();
-		_device.SetAcquireSemaphore({}, _acquiredImage, acquire);
-		break;
 	}
 
 	return _acquiredImage != std::numeric_limits<uint32_t>::max();
@@ -90,11 +90,9 @@ void Swapchain::Present() {
 	auto release          = _device.ConsumeReleaseSemaphore({});
 	auto releaseSemaphore = release->GetSemaphore();
 	const vk::PresentInfoKHR presentInfo(releaseSemaphore, _swapchain, _acquiredImage);
-	const auto presentResult = queue.presentKHR(presentInfo);
-	if (presentResult == vk::Result::eErrorOutOfDateKHR) {
-		Log::Debug("[Vulkan::Swapchain] Failed to present out of date swapchain. Recreating.");
-		RecreateSwapchain();
-	} else {
+	vk::Result presentResult = vk::Result::eSuccess;
+	try {
+		presentResult = queue.presentKHR(presentInfo);
 		if (presentResult == vk::Result::eSuboptimalKHR) {
 			Log::Debug("[Vulkan::Swapchain] Swapchain is suboptimal, will recreate.");
 			_suboptimal = true;
@@ -102,6 +100,9 @@ void Swapchain::Present() {
 		release->WaitExternal();
 		// We have to keep this semaphore handle alive until this swapchain image comes around again.
 		_releaseSemaphores[_acquiredImage] = release;
+	} catch (const vk::OutOfDateKHRError& e) {
+		Log::Debug("[Vulkan::Swapchain] Failed to present out of date swapchain. Recreating.");
+		RecreateSwapchain();
 	}
 
 	_acquiredImage = std::numeric_limits<uint32_t>::max();
