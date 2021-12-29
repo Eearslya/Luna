@@ -91,6 +91,7 @@ class Mouse : public Module::Registrar<Mouse> {
 	Vec2d _lastScroll;
 	Vec2d _position;
 	Vec2d _positionDelta;
+	Vec2d _savedPosition;
 	Vec2d _scroll;
 	Vec2d _scrollDelta;
 	bool _windowSelected = false;

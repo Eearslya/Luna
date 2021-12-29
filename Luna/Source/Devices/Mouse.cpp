@@ -10,8 +10,13 @@ void Mouse::CallbackButton(GLFWwindow* window, int32_t button, int32_t action, i
 }
 
 void Mouse::CallbackPosition(GLFWwindow* window, double x, double y) {
-	auto mouse       = Mouse::Get();
-	mouse->_position = {x, y};
+	auto mouse = Mouse::Get();
+	if (mouse->_cursorHidden) {
+		mouse->_position     = {mouse->_lastPosition.x - x, mouse->_lastPosition.y - y};
+		mouse->_lastPosition = {x, y};
+	} else {
+		mouse->_position = {x, y};
+	}
 	mouse->_onMoved(mouse->_position);
 }
 
@@ -41,9 +46,9 @@ void Mouse::Update() {
 	auto delta = Engine::Get()->GetUpdateDelta().Seconds();
 
 	_positionDelta = delta * (_lastPosition - _position);
-	_lastPosition  = _position;
-	_scrollDelta   = delta * (_lastScroll - _scroll);
-	_lastScroll    = _scroll;
+	if (!_cursorHidden) { _lastPosition = _position; }
+	_scrollDelta = delta * (_lastScroll - _scroll);
+	_lastScroll  = _scroll;
 }
 
 InputAction Mouse::GetButton(MouseButton button) const {
@@ -56,7 +61,13 @@ void Mouse::SetCursorHidden(bool hidden) {
 	if (_cursorHidden != hidden) {
 		glfwSetInputMode(Window::Get()->GetWindow(), GLFW_CURSOR, hidden ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
 
-		if (!hidden) { SetPosition(_position); }
+		if (hidden) {
+			_savedPosition = _position;
+			_position      = {0, 0};
+			glfwGetCursorPos(Window::Get()->GetWindow(), &_lastPosition.x, &_lastPosition.y);
+		} else {
+			SetPosition(_savedPosition);
+		}
 	}
 
 	_cursorHidden = hidden;

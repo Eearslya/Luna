@@ -136,9 +136,19 @@ void main() {
 	vec3 color = ambient + Lo;
 	color = color / (color + vec3(1.0));
 
-	//outColor = vec4(metallic, metallic, metallic, 1.0f);
-	//outColor = vec4(perceptualRoughness, perceptualRoughness, perceptualRoughness, 1.0f);
 	outColor = vec4(color, baseColor.a);
-	//const float debug = v; outColor = vec4(debug, debug, debug, 1.0);
-	//const vec3 debug = n; outColor = vec4(debug, 1.0);
+
+	const float debugView = 0.0;
+	if (debugView > 0.0) {
+		const int index = int(debugView);
+		switch(index) {
+			case 1:
+				outColor.rgba = texture(texAlbedo, inUV0).rgba;
+				break;
+			case 2:
+				outColor.rgb = texture(texNormal, inUV0).rgb;
+				break;
+		}
+		outColor = SrgbToLinear(outColor);
+	}
 }

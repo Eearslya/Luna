@@ -22,6 +22,7 @@ namespace Luna {
 Graphics::Graphics() {
 	auto filesystem = Filesystem::Get();
 	auto keyboard   = Keyboard::Get();
+	auto mouse      = Mouse::Get();
 
 	filesystem->AddSearchPath("Assets");
 
@@ -193,11 +194,11 @@ Graphics::Graphics() {
 				if (pixels) {
 					const Vulkan::InitialImageData initialImage{.Data = pixels};
 					vk::Format format = vk::Format::eUndefined;
-					if (color) {
-						format = gltfImage.component == 4 ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8Srgb;
-					} else {
-						format = gltfImage.component == 4 ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8Unorm;
-					}
+					// if (color) {
+					//	format = gltfImage.component == 4 ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8Srgb;
+					// } else {
+					format = gltfImage.component == 4 ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8Unorm;
+					//}
 					texture.Image = _device->CreateImage(
 						Vulkan::ImageCreateInfo::Immutable2D(format, vk::Extent2D(gltfImage.width, gltfImage.height), true),
 						&initialImage);
@@ -207,11 +208,11 @@ Graphics::Graphics() {
 
 				if (gltfTexture.sampler >= 0) {
 					const auto& gltfSampler = model.samplers[gltfTexture.sampler];
-					Vulkan::SamplerCreateInfo sampler{.MaxLod = 16.0f};
+					Vulkan::SamplerCreateInfo sampler{.MaxLod = 11.0f};
 					const auto& gpuInfo = _device->GetGPUInfo();
 					if (gpuInfo.EnabledFeatures.Features.samplerAnisotropy) {
 						sampler.AnisotropyEnable = VK_TRUE;
-						sampler.MaxAnisotropy    = gpuInfo.Properties.Properties.limits.maxSamplerAnisotropy;
+						sampler.MaxAnisotropy    = std::min(gpuInfo.Properties.Properties.limits.maxSamplerAnisotropy, 8.0f);
 					}
 					switch (gltfSampler.magFilter) {
 						case 9728:  // NEAREST
@@ -314,6 +315,24 @@ Graphics::Graphics() {
 	LoadShaders();
 	keyboard->OnKey() += [&](Key key, InputAction action, InputMods mods) -> void {
 		if (key == Key::F2 && action == InputAction::Press) { LoadShaders(); }
+	};
+	mouse->OnButton() += [this](MouseButton button, InputAction action, InputMods mods) -> void {
+		auto mouse = Mouse::Get();
+		if (button == MouseButton::Button1) {
+			if (action == InputAction::Press) {
+				_mouseControl = true;
+				mouse->SetCursorHidden(true);
+			} else {
+				_mouseControl = false;
+				mouse->SetCursorHidden(false);
+			}
+		}
+	};
+	mouse->OnMoved() += [this](Vec2d pos) -> void {
+		auto engine             = Engine::Get();
+		const auto deltaTime    = engine->GetFrameDelta().Seconds();
+		const float sensitivity = 5.0f * deltaTime;
+		if (_mouseControl) { _camera.Rotate(pos.y * sensitivity, -pos.x * sensitivity); }
 	};
 
 	_camera.SetPosition(glm::vec3(0, 1, 0));

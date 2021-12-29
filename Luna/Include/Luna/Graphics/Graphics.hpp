@@ -54,5 +54,6 @@ class Graphics : public Module::Registrar<Graphics> {
 	Vulkan::BufferHandle _cameraBuffer;
 	Vulkan::BufferHandle _sceneBuffer;
 	uint64_t _indexCount = 0;
+	bool _mouseControl   = false;
 };
 }  // namespace Luna

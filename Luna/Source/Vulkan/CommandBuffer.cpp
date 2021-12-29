@@ -442,7 +442,7 @@ vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 	                                                          VK_FALSE,
 	                                                          VK_FALSE,
 	                                                          vk::PolygonMode::eFill,
-	                                                          vk::CullModeFlagBits::eNone,
+	                                                          vk::CullModeFlagBits::eBack,
 	                                                          vk::FrontFace::eCounterClockwise,
 	                                                          VK_FALSE,
 	                                                          0.0f,
