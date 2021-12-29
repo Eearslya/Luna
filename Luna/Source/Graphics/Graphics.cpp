@@ -10,15 +10,18 @@
 #include <Luna/Vulkan/Fence.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
+#include <Luna/Vulkan/Sampler.hpp>
 #include <Luna/Vulkan/Shader.hpp>
 #include <Luna/Vulkan/Swapchain.hpp>
 #include <filesystem>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 namespace Luna {
 Graphics::Graphics() {
 	auto filesystem = Filesystem::Get();
+	auto keyboard   = Keyboard::Get();
 
 	filesystem->AddSearchPath("Assets");
 
@@ -27,6 +30,15 @@ Graphics::Graphics() {
 	_context   = std::make_unique<Vulkan::Context>(instanceExtensions, deviceExtensions);
 	_device    = std::make_unique<Vulkan::Device>(*_context);
 	_swapchain = std::make_unique<Vulkan::Swapchain>(*_device);
+
+	// Create placeholder texture.
+	{
+		uint32_t pixels[16];
+		std::fill(pixels, pixels + 16, 0xffffffff);
+		const Vulkan::InitialImageData initialImage{.Data = &pixels};
+		_whiteImage = _device->CreateImage(
+			Vulkan::ImageCreateInfo::Immutable2D(vk::Format::eR8G8B8A8Srgb, vk::Extent2D(4, 4), false), &initialImage);
+	}
 
 	// Load glTF model.
 	const std::string gltfFile = "Models/Sponza/Sponza.gltf";
@@ -81,7 +93,7 @@ Graphics::Graphics() {
 	std::vector<glm::vec3> positions;
 	std::vector<glm::vec3> normals;
 	std::vector<glm::vec2> texcoords;
-	std::vector<uint16_t> indices;
+	std::vector<uint32_t> indices;
 	{
 		Log::Trace("[Graphics] Parsing glTF file.");
 
@@ -137,11 +149,16 @@ Graphics::Graphics() {
 						const unsigned char* data  = &gltfBuffer.data.at(gltfBufferView.byteOffset + gltfAccessor.byteOffset);
 						const size_t dataStride    = gltfAccessor.ByteStride(gltfBufferView);
 						const size_t dataSize      = dataStride * gltfAccessor.count;
-						assert(dataStride == 2);
 
-						const uint16_t* indData = reinterpret_cast<const uint16_t*>(data);
-						indices.insert(indices.end(), indData, indData + gltfAccessor.count);
 						submesh.IndexCount = gltfAccessor.count;
+						indices.reserve(indices.size() + gltfAccessor.count);
+						if (dataStride == 2) {
+							const uint16_t* indData = reinterpret_cast<const uint16_t*>(data);
+							for (size_t i = 0; i < gltfAccessor.count; ++i) { indices.push_back(static_cast<uint32_t>(indData[i])); }
+						} else if (dataStride == 4) {
+							const uint32_t* indData = reinterpret_cast<const uint32_t*>(data);
+							indices.insert(indices.end(), indData, indData + gltfAccessor.count);
+						}
 					}
 				}
 			}
@@ -154,25 +171,122 @@ Graphics::Graphics() {
 		for (const auto& gltfMaterial : model.materials) {
 			auto& material = _mesh.Materials.emplace_back();
 
-			MaterialData data;
-			data.AlphaCutoff = gltfMaterial.alphaCutoff;
+			material.Albedo.Image   = _whiteImage;
+			material.Albedo.Sampler = _device->RequestSampler(Vulkan::StockSampler::DefaultGeometryFilterWrap);
+			material.Normal.Image   = _whiteImage;
+			material.Normal.Sampler = _device->RequestSampler(Vulkan::StockSampler::DefaultGeometryFilterWrap);
+			material.PBR.Image      = _whiteImage;
+			material.PBR.Sampler    = _device->RequestSampler(Vulkan::StockSampler::DefaultGeometryFilterWrap);
+
+			MaterialData data{};
+			data.AlphaMask       = gltfMaterial.alphaMode.compare("MASK") == 0 ? 1.0f : 0.0f;
+			data.AlphaCutoff     = gltfMaterial.alphaCutoff;
+			data.BaseColorFactor = glm::make_vec4(gltfMaterial.pbrMetallicRoughness.baseColorFactor.data());
+			data.EmissiveFactor  = glm::make_vec4(gltfMaterial.emissiveFactor.data());
+			data.Metallic        = gltfMaterial.pbrMetallicRoughness.metallicFactor;
+			data.Roughness       = gltfMaterial.pbrMetallicRoughness.roughnessFactor;
+
+			const auto LoadTexture = [&](size_t textureID, bool color, Texture& texture) -> void {
+				const auto& gltfTexture     = model.textures[textureID];
+				const auto& gltfImage       = model.images[gltfTexture.source];
+				const unsigned char* pixels = gltfImage.image.data();
+				if (pixels) {
+					const Vulkan::InitialImageData initialImage{.Data = pixels};
+					vk::Format format = vk::Format::eUndefined;
+					if (color) {
+						format = gltfImage.component == 4 ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8Srgb;
+					} else {
+						format = gltfImage.component == 4 ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8Unorm;
+					}
+					texture.Image = _device->CreateImage(
+						Vulkan::ImageCreateInfo::Immutable2D(format, vk::Extent2D(gltfImage.width, gltfImage.height), true),
+						&initialImage);
+				} else {
+					Log::Error("[Graphics] Failed to load texture: {}", stbi_failure_reason());
+				}
+
+				if (gltfTexture.sampler >= 0) {
+					const auto& gltfSampler = model.samplers[gltfTexture.sampler];
+					Vulkan::SamplerCreateInfo sampler{.MaxLod = 16.0f};
+					const auto& gpuInfo = _device->GetGPUInfo();
+					if (gpuInfo.EnabledFeatures.Features.samplerAnisotropy) {
+						sampler.AnisotropyEnable = VK_TRUE;
+						sampler.MaxAnisotropy    = gpuInfo.Properties.Properties.limits.maxSamplerAnisotropy;
+					}
+					switch (gltfSampler.magFilter) {
+						case 9728:  // NEAREST
+							sampler.MagFilter = vk::Filter::eNearest;
+							break;
+						case 9729:  // LINEAR
+							sampler.MagFilter = vk::Filter::eLinear;
+							break;
+					}
+					switch (gltfSampler.minFilter) {
+						case 9728:  // NEAREST
+							sampler.MinFilter = vk::Filter::eNearest;
+							break;
+						case 9729:  // LINEAR
+							sampler.MinFilter = vk::Filter::eLinear;
+							break;
+						case 9984:  // NEAREST_MIPMAP_NEAREST
+							sampler.MinFilter  = vk::Filter::eNearest;
+							sampler.MipmapMode = vk::SamplerMipmapMode::eNearest;
+							break;
+						case 9985:  // LINEAR_MIPMAP_NEAREST
+							sampler.MinFilter  = vk::Filter::eLinear;
+							sampler.MipmapMode = vk::SamplerMipmapMode::eNearest;
+							break;
+						case 9986:  // NEAREST_MIPMAP_LINEAR
+							sampler.MinFilter  = vk::Filter::eNearest;
+							sampler.MipmapMode = vk::SamplerMipmapMode::eLinear;
+							break;
+						case 9987:  // LINEAR_MIPMAP_LINEAR
+							sampler.MinFilter  = vk::Filter::eLinear;
+							sampler.MipmapMode = vk::SamplerMipmapMode::eLinear;
+							break;
+					}
+					switch (gltfSampler.wrapS) {
+						case 33071:  // CLAMP_TO_EDGE
+							sampler.AddressModeU = vk::SamplerAddressMode::eClampToEdge;
+							break;
+						case 33648:  // MIRRORED_REPEAT
+							sampler.AddressModeU = vk::SamplerAddressMode::eMirroredRepeat;
+							break;
+						case 10497:  // REPEAT
+							sampler.AddressModeU = vk::SamplerAddressMode::eRepeat;
+							break;
+					}
+					switch (gltfSampler.wrapT) {
+						case 33071:  // CLAMP_TO_EDGE
+							sampler.AddressModeV = vk::SamplerAddressMode::eClampToEdge;
+							break;
+						case 33648:  // MIRRORED_REPEAT
+							sampler.AddressModeV = vk::SamplerAddressMode::eMirroredRepeat;
+							break;
+						case 10497:  // REPEAT
+							sampler.AddressModeV = vk::SamplerAddressMode::eRepeat;
+							break;
+					}
+					texture.Sampler = _device->RequestSampler(sampler);
+				}
+			};
+
+			if (gltfMaterial.pbrMetallicRoughness.baseColorTexture.index >= 0) {
+				LoadTexture(gltfMaterial.pbrMetallicRoughness.baseColorTexture.index, true, material.Albedo);
+				data.HasAlbedo = 1;
+			}
+			if (gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
+				LoadTexture(gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index, false, material.PBR);
+				data.HasPBR = 1;
+			}
+			if (gltfMaterial.normalTexture.index >= 0) {
+				LoadTexture(gltfMaterial.normalTexture.index, false, material.Normal);
+				data.HasNormal = 1;
+			}
 
 			material.Data = _device->CreateBuffer(
 				Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, sizeof(data), vk::BufferUsageFlagBits::eUniformBuffer),
 				&data);
-
-			const auto& gltfTexture     = model.textures[gltfMaterial.pbrMetallicRoughness.baseColorTexture.index];
-			const auto& gltfImage       = model.images[gltfTexture.source];
-			const unsigned char* pixels = gltfImage.image.data();
-			if (pixels) {
-				const Vulkan::InitialImageData initialImage{.Data = pixels};
-				const vk::Format format = gltfImage.component == 4 ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8Srgb;
-				material.Albedo         = _device->CreateImage(
-          Vulkan::ImageCreateInfo::Immutable2D(format, vk::Extent2D(gltfImage.width, gltfImage.height), true),
-          &initialImage);
-			} else {
-				Log::Error("[Graphics] Failed to load texture: {}", stbi_failure_reason());
-			}
 		}
 	}
 
@@ -190,30 +304,19 @@ Graphics::Graphics() {
 		texcoords.data());
 	_indexBuffer = _device->CreateBuffer(
 		Vulkan::BufferCreateInfo(
-			Vulkan::BufferDomain::Device, sizeof(uint16_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer),
+			Vulkan::BufferDomain::Device, sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer),
 		indices.data());
+	_cameraBuffer = _device->CreateBuffer(
+		Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, sizeof(CameraData), vk::BufferUsageFlagBits::eUniformBuffer));
 	_sceneBuffer = _device->CreateBuffer(
 		Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, sizeof(SceneData), vk::BufferUsageFlagBits::eUniformBuffer));
 
-	auto imageData = filesystem->ReadBytes("Images/Test.jpg");
-	if (imageData.has_value()) {
-		int w, h;
-		stbi_uc* pixels = stbi_load_from_memory(
-			reinterpret_cast<const stbi_uc*>(imageData->data()), imageData->size(), &w, &h, nullptr, STBI_rgb_alpha);
-		if (pixels) {
-			const Vulkan::InitialImageData initialImage{.Data = pixels};
-			_texture = _device->CreateImage(
-				Vulkan::ImageCreateInfo::Immutable2D(vk::Format::eR8G8B8A8Unorm, vk::Extent2D(w, h), true), &initialImage);
-		} else {
-			Log::Error("[Graphics] Failed to load test texture: {}", stbi_failure_reason());
-		}
-	}
+	LoadShaders();
+	keyboard->OnKey() += [&](Key key, InputAction action, InputMods mods) -> void {
+		if (key == Key::F2 && action == InputAction::Press) { LoadShaders(); }
+	};
 
-	auto vertData = filesystem->ReadBytes("Shaders/Basic.vert.spv");
-	auto fragData = filesystem->ReadBytes("Shaders/Basic.frag.spv");
-	if (vertData.has_value() && fragData.has_value()) {
-		_program = _device->RequestProgram(vertData->size(), vertData->data(), fragData->size(), fragData->data());
-	}
+	_camera.SetPosition(glm::vec3(0, 1, 0));
 }
 
 Graphics::~Graphics() noexcept {}
@@ -221,14 +324,38 @@ Graphics::~Graphics() noexcept {}
 void Graphics::Update() {
 	if (!BeginFrame()) { return; }
 
-	const auto swapchainExtent = _swapchain->GetExtent();
-	const float aspectRatio    = float(swapchainExtent.width) / float(swapchainExtent.height);
-	SceneData scene{.Projection = glm::perspective(glm::radians(70.0f), aspectRatio, 0.01f, 100.0f),
-	                .View       = glm::lookAt(glm::vec3(0, 1, 0), glm::vec3(1, 1, 0), glm::vec3(0, 1, 0))};
-	scene.Projection[1][1] *= -1.0f;
-	auto* data = _sceneBuffer->Map();
-	memcpy(data, &scene, sizeof(SceneData));
-	_sceneBuffer->Unmap();
+	// Update Camera movement.
+	{
+		auto engine           = Engine::Get();
+		auto keyboard         = Keyboard::Get();
+		const auto deltaTime  = engine->GetFrameDelta().Seconds();
+		const float moveSpeed = 5.0f * deltaTime;
+		if (keyboard->GetKey(Key::W) == InputAction::Press) { _camera.Move(_camera.GetForward() * moveSpeed); }
+		if (keyboard->GetKey(Key::S) == InputAction::Press) { _camera.Move(-_camera.GetForward() * moveSpeed); }
+		if (keyboard->GetKey(Key::A) == InputAction::Press) { _camera.Move(-_camera.GetRight() * moveSpeed); }
+		if (keyboard->GetKey(Key::D) == InputAction::Press) { _camera.Move(_camera.GetRight() * moveSpeed); }
+		if (keyboard->GetKey(Key::R) == InputAction::Press) { _camera.Move(_camera.GetUp() * moveSpeed); }
+		if (keyboard->GetKey(Key::F) == InputAction::Press) { _camera.Move(-_camera.GetUp() * moveSpeed); }
+	}
+
+	// Update Camera buffer.
+	{
+		const auto swapchainExtent = _swapchain->GetExtent();
+		const float aspectRatio    = float(swapchainExtent.width) / float(swapchainExtent.height);
+		_camera.SetAspectRatio(aspectRatio);
+		CameraData cam{.Projection = _camera.GetProjection(), .View = _camera.GetView(), .Position = _camera.GetPosition()};
+		auto* data = _cameraBuffer->Map();
+		memcpy(data, &cam, sizeof(CameraData));
+		_cameraBuffer->Unmap();
+	}
+
+	// Update Scene buffer.
+	{
+		SceneData scene{.SunDirection = glm::normalize(glm::vec4(1.0f, 2.0f, 0.0f, 0.0f))};
+		auto* data = _sceneBuffer->Map();
+		memcpy(data, &scene, sizeof(SceneData));
+		_sceneBuffer->Unmap();
+	}
 
 	struct PushConstant {
 		glm::mat4 Model;
@@ -237,10 +364,8 @@ void Graphics::Update() {
 
 	auto cmd = _device->RequestCommandBuffer();
 
-	const auto clearColor = std::pow(0.1f, 2.2f);
-
 	auto rpInfo = _device->GetStockRenderPass(Vulkan::StockRenderPass::Depth);
-	rpInfo.ClearColors[0].setFloat32({clearColor, clearColor, clearColor, 1.0f});
+	rpInfo.ClearColors[0].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
 	rpInfo.ClearDepthStencil.setDepth(1.0f);
 	cmd->BeginRenderPass(rpInfo);
 	cmd->SetProgram(_program);
@@ -250,13 +375,16 @@ void Graphics::Update() {
 	cmd->SetVertexBinding(0, *_positionBuffer, 0, sizeof(glm::vec3), vk::VertexInputRate::eVertex);
 	cmd->SetVertexBinding(1, *_normalBuffer, 0, sizeof(glm::vec3), vk::VertexInputRate::eVertex);
 	cmd->SetVertexBinding(2, *_texcoordBuffer, 0, sizeof(glm::vec2), vk::VertexInputRate::eVertex);
-	cmd->SetIndexBuffer(*_indexBuffer, 0, vk::IndexType::eUint16);
-	cmd->SetUniformBuffer(0, 0, *_sceneBuffer);
+	cmd->SetIndexBuffer(*_indexBuffer, 0, vk::IndexType::eUint32);
+	cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
+	cmd->SetUniformBuffer(0, 1, *_sceneBuffer);
 	cmd->PushConstants(&pc, 0, sizeof(pc));
 	for (const auto& submesh : _mesh.SubMeshes) {
 		const auto& material = _mesh.Materials[submesh.Material];
 		cmd->SetUniformBuffer(1, 0, *material.Data);
-		cmd->SetTexture(1, 1, *material.Albedo->GetView(), Vulkan::StockSampler::DefaultGeometryFilterWrap);
+		cmd->SetTexture(1, 1, *material.Albedo.Image->GetView(), material.Albedo.Sampler);
+		cmd->SetTexture(1, 2, *material.Normal.Image->GetView(), material.Normal.Sampler);
+		cmd->SetTexture(1, 3, *material.PBR.Image->GetView(), material.PBR.Sampler);
 		cmd->DrawIndexed(submesh.IndexCount, 1, submesh.FirstIndex, submesh.FirstVertex);
 	}
 	cmd->EndRenderPass();
@@ -275,5 +403,16 @@ bool Graphics::BeginFrame() {
 void Graphics::EndFrame() {
 	_device->EndFrame();
 	_swapchain->Present();
+}
+
+void Graphics::LoadShaders() {
+	auto filesystem = Filesystem::Get();
+
+	auto vert = filesystem->Read("Shaders/Basic.vert.glsl");
+	auto frag = filesystem->Read("Shaders/Basic.frag.glsl");
+	if (vert.has_value() && frag.has_value()) {
+		auto program = _device->RequestProgram(*vert, *frag);
+		if (program) { _program = program; }
+	}
 }
 }  // namespace Luna

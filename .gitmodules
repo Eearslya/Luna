@@ -13,3 +13,6 @@
 [submodule "External/glm"]
 	path = External/glm
 	url = https://github.com/g-truc/glm.git
+[submodule "External/glslang"]
+	path = External/glslang
+	url = https://github.com/KhronosGroup/glslang.git

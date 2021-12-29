@@ -145,9 +145,9 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void PushConstants(const void* data, vk::DeviceSize offset, vk::DeviceSize range);
 	void SetIndexBuffer(const Buffer& buffer, vk::DeviceSize offset, vk::IndexType indexType);
 	void SetProgram(const Program* program);
-	void SetSampler(uint32_t set, uint32_t binding, const Sampler& sampler);
+	void SetSampler(uint32_t set, uint32_t binding, const Sampler* sampler);
 	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view);
-	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler);
+	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler* sampler);
 	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler);
 	void SetUniformBuffer(
 		uint32_t set, uint32_t binding, const Buffer& buffer, vk::DeviceSize offset = 0, vk::DeviceSize range = 0);

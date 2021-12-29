@@ -296,13 +296,13 @@ void CommandBuffer::SetProgram(const Program* program) {
 	_pipelineLayout = _programLayout->GetPipelineLayout();
 }
 
-void CommandBuffer::SetSampler(uint32_t set, uint32_t binding, const Sampler& sampler) {
-	const auto cookie = sampler.GetCookie();
+void CommandBuffer::SetSampler(uint32_t set, uint32_t binding, const Sampler* sampler) {
+	const auto cookie = sampler->GetCookie();
 	if (cookie == _descriptorBinding.Sets[set].SecondaryCookies[binding]) { return; }
 
 	auto& bind                 = _descriptorBinding.Sets[set].Bindings[binding];
-	bind.Image.Float.sampler   = sampler.GetSampler();
-	bind.Image.Integer.sampler = sampler.GetSampler();
+	bind.Image.Float.sampler   = sampler->GetSampler();
+	bind.Image.Integer.sampler = sampler->GetSampler();
 	_dirtyDescriptorSets |= 1u << set;
 	_descriptorBinding.Sets[set].SecondaryCookies[binding] = cookie;
 }
@@ -324,13 +324,13 @@ void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& 
 	_dirtyDescriptorSets |= 1u << set;
 }
 
-void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler) {
+void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler* sampler) {
 	SetTexture(set, binding, view);
 	SetSampler(set, binding, sampler);
 }
 
 void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler stockSampler) {
-	const auto& sampler = _device.RequestSampler(stockSampler);
+	const auto sampler = _device.RequestSampler(stockSampler);
 	SetTexture(set, binding, view, sampler);
 }
 

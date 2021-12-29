@@ -13,6 +13,7 @@
 #include <Luna/Vulkan/Sampler.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
 #include <Luna/Vulkan/Shader.hpp>
+#include <Luna/Vulkan/ShaderCompiler.hpp>
 #include <Luna/Vulkan/Swapchain.hpp>
 
 // Helper functions for dealing with multithreading.
@@ -105,6 +106,7 @@ Device::Device(const Context& context)
 
 	// Initialize our helper classes.
 	_framebufferAllocator         = std::make_unique<FramebufferAllocator>(*this);
+	_shaderCompiler               = std::make_unique<ShaderCompiler>();
 	_transientAttachmentAllocator = std::make_unique<TransientAttachmentAllocator>(*this);
 
 	// Create our frame contexts.
@@ -441,7 +443,7 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 			                                           ? vk::AccessFlagBits::eTransferWrite
 			                                           : vk::AccessFlags();
 			bool needMipmapBarrier                 = true;
-			bool needInitialBarrier                = generateMips;
+			bool needInitialBarrier                = true;
 
 			auto graphicsCmd = RequestCommandBuffer(CommandBufferType::Generic);
 			CommandBufferHandle transferCmd;
@@ -466,6 +468,7 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 
 				if (!_queues.SameFamily(QueueType::Graphics, QueueType::Transfer)) {
 					needMipmapBarrier = false;
+					if (generateMips) { needInitialBarrier = false; }
 
 					const vk::ImageMemoryBarrier release(
 						vk::AccessFlagBits::eTransferWrite,
@@ -561,31 +564,52 @@ FenceHandle Device::RequestFence() {
 }
 
 Program* Device::RequestProgram(size_t vertCodeSize, const void* vertCode, size_t fragCodeSize, const void* fragCode) {
-	auto& vert = RequestShader(vertCodeSize, vertCode);
-	auto& frag = RequestShader(fragCodeSize, fragCode);
+	auto vert = RequestShader(vertCodeSize, vertCode);
+	auto frag = RequestShader(fragCodeSize, fragCode);
 
+	return RequestProgram(vert, frag);
+}
+
+Program* Device::RequestProgram(Shader* vertex, Shader* fragment) {
 	Hasher h;
-	h(vert.GetHash());
-	h(frag.GetHash());
+	h(vertex->GetHash());
+	h(fragment->GetHash());
 	const auto hash = h.Get();
 
 	Program* ret = _programs.Find(hash);
-	if (!ret) { ret = _programs.EmplaceYield(hash, hash, *this, &vert, &frag); }
+	if (!ret) {
+		try {
+			ret = _programs.EmplaceYield(hash, hash, *this, vertex, fragment);
+		} catch (const std::exception& e) {
+			Log::Error("[Vulkan::Device] Failed to create program: {}", e.what());
+			return nullptr;
+		}
+	}
 
 	return ret;
 }
 
-const Sampler& Device::RequestSampler(const SamplerCreateInfo& createInfo) {
+Program* Device::RequestProgram(const std::string& vertexGlsl, const std::string& fragmentGlsl) {
+	auto vert = RequestShader(vk::ShaderStageFlagBits::eVertex, vertexGlsl);
+	auto frag = RequestShader(vk::ShaderStageFlagBits::eFragment, fragmentGlsl);
+	if (vert && frag) {
+		return RequestProgram(vert, frag);
+	} else {
+		return nullptr;
+	}
+}
+
+Sampler* Device::RequestSampler(const SamplerCreateInfo& createInfo) {
 	Hasher h(createInfo);
 	const auto hash = h.Get();
 	auto* ret       = _samplers.Find(hash);
 	if (!ret) { ret = _samplers.EmplaceYield(hash, hash, *this, createInfo); }
 
-	return *ret;
+	return ret;
 }
 
-const Sampler& Device::RequestSampler(StockSampler type) {
-	return *_stockSamplers[static_cast<int>(type)];
+Sampler* Device::RequestSampler(StockSampler type) {
+	return _stockSamplers[static_cast<int>(type)];
 }
 
 SemaphoreHandle Device::RequestSemaphore(const std::string& debugName) {
@@ -594,16 +618,32 @@ SemaphoreHandle Device::RequestSemaphore(const std::string& debugName) {
 	return SemaphoreHandle(_semaphorePool.Allocate(*this, semaphore, false, debugName));
 }
 
-Shader& Device::RequestShader(size_t codeSize, const void* code) {
+Shader* Device::RequestShader(size_t codeSize, const void* code) {
 	Hasher h;
 	h(codeSize);
 	h.Data(codeSize, code);
 	const Hash hash = h.Get();
 
 	Shader* shader = _shaders.Find(hash);
-	if (!shader) { shader = _shaders.EmplaceYield(hash, hash, *this, codeSize, code); }
+	if (!shader) {
+		try {
+			shader = _shaders.EmplaceYield(hash, hash, *this, codeSize, code);
+		} catch (const std::exception& e) {
+			Log::Error("[Vulkan::Device] Failed to create shader module: {}", e.what());
+			return nullptr;
+		}
+	}
 
-	return *shader;
+	return shader;
+}
+
+Shader* Device::RequestShader(vk::ShaderStageFlagBits stage, const std::string& glsl) {
+	auto spirv = _shaderCompiler->Compile(stage, glsl);
+	if (spirv.has_value()) {
+		return RequestShader(spirv.value().size() * sizeof(uint32_t), spirv.value().data());
+	} else {
+		return nullptr;
+	}
 }
 
 ImageHandle Device::RequestTransientAttachment(const vk::Extent2D& extent,
@@ -1174,7 +1214,7 @@ void Device::CreateStockSamplers() {
 			info.CompareOp     = vk::CompareOp::eLessOrEqual;
 		}
 
-		_stockSamplers[i] = &RequestSampler(info);
+		_stockSamplers[i] = RequestSampler(info);
 	}
 }
 

@@ -13,4 +13,5 @@ target_sources(Luna PRIVATE
 	Sampler.cpp
 	Semaphore.cpp
 	Shader.cpp
+	ShaderCompiler.cpp
 	Swapchain.cpp)

@@ -186,11 +186,13 @@ class Delegate<ReturnT(Args...)> {
 	}
 
 	Delegate& operator+=(FunctionT&& function) {
-		return Add(std::move(function));
+		Add(std::move(function));
+		return *this;
 	}
 
 	Delegate& operator-=(FunctionT&& function) {
-		return Remove(std::move(function));
+		Remove(std::move(function));
+		return *this;
 	}
 
 	typename InvokerT::ReturnValuesT operator()(Args... args) {

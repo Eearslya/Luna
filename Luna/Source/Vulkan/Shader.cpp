@@ -54,8 +54,6 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 		: HashedObject<Shader>(hash), _device(device) {
 	Log::Trace("[Vulkan::Shader] Creating new Shader.");
 
-	assert(codeSize % 4 == 0);
-
 	const vk::ShaderModuleCreateInfo shaderCI({}, codeSize, reinterpret_cast<const uint32_t*>(code));
 	_shaderModule = _device.GetDevice().createShaderModule(shaderCI);
 

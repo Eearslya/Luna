@@ -73,10 +73,13 @@ class Device final : NonCopyable {
 	FenceHandle RequestFence();
 	PipelineLayout* RequestPipelineLayout(const ProgramResourceLayout& layout);
 	Program* RequestProgram(size_t vertCodeSize, const void* vertCode, size_t fragCodeSize, const void* fragCode);
-	const Sampler& RequestSampler(const SamplerCreateInfo& createInfo);
-	const Sampler& RequestSampler(StockSampler type);
+	Program* RequestProgram(Shader* vertex, Shader* fragment);
+	Program* RequestProgram(const std::string& vertexGlsl, const std::string& fragmentGlsl);
+	Sampler* RequestSampler(const SamplerCreateInfo& createInfo);
+	Sampler* RequestSampler(StockSampler type);
 	SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
-	Shader& RequestShader(size_t codeSize, const void* code);
+	Shader* RequestShader(size_t codeSize, const void* code);
+	Shader* RequestShader(vk::ShaderStageFlagBits stage, const std::string& glsl);
 	ImageHandle RequestTransientAttachment(const vk::Extent2D& extent,
 	                                       vk::Format format,
 	                                       uint32_t index                  = 0,
@@ -232,7 +235,8 @@ class Device final : NonCopyable {
 
 	// Management objects.
 	std::unique_ptr<FramebufferAllocator> _framebufferAllocator;
-	std::array<const Sampler*, StockSamplerCount> _stockSamplers;
+	std::unique_ptr<ShaderCompiler> _shaderCompiler;
+	std::array<Sampler*, StockSamplerCount> _stockSamplers;
 	std::unique_ptr<TransientAttachmentAllocator> _transientAttachmentAllocator;
 
 	// Frame contexts.

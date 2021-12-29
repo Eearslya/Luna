@@ -54,6 +54,7 @@ struct SamplerCreateInfo;
 class Semaphore;
 struct SemaphoreDeleter;
 class Shader;
+class ShaderCompiler;
 class Swapchain;
 class TransientAttachmentAllocator;
 
