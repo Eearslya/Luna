@@ -194,11 +194,11 @@ Graphics::Graphics() {
 				if (pixels) {
 					const Vulkan::InitialImageData initialImage{.Data = pixels};
 					vk::Format format = vk::Format::eUndefined;
-					// if (color) {
-					//	format = gltfImage.component == 4 ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8Srgb;
-					// } else {
-					format = gltfImage.component == 4 ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8Unorm;
-					//}
+					if (color) {
+						format = gltfImage.component == 4 ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8Srgb;
+					} else {
+						format = gltfImage.component == 4 ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8Unorm;
+					}
 					texture.Image = _device->CreateImage(
 						Vulkan::ImageCreateInfo::Immutable2D(format, vk::Extent2D(gltfImage.width, gltfImage.height), true),
 						&initialImage);

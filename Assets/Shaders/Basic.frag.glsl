@@ -138,7 +138,7 @@ void main() {
 
 	outColor = vec4(color, baseColor.a);
 
-	const float debugView = 0.0;
+	const float debugView = 5.0;
 	if (debugView > 0.0) {
 		const int index = int(debugView);
 		switch(index) {
@@ -147,6 +147,16 @@ void main() {
 				break;
 			case 2:
 				outColor.rgb = texture(texNormal, inUV0).rgb;
+				break;
+			case 3:
+				outColor.rgb = n;
+				break;
+			case 4:
+				outColor.rgb = h;
+				break;
+			case 5:
+				outColor.r = G;
+				outColor.gb = outColor.rr;
 				break;
 		}
 		outColor = SrgbToLinear(outColor);
