@@ -10,6 +10,69 @@ struct IndexState {
 	vk::IndexType IndexType = vk::IndexType::eUint32;
 };
 
+constexpr static const int BlendFactorBits = 5;
+constexpr static const int BlendOpBits     = 3;
+constexpr static const int CompareOpBits   = 3;
+constexpr static const int CullModeBits    = 2;
+constexpr static const int FrontFaceBits   = 1;
+constexpr static const int StencilOpBits   = 3;
+constexpr static const int TopologyBits    = 4;
+
+union PipelineState {
+	struct {
+		// Topology
+		unsigned PrimitiveRestart : 1;
+		unsigned Topology : TopologyBits;
+		unsigned Wireframe : 1;
+
+		// Culling
+		unsigned CullMode : CullModeBits;
+		unsigned FrontFace : FrontFaceBits;
+
+		// Depth
+		unsigned DepthBiasEnable : 1;
+		unsigned DepthCompare : CompareOpBits;
+		unsigned DepthTest : 1;
+		unsigned DepthWrite : 1;
+
+		// Stencil
+		unsigned StencilTest : 1;
+		unsigned StencilFrontFail : StencilOpBits;
+		unsigned StencilFrontPass : StencilOpBits;
+		unsigned StencilFrontDepthFail : StencilOpBits;
+		unsigned StencilFrontCompareOp : CompareOpBits;
+		unsigned StencilBackFail : StencilOpBits;
+		unsigned StencilBackPass : StencilOpBits;
+		unsigned StencilBackDepthFail : StencilOpBits;
+		unsigned StencilBackCompareOp : CompareOpBits;
+
+		// Blending
+		unsigned BlendEnable : 1;
+		unsigned SrcColorBlend : BlendFactorBits;
+		unsigned DstColorBlend : BlendFactorBits;
+		unsigned ColorBlendOp : BlendOpBits;
+		unsigned SrcAlphaBlend : BlendFactorBits;
+		unsigned DstAlphaBlend : BlendFactorBits;
+		unsigned AlphaBlendOp : BlendOpBits;
+
+		// Misc
+		unsigned AlphaToCoverage : 1;
+		unsigned AlphaToOne : 1;
+		unsigned SampleShading : 1;
+		unsigned ConservativeRaster : 1;
+
+		// Compute
+		unsigned SubgroupControlSize : 1;
+		unsigned SubgroupFullGroup : 1;
+		unsigned SubgroupMinimumSizeLog2 : 3;
+		unsigned SubgroupMaximumSizeLog2 : 3;
+
+		// Write Mask
+		uint32_t WriteMask;
+	};
+	uint32_t Data[4];
+};
+
 struct VertexAttributeState {
 	uint32_t Binding      = 0;
 	vk::Format Format     = vk::Format::eUndefined;
@@ -24,6 +87,8 @@ struct VertexBindingState {
 struct PipelineCompileInfo {
 	const RenderPass* CompatibleRenderPass                              = nullptr;
 	const Program* Program                                              = nullptr;
+	PipelineState StaticState                                           = {};
+	uint32_t SubpassIndex                                               = 0;
 	std::array<VertexAttributeState, MaxVertexBuffers> VertexAttributes = {};
 	std::array<vk::VertexInputRate, MaxVertexBuffers> VertexInputRates  = {};
 	std::array<vk::DeviceSize, MaxVertexBuffers> VertexStrides          = {};
@@ -136,6 +201,11 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void BeginRenderPass(const RenderPassInfo& info);
 	void EndRenderPass();
 
+	void ClearRenderState();
+	void SetOpaqueState();
+	void SetCullMode(vk::CullModeFlagBits mode);
+	void SetFrontFace(vk::FrontFace front);
+
 	void Draw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);
 	void DrawIndexed(uint32_t indexCount,
 	                 uint32_t instanceCount = 1,
@@ -161,6 +231,9 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
  private:
 	CommandBuffer(Device& device, vk::CommandBuffer commandBuffer, CommandBufferType type, uint32_t threadIndex);
 
+	void BeginContext();
+	void BeginCompute();
+	void BeginGraphics();
 	vk::Pipeline BuildGraphicsPipeline(bool synchronous);
 	bool FlushGraphicsPipeline(bool synchronous);
 	bool FlushRenderState(bool synchronous);
@@ -179,6 +252,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	uint32_t _dirtyVertexBuffers    = 0;
 	const Framebuffer* _framebuffer = nullptr;
 	IndexState _indexBuffer         = {};
+	bool _isCompute                 = false;
 	vk::Pipeline _pipeline;
 	vk::PipelineLayout _pipelineLayout;
 	PipelineLayout* _programLayout          = nullptr;

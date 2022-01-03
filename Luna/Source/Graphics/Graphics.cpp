@@ -178,6 +178,7 @@ Graphics::Graphics() {
 			material.Normal.Sampler = _device->RequestSampler(Vulkan::StockSampler::DefaultGeometryFilterWrap);
 			material.PBR.Image      = _whiteImage;
 			material.PBR.Sampler    = _device->RequestSampler(Vulkan::StockSampler::DefaultGeometryFilterWrap);
+			material.DualSided      = gltfMaterial.doubleSided;
 
 			MaterialData data{};
 			data.AlphaMask       = gltfMaterial.alphaMode.compare("MASK") == 0 ? 1.0f : 0.0f;
@@ -400,6 +401,7 @@ void Graphics::Update() {
 	cmd->PushConstants(&pc, 0, sizeof(pc));
 	for (const auto& submesh : _mesh.SubMeshes) {
 		const auto& material = _mesh.Materials[submesh.Material];
+		cmd->SetCullMode(material.DualSided ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack);
 		cmd->SetUniformBuffer(1, 0, *material.Data);
 		cmd->SetTexture(1, 1, *material.Albedo.Image->GetView(), material.Albedo.Sampler);
 		cmd->SetTexture(1, 2, *material.Normal.Image->GetView(), material.Normal.Sampler);

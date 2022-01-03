@@ -138,7 +138,7 @@ void main() {
 
 	outColor = vec4(color, baseColor.a);
 
-	const float debugView = 5.0;
+	const float debugView = 0.0;
 	if (debugView > 0.0) {
 		const int index = int(debugView);
 		switch(index) {

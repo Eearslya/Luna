@@ -30,6 +30,7 @@ Hash PipelineCompileInfo::GetHash() const {
 
 	h(CompatibleRenderPass->GetHash());
 	h(Program->GetHash());
+	h.Data(sizeof(StaticState.Data), StaticState.Data);
 
 	return h.Get();
 }
@@ -42,7 +43,10 @@ CommandBuffer::CommandBuffer(Device& device,
                              vk::CommandBuffer commandBuffer,
                              CommandBufferType type,
                              uint32_t threadIndex)
-		: _device(device), _commandBuffer(commandBuffer), _commandBufferType(type), _threadIndex(threadIndex) {}
+		: _device(device), _commandBuffer(commandBuffer), _commandBufferType(type), _threadIndex(threadIndex) {
+	BeginCompute();
+	SetOpaqueState();
+}
 
 CommandBuffer::~CommandBuffer() noexcept {}
 
@@ -227,6 +231,8 @@ void CommandBuffer::BeginRenderPass(const RenderPassInfo& info) {
 	const vk::RenderPassBeginInfo rpBI(
 		_actualRenderPass->GetRenderPass(), _framebuffer->GetFramebuffer(), _scissor, clearValueCount, clearValues.data());
 	_commandBuffer.beginRenderPass(rpBI, vk::SubpassContents::eInline);
+
+	BeginGraphics();
 }
 
 void CommandBuffer::EndRenderPass() {
@@ -236,6 +242,50 @@ void CommandBuffer::EndRenderPass() {
 	_pipelineCompileInfo.CompatibleRenderPass = nullptr;
 	_actualRenderPass                         = nullptr;
 }
+
+/* ==========
+ * Static State
+ * ========== */
+
+#define SetStaticState(field, value)                                              \
+	do {                                                                            \
+		if (_pipelineCompileInfo.StaticState.field != static_cast<unsigned>(value)) { \
+			_pipelineCompileInfo.StaticState.field = static_cast<unsigned>(value);      \
+			_dirty |= CommandBufferDirtyFlagBits::StaticState;                          \
+		}                                                                             \
+	} while (0)
+
+void CommandBuffer::ClearRenderState() {
+	memset(&_pipelineCompileInfo.StaticState, 0, sizeof(_pipelineCompileInfo.StaticState));
+	_dirty |= CommandBufferDirtyFlagBits::StaticState;
+}
+
+void CommandBuffer::SetOpaqueState() {
+	ClearRenderState();
+	auto& state            = _pipelineCompileInfo.StaticState;
+	state.FrontFace        = static_cast<unsigned>(vk::FrontFace::eCounterClockwise);
+	state.CullMode         = static_cast<unsigned>(vk::CullModeFlagBits::eBack);
+	state.BlendEnable      = false;
+	state.DepthTest        = true;
+	state.DepthCompare     = static_cast<unsigned>(vk::CompareOp::eLessOrEqual);
+	state.DepthWrite       = true;
+	state.DepthBiasEnable  = false;
+	state.PrimitiveRestart = false;
+	state.StencilTest      = false;
+	state.Topology         = static_cast<unsigned>(vk::PrimitiveTopology::eTriangleList);
+	state.WriteMask        = ~0u;
+	_dirty |= CommandBufferDirtyFlagBits::StaticState;
+}
+
+void CommandBuffer::SetCullMode(vk::CullModeFlagBits mode) {
+	SetStaticState(CullMode, mode);
+}
+
+void CommandBuffer::SetFrontFace(vk::FrontFace front) {
+	SetStaticState(FrontFace, front);
+}
+
+#undef SetStaticState
 
 void CommandBuffer::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
 	if (FlushRenderState(true)) { _commandBuffer.draw(vertexCount, instanceCount, firstVertex, firstInstance); }
@@ -378,12 +428,43 @@ void CommandBuffer::SetVertexBinding(
 	_pipelineCompileInfo.VertexStrides[binding]    = stride;
 }
 
+void CommandBuffer::BeginContext() {
+	_dirty                       = ~0u;
+	_dirtyDescriptorSets         = ~0u;
+	_dirtyVertexBuffers          = ~0u;
+	_pipeline                    = VK_NULL_HANDLE;
+	_pipelineLayout              = VK_NULL_HANDLE;
+	_programLayout               = nullptr;
+	_pipelineCompileInfo.Program = nullptr;
+	for (auto& set : _descriptorBinding.Sets) {
+		std::fill(set.Cookies.begin(), set.Cookies.end(), 0);
+		std::fill(set.SecondaryCookies.begin(), set.SecondaryCookies.end(), 0);
+	}
+}
+
+void CommandBuffer::BeginCompute() {
+	_isCompute = true;
+	BeginContext();
+}
+
+void CommandBuffer::BeginGraphics() {
+	_isCompute = false;
+	BeginContext();
+}
+
 vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
-	const auto& rp = _pipelineCompileInfo.CompatibleRenderPass;
+	const auto& rp    = _pipelineCompileInfo.CompatibleRenderPass;
+	const auto& state = _pipelineCompileInfo.StaticState;
 
 	const vk::PipelineViewportStateCreateInfo viewport({}, 1, nullptr, 1, nullptr);
 
-	const std::vector<vk::DynamicState> dynamicStates{vk::DynamicState::eScissor, vk::DynamicState::eViewport};
+	std::vector<vk::DynamicState> dynamicStates{vk::DynamicState::eScissor, vk::DynamicState::eViewport};
+	if (state.DepthBiasEnable) { dynamicStates.push_back(vk::DynamicState::eDepthBias); }
+	if (state.StencilTest) {
+		dynamicStates.push_back(vk::DynamicState::eStencilCompareMask);
+		dynamicStates.push_back(vk::DynamicState::eStencilReference);
+		dynamicStates.push_back(vk::DynamicState::eStencilWriteMask);
+	}
 	const vk::PipelineDynamicStateCreateInfo dynamic({}, dynamicStates);
 
 	std::array<vk::PipelineColorBlendAttachmentState, MaxColorAttachments> blendAttachments = {};
@@ -395,21 +476,49 @@ vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 
 		if (_pipelineCompileInfo.CompatibleRenderPass->GetColorAttachment(0, i).attachment != VK_ATTACHMENT_UNUSED &&
 		    (_pipelineCompileInfo.Program->GetPipelineLayout()->GetResourceLayout().RenderTargetMask & (1u << i))) {
-			att = vk::PipelineColorBlendAttachmentState(VK_FALSE,
-			                                            vk::BlendFactor::eOne,
-			                                            vk::BlendFactor::eZero,
-			                                            vk::BlendOp::eAdd,
-			                                            vk::BlendFactor::eOne,
-			                                            vk::BlendFactor::eZero,
-			                                            vk::BlendOp::eAdd,
-			                                            vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-			                                              vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
+			att                = vk::PipelineColorBlendAttachmentState(state.BlendEnable,
+                                                  vk::BlendFactor::eOne,
+                                                  vk::BlendFactor::eZero,
+                                                  vk::BlendOp::eAdd,
+                                                  vk::BlendFactor::eOne,
+                                                  vk::BlendFactor::eZero,
+                                                  vk::BlendOp::eAdd,
+                                                  vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                                                    vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
+			att.colorWriteMask = static_cast<vk::ColorComponentFlags>((state.WriteMask >> (4 * i)) & 0x0f);
+			if (state.BlendEnable) {
+				att.srcColorBlendFactor = static_cast<vk::BlendFactor>(state.SrcColorBlend);
+				att.dstColorBlendFactor = static_cast<vk::BlendFactor>(state.DstColorBlend);
+				att.srcAlphaBlendFactor = static_cast<vk::BlendFactor>(state.SrcAlphaBlend);
+				att.dstAlphaBlendFactor = static_cast<vk::BlendFactor>(state.DstAlphaBlend);
+				att.colorBlendOp        = static_cast<vk::BlendOp>(state.ColorBlendOp);
+				att.alphaBlendOp        = static_cast<vk::BlendOp>(state.AlphaBlendOp);
+			}
 		}
 	}
 
 	vk::PipelineDepthStencilStateCreateInfo depthStencil(
-		{}, rp->HasDepth(0), rp->HasDepth(0), {}, {}, rp->HasStencil(0), {}, {}, 0.0f, 1.0f);
-	if (depthStencil.depthTestEnable) { depthStencil.depthCompareOp = vk::CompareOp::eLessOrEqual; }
+		{},
+		rp->HasDepth(_pipelineCompileInfo.SubpassIndex) && state.DepthTest,
+		rp->HasDepth(_pipelineCompileInfo.SubpassIndex) && state.DepthWrite,
+		{},
+		{},
+		rp->HasStencil(_pipelineCompileInfo.SubpassIndex) && state.StencilTest,
+		{},
+		{},
+		0.0f,
+		1.0f);
+	if (depthStencil.depthTestEnable) { depthStencil.depthCompareOp = static_cast<vk::CompareOp>(state.DepthCompare); }
+	if (depthStencil.stencilTestEnable) {
+		depthStencil.front.compareOp   = static_cast<vk::CompareOp>(state.StencilFrontCompareOp);
+		depthStencil.front.passOp      = static_cast<vk::StencilOp>(state.StencilFrontPass);
+		depthStencil.front.failOp      = static_cast<vk::StencilOp>(state.StencilFrontFail);
+		depthStencil.front.depthFailOp = static_cast<vk::StencilOp>(state.StencilFrontDepthFail);
+		depthStencil.back.compareOp    = static_cast<vk::CompareOp>(state.StencilBackCompareOp);
+		depthStencil.back.passOp       = static_cast<vk::StencilOp>(state.StencilBackPass);
+		depthStencil.back.failOp       = static_cast<vk::StencilOp>(state.StencilBackFail);
+		depthStencil.back.depthFailOp  = static_cast<vk::StencilOp>(state.StencilBackDepthFail);
+	}
 
 	uint32_t vertexAttributeCount                                                         = 0;
 	std::array<vk::VertexInputAttributeDescription, MaxVertexAttributes> vertexAttributes = {};
@@ -433,22 +542,30 @@ vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 	const vk::PipelineVertexInputStateCreateInfo vertexInput(
 		{}, vertexBindingCount, vertexBindings.data(), vertexAttributeCount, vertexAttributes.data());
 
-	const vk::PipelineInputAssemblyStateCreateInfo assembly({}, vk::PrimitiveTopology::eTriangleList, VK_FALSE);
+	const vk::PipelineInputAssemblyStateCreateInfo assembly(
+		{}, static_cast<vk::PrimitiveTopology>(state.Topology), state.PrimitiveRestart);
 
-	const vk::PipelineMultisampleStateCreateInfo multisample(
+	vk::PipelineMultisampleStateCreateInfo multisample(
 		{}, vk::SampleCountFlagBits::e1, VK_FALSE, 0.0f, nullptr, VK_FALSE, VK_FALSE);
+	if (rp->GetSampleCount(_pipelineCompileInfo.SubpassIndex) != vk::SampleCountFlagBits::e1) {
+		multisample.alphaToCoverageEnable = state.AlphaToCoverage;
+		multisample.alphaToOneEnable      = state.AlphaToOne;
+		multisample.sampleShadingEnable   = state.SampleShading;
+		multisample.minSampleShading      = 1.0f;
+	}
 
-	const vk::PipelineRasterizationStateCreateInfo rasterizer({},
-	                                                          VK_FALSE,
-	                                                          VK_FALSE,
-	                                                          vk::PolygonMode::eFill,
-	                                                          vk::CullModeFlagBits::eBack,
-	                                                          vk::FrontFace::eCounterClockwise,
-	                                                          VK_FALSE,
-	                                                          0.0f,
-	                                                          0.0f,
-	                                                          0.0f,
-	                                                          1.0f);
+	const vk::PipelineRasterizationStateCreateInfo rasterizer(
+		{},
+		VK_FALSE,
+		VK_FALSE,
+		state.Wireframe ? vk::PolygonMode::eLine : vk::PolygonMode::eFill,
+		static_cast<vk::CullModeFlagBits>(state.CullMode),
+		static_cast<vk::FrontFace>(state.FrontFace),
+		state.DepthBiasEnable,
+		0.0f,
+		0.0f,
+		0.0f,
+		1.0f);
 
 	std::vector<vk::PipelineShaderStageCreateInfo> stages;
 	stages.push_back(
@@ -477,7 +594,7 @@ vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 	                                                &dynamic,
 	                                                _pipelineLayout,
 	                                                _pipelineCompileInfo.CompatibleRenderPass->GetRenderPass(),
-	                                                0,
+	                                                _pipelineCompileInfo.SubpassIndex,
 	                                                VK_NULL_HANDLE,
 	                                                0);
 	Log::Trace("[Vulkan::CommandBuffer] Creating new Pipeline.");

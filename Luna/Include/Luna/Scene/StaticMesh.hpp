@@ -35,6 +35,7 @@ struct Material {
 	Texture Albedo;
 	Texture Normal;
 	Texture PBR;
+	bool DualSided = false;
 	Vulkan::BufferHandle Data;
 };
 
