@@ -16,3 +16,6 @@
 [submodule "External/glslang"]
 	path = External/glslang
 	url = https://github.com/KhronosGroup/glslang.git
+[submodule "External/imgui"]
+	path = External/imgui
+	url = https://github.com/ocornut/imgui.git
