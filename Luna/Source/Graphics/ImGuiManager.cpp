@@ -345,6 +345,8 @@ void ImGuiManager::Render(Vulkan::CommandBufferHandle& cmd) {
 }
 
 void ImGuiManager::SetRenderState(Vulkan::CommandBufferHandle& cmd, ImDrawData* drawData) const {
+	if (drawData->TotalVtxCount == 0) { return; }
+
 	cmd->SetProgram(_program);
 	cmd->SetTransparentSpriteState();
 	cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, pos));
