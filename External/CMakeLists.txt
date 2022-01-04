@@ -21,3 +21,7 @@ target_sources(imgui PRIVATE
 	imgui/imgui_draw.cpp
 	imgui/imgui_tables.cpp
 	imgui/imgui_widgets.cpp)
+
+add_library(tracy STATIC)
+target_include_directories(tracy PUBLIC tracy)
+target_sources(tracy PRIVATE tracy/TracyClient.cpp)
