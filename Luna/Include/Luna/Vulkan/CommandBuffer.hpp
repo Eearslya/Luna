@@ -203,8 +203,10 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 
 	void ClearRenderState();
 	void SetOpaqueState();
+	void SetTransparentSpriteState();
 	void SetCullMode(vk::CullModeFlagBits mode);
 	void SetFrontFace(vk::FrontFace front);
+	void SetScissor(const vk::Rect2D& scissor);
 
 	void Draw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);
 	void DrawIndexed(uint32_t indexCount,

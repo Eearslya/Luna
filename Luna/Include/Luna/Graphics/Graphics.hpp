@@ -2,10 +2,12 @@
 
 #include <Luna/Devices/Window.hpp>
 #include <Luna/Filesystem/Filesystem.hpp>
+#include <Luna/Graphics/ImGuiManager.hpp>
 #include <Luna/Input/Input.hpp>
 #include <Luna/Scene/Camera.hpp>
 #include <Luna/Scene/StaticMesh.hpp>
 #include <Luna/Threading/Threading.hpp>
+#include <Luna/Utility/Delegate.hpp>
 #include <glm/glm.hpp>
 
 namespace Luna {
@@ -21,6 +23,10 @@ class Graphics : public Module::Registrar<Graphics> {
  public:
 	Graphics();
 	~Graphics() noexcept;
+
+	Delegate<void()>& OnUiRender() {
+		return _onUiRender;
+	}
 
 	virtual void Update() override;
 
@@ -42,6 +48,8 @@ class Graphics : public Module::Registrar<Graphics> {
 	std::unique_ptr<Vulkan::Context> _context;
 	std::unique_ptr<Vulkan::Device> _device;
 	std::unique_ptr<Vulkan::Swapchain> _swapchain;
+	std::unique_ptr<ImGuiManager> _imgui;
+	Delegate<void()> _onUiRender;
 	Vulkan::ImageHandle _whiteImage;
 
 	Camera _camera;

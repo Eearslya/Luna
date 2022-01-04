@@ -68,16 +68,16 @@ class Mouse : public Module::Registrar<Mouse> {
 	void SetCursorHidden(bool hidden);
 	void SetPosition(const Vec2d& position);
 
-	Delegate<void(MouseButton, InputAction, InputMods)>& OnButton() {
+	CancellableDelegate<MouseButton, InputAction, InputMods>& OnButton() {
 		return _onButton;
 	}
-	Delegate<void(bool)>& OnEnter() {
+	CancellableDelegate<bool>& OnEnter() {
 		return _onEnter;
 	}
-	Delegate<void(Vec2d)>& OnMoved() {
+	CancellableDelegate<Vec2d>& OnMoved() {
 		return _onMoved;
 	};
-	Delegate<void(Vec2d)>& OnScroll() {
+	CancellableDelegate<Vec2d>& OnScroll() {
 		return _onScroll;
 	}
 
@@ -97,9 +97,9 @@ class Mouse : public Module::Registrar<Mouse> {
 	bool _windowSelected = false;
 	bool _cursorHidden   = false;
 
-	Delegate<void(MouseButton, InputAction, InputMods)> _onButton;
-	Delegate<void(bool)> _onEnter;
-	Delegate<void(Vec2d)> _onMoved;
-	Delegate<void(Vec2d)> _onScroll;
+	CancellableDelegate<MouseButton, InputAction, InputMods> _onButton;
+	CancellableDelegate<bool> _onEnter;
+	CancellableDelegate<Vec2d> _onMoved;
+	CancellableDelegate<Vec2d> _onScroll;
 };
 }  // namespace Luna

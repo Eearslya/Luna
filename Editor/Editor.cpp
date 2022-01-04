@@ -21,8 +21,13 @@ class EditorApp : public App {
 		});
 
 		Keyboard::Get()->OnKey().Add(
-			[](Key key, InputAction action, InputMods mods) {
-				if (key == Key::Escape && action == InputAction::Press) { Engine::Get()->Shutdown(); }
+			[](Key key, InputAction action, InputMods mods) -> bool {
+				if (key == Key::Escape && action == InputAction::Press) {
+					Engine::Get()->Shutdown();
+					return true;
+				}
+
+				return false;
 			},
 			this);
 	}

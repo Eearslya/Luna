@@ -226,7 +226,8 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 		}
 	}
 
-	// Dump shader resources to console.
+// Dump shader resources to console.
+#if 0
 	{
 		Log::Trace("[Vulkan::Shader] - Shader Resources:");
 
@@ -290,6 +291,7 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 			Log::Trace("[Vulkan::Shader]     Push Constant Size: {}B", _layout.PushConstantSize);
 		}
 	}
+#endif
 }
 
 Shader::~Shader() noexcept {
@@ -414,7 +416,8 @@ void Program::Bake() {
 
 	_pipelineLayout = _device.RequestPipelineLayout(_layout);
 
-	// Dump program resources to console.
+// Dump program resources to console.
+#if 0
 	{
 		Log::Trace("[Vulkan::Program] - Program Resources:");
 
@@ -497,6 +500,7 @@ void Program::Bake() {
 			           vk::to_string(_layout.PushConstantRange.stageFlags));
 		}
 	}
+#endif
 }
 
 vk::Pipeline Program::AddPipeline(Hash hash, vk::Pipeline pipeline) const {

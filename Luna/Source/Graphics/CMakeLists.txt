@@ -1,2 +1,3 @@
 target_sources(Luna PRIVATE
-	Graphics.cpp)
+	Graphics.cpp
+	ImGuiManager.cpp)

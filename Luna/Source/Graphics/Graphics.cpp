@@ -31,6 +31,7 @@ Graphics::Graphics() {
 	_context   = std::make_unique<Vulkan::Context>(instanceExtensions, deviceExtensions);
 	_device    = std::make_unique<Vulkan::Device>(*_context);
 	_swapchain = std::make_unique<Vulkan::Swapchain>(*_device);
+	_imgui     = std::make_unique<ImGuiManager>(*_device);
 
 	// Create placeholder texture.
 	{
@@ -314,26 +315,40 @@ Graphics::Graphics() {
 		Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, sizeof(SceneData), vk::BufferUsageFlagBits::eUniformBuffer));
 
 	LoadShaders();
-	keyboard->OnKey() += [&](Key key, InputAction action, InputMods mods) -> void {
-		if (key == Key::F2 && action == InputAction::Press) { LoadShaders(); }
+	keyboard->OnKey() += [&](Key key, InputAction action, InputMods mods) -> bool {
+		if (key == Key::F2 && action == InputAction::Press) {
+			LoadShaders();
+			return true;
+		}
+
+		return false;
 	};
-	mouse->OnButton() += [this](MouseButton button, InputAction action, InputMods mods) -> void {
+	mouse->OnButton() += [this](MouseButton button, InputAction action, InputMods mods) -> bool {
 		auto mouse = Mouse::Get();
 		if (button == MouseButton::Button1) {
 			if (action == InputAction::Press) {
 				_mouseControl = true;
 				mouse->SetCursorHidden(true);
+				return true;
 			} else {
 				_mouseControl = false;
 				mouse->SetCursorHidden(false);
+				return true;
 			}
 		}
+
+		return false;
 	};
-	mouse->OnMoved() += [this](Vec2d pos) -> void {
+	mouse->OnMoved() += [this](Vec2d pos) -> bool {
 		auto engine             = Engine::Get();
 		const auto deltaTime    = engine->GetFrameDelta().Seconds();
 		const float sensitivity = 5.0f * deltaTime;
-		if (_mouseControl) { _camera.Rotate(pos.y * sensitivity, -pos.x * sensitivity); }
+		if (_mouseControl) {
+			_camera.Rotate(pos.y * sensitivity, -pos.x * sensitivity);
+			return true;
+		}
+
+		return false;
 	};
 
 	_camera.SetPosition(glm::vec3(0, 1, 0));
@@ -344,11 +359,16 @@ Graphics::~Graphics() noexcept {}
 void Graphics::Update() {
 	if (!BeginFrame()) { return; }
 
+	_imgui->BeginFrame();
+	ImGui::ShowDemoWindow(nullptr);
+	_onUiRender();
+
 	// Update Camera movement.
 	{
-		auto engine           = Engine::Get();
-		auto keyboard         = Keyboard::Get();
-		const auto deltaTime  = engine->GetFrameDelta().Seconds();
+		auto engine          = Engine::Get();
+		auto keyboard        = Keyboard::Get();
+		const auto deltaTime = engine->GetFrameDelta().Seconds();
+		_camera.Update(deltaTime);
 		const float moveSpeed = 5.0f * deltaTime;
 		if (keyboard->GetKey(Key::W) == InputAction::Press) { _camera.Move(_camera.GetForward() * moveSpeed); }
 		if (keyboard->GetKey(Key::S) == InputAction::Press) { _camera.Move(-_camera.GetForward() * moveSpeed); }
@@ -410,6 +430,9 @@ void Graphics::Update() {
 	}
 	cmd->EndRenderPass();
 
+	_imgui->EndFrame();
+	_imgui->Render(cmd);
+
 	_device->Submit(cmd);
 
 	EndFrame();
@@ -418,7 +441,9 @@ void Graphics::Update() {
 bool Graphics::BeginFrame() {
 	_device->NextFrame();
 
-	return _swapchain->AcquireNextImage();
+	const auto acquired = _swapchain->AcquireNextImage();
+
+	return acquired;
 }
 
 void Graphics::EndFrame() {

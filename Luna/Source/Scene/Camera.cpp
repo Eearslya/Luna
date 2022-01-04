@@ -28,6 +28,10 @@ glm::vec3 Camera::GetUp() const {
 	return glm::vec3(0, 1, 0);
 }
 
+void Camera::Accelerate(const glm::vec3& velocityDelta) {
+	_velocity += velocityDelta;
+}
+
 void Camera::Move(const glm::vec3& positionDelta) {
 	SetPosition(_position + positionDelta);
 }
@@ -57,6 +61,15 @@ void Camera::SetRotation(float pitch, float yaw) {
 	while (_yaw >= 360.0f) { _yaw -= 360.0f; }
 	while (_yaw < 0.0f) { _yaw += 360.0f; }
 	RecalculateView();
+}
+
+void Camera::SetVelocity(const glm::vec3& velocity) {
+	_velocity = velocity;
+}
+
+void Camera::Update(float deltaTime) {
+	if (_velocity.length()) { Move(_velocity * deltaTime); }
+	if (_velocity.length() < 0.01f) { _velocity = glm::vec3(0.0f); }
 }
 
 void Camera::RecalculateProjection() {

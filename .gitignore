@@ -14,3 +14,4 @@ Build/
 *.o
 *.pdb
 *.spv
+imgui.ini

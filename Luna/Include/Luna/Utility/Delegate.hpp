@@ -9,6 +9,8 @@
 namespace Luna {
 template <typename>
 class Delegate;
+template <typename...>
+class CancellableDelegate;
 
 // A simple class that contains a shared pointer. This is used to track object lifetimes in delegate callbacks. If the
 // object that extends Observer is destroyed, the shared pointer will be destroyed as well, invalidating all of the weak
@@ -66,6 +68,29 @@ class Invoker<void, Args...> {
 			}
 
 			it->Function(args...);
+			++it;
+		}
+	}
+};
+
+template <typename... Args>
+class CancellableInvoker {
+ public:
+	using ReturnValuesT = void;
+
+	static void Invoke(CancellableDelegate<Args...>& delegate, Args... args) {
+		std::lock_guard<std::mutex> lock(delegate._mutex);
+
+		if (delegate._functions.empty()) { return; }
+
+		for (auto it = delegate._functions.begin(); it != delegate._functions.end();) {
+			if (it->IsExpired()) {
+				it = delegate._functions.erase(it);
+				continue;
+			}
+
+			if (it->Function(args...)) { break; }
+
 			++it;
 		}
 	}
@@ -191,6 +216,143 @@ class Delegate<ReturnT(Args...)> {
 	}
 
 	Delegate& operator-=(FunctionT&& function) {
+		Remove(std::move(function));
+		return *this;
+	}
+
+	typename InvokerT::ReturnValuesT operator()(Args... args) {
+		return InvokerT::Invoke(*this, args...);
+	}
+
+ private:
+	friend InvokerT;
+
+	static constexpr size_t Hash(const FunctionT& function) {
+		return function.target_type().hash_code();
+	}
+
+	std::vector<FunctionPair> _functions;
+	std::mutex _mutex;
+};
+
+template <typename... Args>
+class CancellableDelegate {
+ public:
+	using ReturnT    = bool;
+	using FunctionT  = std::function<ReturnT(Args...)>;
+	using InvokerT   = CancellableInvoker<Args...>;
+	using ObserversT = std::vector<std::weak_ptr<bool>>;
+
+	// A FunctionPair represents a single "callback" registered to this delegate. It includes a function to call, and a
+	// list of "observers". Observers can be any class that extends the Observers class. At the time of registering a
+	// callback, one may optionally include a list of observers. If any observers have been destroyed before the callback
+	// is called, the callback will automatically be removed.
+	struct FunctionPair {
+		FunctionT Function;
+		ObserversT Observers;
+
+		bool IsExpired() const {
+			for (const auto& observer : Observers) {
+				if (observer.expired()) { return true; }
+			}
+
+			return false;
+		}
+	};
+
+	CancellableDelegate()                   = default;
+	virtual ~CancellableDelegate() noexcept = default;
+
+	template <typename... ObserverList>
+	void Add(FunctionT&& function, ObserverList... observers) {
+		std::lock_guard<std::mutex> lock(_mutex);
+
+		ObserversT observerList;
+		if constexpr (sizeof...(observers) != 0) {
+			for (const auto& observer : {observers...}) {
+				observerList.emplace_back(std::to_address(observer)->ObserverIsAlive);
+			}
+		}
+
+		_functions.emplace_back(FunctionPair{std::move(function), observerList});
+	}
+
+	void Remove(const FunctionT&& function) {
+		std::lock_guard<std::mutex> lock(_mutex);
+
+		_functions.erase(std::remove_if(_functions.begin(),
+		                                _functions.end(),
+		                                [function](FunctionPair& f) { return Hash(f.Function) == Hash(function); }),
+		                 _functions.end());
+	}
+
+	template <typename... ObserverList>
+	void RemoveObservers(ObserverList... observers) {
+		ObserversT removes;
+
+		if constexpr (sizeof...(observers) != 0) {
+			for (const auto& observer : {observers...}) { removes.emplace_back(std::to_address(observer)->ObserverIsAlive); }
+		}
+
+		for (auto it = _functions.begin(); it != _functions.end();) {
+			for (auto it1 = it->Observers.begin(); it1 != it->Observers.end();) {
+				bool erase = false;
+				auto opt   = it1->lock();
+				for (const auto& remove : removes) {
+					auto ept = remove.lock();
+					if (opt.get() == ept.get()) { erase = true; }
+				}
+				if (erase) {
+					it1 = it->Observers.erase(it1);
+				} else {
+					++it1;
+				}
+			}
+
+			if (it->Observers.empty()) {
+				it = _functions.erase(it);
+			} else {
+				++it;
+			}
+		}
+	}
+
+	void MoveFunctions(CancellableDelegate& from, const ObserversT& exclude = {}) {
+		for (auto it = from._functions.begin(); it < from._functions.end();) {
+			bool move = true;
+			for (const auto& excluded : exclude) {
+				auto ept = excluded.lock();
+				for (const auto& observer : it->Observers) {
+					auto opt = observer.lock();
+					if (opt.get() == ept.get()) { move = false; }
+				}
+			}
+
+			if (move) {
+				std::move(from._functions.begin(), it, std::back_inserter(_functions));
+				it = from._functions.erase(from._functions.begin(), it);
+			} else {
+				++it;
+			}
+		}
+	}
+
+	void Clear() {
+		std::lock_guard<std::mutex> lock(_mutex);
+
+		_functions.clear();
+	}
+
+	typename InvokerT::ReturnValuesT Invoke(Args... args) {
+		return InvokerT::Invoke(*this, args...);
+	}
+
+	CancellableDelegate& operator+=(FunctionT&& function) {
+		Add(std::move(function));
+		return *this;
+	}
+
+	CancellableDelegate& operator-=(FunctionT&& function) {
 		Remove(std::move(function));
 		return *this;
 	}

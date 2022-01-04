@@ -138,10 +138,10 @@ class Keyboard : public Module::Registrar<Keyboard> {
 
 	InputAction GetKey(Key key) const;
 
-	Delegate<void(Key, InputAction, InputMods)>& OnKey() {
+	CancellableDelegate<Key, InputAction, InputMods>& OnKey() {
 		return _onKey;
 	}
-	Delegate<void(char)>& OnChar() {
+	CancellableDelegate<char>& OnChar() {
 		return _onChar;
 	}
 
@@ -149,7 +149,7 @@ class Keyboard : public Module::Registrar<Keyboard> {
 	static void CallbackKey(GLFWwindow* window, int32_t key, int32_t scancode, int32_t action, int32_t mods);
 	static void CallbackChar(GLFWwindow* window, uint32_t codepoint);
 
-	Delegate<void(Key, InputAction, InputMods)> _onKey;
-	Delegate<void(char)> _onChar;
+	CancellableDelegate<Key, InputAction, InputMods> _onKey;
+	CancellableDelegate<char> _onChar;
 };
 }  // namespace Luna

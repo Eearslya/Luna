@@ -1,4 +1,5 @@
 #include <GLFW/glfw3.h>
+#include <imgui.h>
 
 #include <Luna/Devices/Keyboard.hpp>
 
@@ -20,6 +21,11 @@ Keyboard::Keyboard() {
 void Keyboard::Update() {}
 
 InputAction Keyboard::GetKey(Key key) const {
+	if (ImGui::GetCurrentContext()) {
+		ImGuiIO& io = ImGui::GetIO();
+		if (io.WantCaptureKeyboard) { return InputAction::Release; }
+	}
+
 	const auto state = glfwGetKey(Window::Get()->GetWindow(), static_cast<int32_t>(key));
 
 	return static_cast<InputAction>(state);
