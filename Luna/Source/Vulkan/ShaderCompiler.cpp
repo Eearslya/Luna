@@ -13,6 +13,8 @@ ShaderCompiler::~ShaderCompiler() noexcept {
 
 std::optional<std::vector<uint32_t>> ShaderCompiler::Compile(vk::ShaderStageFlagBits stage,
                                                              const std::string& glsl) const {
+	ZoneScopedN("Vulkan::ShaderCompiler::Compile");
+
 	EShLanguage lang = EShLangVertex;
 	switch (stage) {
 		case vk::ShaderStageFlagBits::eVertex:

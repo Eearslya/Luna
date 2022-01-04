@@ -1,8 +1,11 @@
 #include <Luna/Core/Log.hpp>
 #include <Luna/Time/Timers.hpp>
+#include <Tracy.hpp>
 
 namespace Luna {
 Timers::Timers() {
+	ZoneScopedN("Timers::Timers()");
+
 	std::unique_lock<std::mutex> lock(_timerMutex);
 
 	_workerThread = std::thread(std::bind(&Timers::TimerThread, this));

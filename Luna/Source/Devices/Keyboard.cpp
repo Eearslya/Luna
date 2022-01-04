@@ -2,6 +2,7 @@
 #include <imgui.h>
 
 #include <Luna/Devices/Keyboard.hpp>
+#include <Tracy.hpp>
 
 namespace Luna {
 void Keyboard::CallbackKey(GLFWwindow* window, int32_t key, int32_t scancode, int32_t action, int32_t mods) {
@@ -13,12 +14,16 @@ void Keyboard::CallbackChar(GLFWwindow* window, uint32_t codepoint) {
 }
 
 Keyboard::Keyboard() {
+	ZoneScopedN("Keyboard::Keyboard()");
+
 	auto glfwWindow = Window::Get()->GetWindow();
 	glfwSetKeyCallback(glfwWindow, CallbackKey);
 	glfwSetCharCallback(glfwWindow, CallbackChar);
 }
 
-void Keyboard::Update() {}
+void Keyboard::Update() {
+	ZoneScopedN("Keyboard::Update()");
+}
 
 InputAction Keyboard::GetKey(Key key) const {
 	if (ImGui::GetCurrentContext()) {

@@ -10,6 +10,7 @@
 #include <Luna/Utility/ObjectPool.hpp>
 #include <Luna/Utility/TemporaryHashMap.hpp>
 #include <Luna/Vulkan/Cookie.hpp>
+#include <Tracy.hpp>
 #include <array>
 #include <atomic>
 #include <condition_variable>

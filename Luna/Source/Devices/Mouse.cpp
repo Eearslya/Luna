@@ -2,6 +2,7 @@
 
 #include <Luna/Core/Engine.hpp>
 #include <Luna/Devices/Mouse.hpp>
+#include <Tracy.hpp>
 
 namespace Luna {
 void Mouse::CallbackButton(GLFWwindow* window, int32_t button, int32_t action, int32_t mods) {
@@ -33,6 +34,8 @@ void Mouse::CallbackScroll(GLFWwindow* window, double xOffset, double yOffset) {
 }
 
 Mouse::Mouse() {
+	ZoneScopedN("Mouse::Mouse()");
+
 	auto glfwWindow = Window::Get()->GetWindow();
 	glfwSetMouseButtonCallback(glfwWindow, CallbackButton);
 	glfwSetCursorPosCallback(glfwWindow, CallbackPosition);
@@ -43,6 +46,8 @@ Mouse::Mouse() {
 Mouse::~Mouse() noexcept {}
 
 void Mouse::Update() {
+	ZoneScopedN("Mouse::Update()");
+
 	auto delta = Engine::Get()->GetUpdateDelta().Seconds();
 
 	_positionDelta = delta * (_lastPosition - _position);

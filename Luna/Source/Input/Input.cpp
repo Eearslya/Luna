@@ -1,7 +1,12 @@
 #include <Luna/Input/Input.hpp>
+#include <Tracy.hpp>
 
 namespace Luna {
-Input::Input() {}
+Input::Input() {
+	ZoneScopedN("Input::Input()");
+}
 
-void Input::Update() {}
+void Input::Update() {
+	ZoneScopedN("Input::Update()");
+}
 }  // namespace Luna

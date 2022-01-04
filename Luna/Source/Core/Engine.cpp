@@ -1,12 +1,15 @@
 #include <Luna/Core/App.hpp>
 #include <Luna/Core/Engine.hpp>
 #include <Luna/Core/Log.hpp>
+#include <Tracy.hpp>
 #include <cstdlib>
 
 namespace Luna {
 Engine* Engine::_instance = nullptr;
 
 Engine::Engine(const char* argv0) : _argv0(argv0) {
+	ZoneScopedN("Engine::Engine()");
+
 	_instance = this;
 
 	Log::Info("Initializing Luna engine.");
@@ -73,6 +76,8 @@ int Engine::Run() {
 
 		_updateLimiter.Update();
 		if (_updateLimiter.Get() > 0) {
+			ZoneScopedN("Update");
+
 			_ups.Update();
 			_updateDelta.Update();
 
@@ -83,6 +88,7 @@ int Engine::Run() {
 				}
 
 				try {
+					ZoneScopedN("Update: App");
 					_app->Update();
 				} catch (const std::exception& e) {
 					Log::Fatal("Caught fatal error when updating application: {}", e.what());
@@ -92,9 +98,18 @@ int Engine::Run() {
 			}
 
 			try {
-				UpdateStage(Module::Stage::Pre);
-				UpdateStage(Module::Stage::Normal);
-				UpdateStage(Module::Stage::Post);
+				{
+					ZoneScopedN("Update: Pre");
+					UpdateStage(Module::Stage::Pre);
+				}
+				{
+					ZoneScopedN("Update: Normal");
+					UpdateStage(Module::Stage::Normal);
+				}
+				{
+					ZoneScopedN("Update: Post");
+					UpdateStage(Module::Stage::Post);
+				}
 			} catch (const std::exception& e) {
 				Log::Fatal("Caught fatal error when updating engine modules: {}", e.what());
 				_running = false;
@@ -107,6 +122,7 @@ int Engine::Run() {
 			_fps.Update();
 			_frameDelta.Update();
 			try {
+				ZoneScopedN("Update: Render");
 				UpdateStage(Module::Stage::Render);
 			} catch (const std::exception& e) {
 				Log::Fatal("Caught fatal error when rendering: {}", e.what());

@@ -13,6 +13,7 @@
 #include <Luna/Vulkan/Sampler.hpp>
 #include <Luna/Vulkan/Shader.hpp>
 #include <Luna/Vulkan/Swapchain.hpp>
+#include <Tracy.hpp>
 #include <filesystem>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -20,6 +21,8 @@
 
 namespace Luna {
 Graphics::Graphics() {
+	ZoneScopedN("Graphics()");
+
 	auto filesystem = Filesystem::Get();
 	auto keyboard   = Keyboard::Get();
 	auto mouse      = Mouse::Get();
@@ -357,6 +360,8 @@ Graphics::Graphics() {
 Graphics::~Graphics() noexcept {}
 
 void Graphics::Update() {
+	ZoneScopedN("Graphics::Update");
+
 	if (!BeginFrame()) { return; }
 
 	_imgui->BeginFrame();
@@ -449,6 +454,7 @@ bool Graphics::BeginFrame() {
 void Graphics::EndFrame() {
 	_device->EndFrame();
 	_swapchain->Present();
+	FrameMark;
 }
 
 void Graphics::LoadShaders() {

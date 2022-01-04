@@ -12,6 +12,7 @@
 #include <Luna/Vulkan/RenderPass.hpp>
 #include <Luna/Vulkan/Sampler.hpp>
 #include <Luna/Vulkan/Shader.hpp>
+#include <Tracy.hpp>
 
 namespace Luna {
 struct ImGuiRenderData {
@@ -28,6 +29,8 @@ struct ImGuiWindowData {
 };
 
 ImGuiManager::ImGuiManager(Vulkan::Device& device) : _device(device) {
+	ZoneScopedN("ImGuiManager::ImGuiManager()");
+
 	Log::Trace("[ImGuiManager] Initializing ImGui interface.");
 
 	IMGUI_CHECKVERSION();
@@ -49,6 +52,8 @@ ImGuiManager::ImGuiManager(Vulkan::Device& device) : _device(device) {
 
 	// Attach to our windowing system.
 	{
+		ZoneScopedN("Windowing");
+
 		auto window     = Window::Get();
 		auto glfwWindow = window->GetWindow();
 
@@ -110,6 +115,8 @@ ImGuiManager::ImGuiManager(Vulkan::Device& device) : _device(device) {
 
 	// Attach to our rendering system.
 	{
+		ZoneScopedN("Rendering");
+
 		auto graphics = Graphics::Get();
 
 		_renderData = std::make_unique<ImGuiRenderData>();
@@ -212,6 +219,8 @@ void main() {
 ImGuiManager::~ImGuiManager() noexcept {}
 
 void ImGuiManager::BeginFrame() {
+	ZoneScopedN("ImGuiManager::BeginFrame()");
+
 	ImGuiIO& io = ImGui::GetIO();
 	auto window = Window::Get();
 	auto mouse  = Mouse::Get();
@@ -252,10 +261,14 @@ void ImGuiManager::BeginFrame() {
 }
 
 void ImGuiManager::EndFrame() {
+	ZoneScopedN("ImGuiManager::EndFrame()");
+
 	ImGui::EndFrame();
 }
 
 void ImGuiManager::Render(Vulkan::CommandBufferHandle& cmd) {
+	ZoneScopedN("ImGuiManager::Render()");
+
 	ImGui::Render();
 	ImDrawData* drawData = ImGui::GetDrawData();
 

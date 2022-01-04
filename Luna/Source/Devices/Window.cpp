@@ -2,6 +2,7 @@
 
 #include <Luna/Core/Log.hpp>
 #include <Luna/Devices/Window.hpp>
+#include <Tracy.hpp>
 
 namespace Luna {
 void Window::CallbackError(int32_t error, const char* description) {
@@ -72,6 +73,8 @@ void Window::CallbackWindowSize(GLFWwindow* window, int32_t w, int32_t h) {
 }
 
 Window::Window() : _size(1280, 720), _title("Luna") {
+	ZoneScopedN("Window::Window()");
+
 	glfwSetErrorCallback(CallbackError);
 
 	if (glfwInit() == GLFW_FALSE) { throw std::runtime_error("Failed to initialize GLFW!"); }
@@ -122,6 +125,8 @@ Window::~Window() noexcept {
 }
 
 void Window::Update() {
+	ZoneScopedN("Window::Update()");
+
 	glfwPollEvents();
 }
 

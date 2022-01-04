@@ -52,6 +52,8 @@ PipelineLayout::~PipelineLayout() noexcept {
 
 Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 		: HashedObject<Shader>(hash), _device(device) {
+	ZoneScopedN("Vulkan::Shader()");
+
 	Log::Trace("[Vulkan::Shader] Creating new Shader.");
 
 	const vk::ShaderModuleCreateInfo shaderCI({}, codeSize, reinterpret_cast<const uint32_t*>(code));
@@ -300,6 +302,8 @@ Shader::~Shader() noexcept {
 
 Program::Program(Hash hash, Device& device, Shader* vertex, Shader* fragment)
 		: HashedObject<Program>(hash), _device(device) {
+	ZoneScopedN("Vulkan::Program()");
+
 	Log::Trace("[Vulkan::Program] Creating new graphics Program.");
 
 	std::fill(_shaders.begin(), _shaders.end(), nullptr);
@@ -310,6 +314,8 @@ Program::Program(Hash hash, Device& device, Shader* vertex, Shader* fragment)
 }
 
 Program::Program(Hash hash, Device& device, Shader* compute) : HashedObject<Program>(hash), _device(device) {
+	ZoneScopedN("Vulkan::Program()");
+
 	Log::Trace("[Vulkan::Program] Creating new compute Program.");
 
 	std::fill(_shaders.begin(), _shaders.end(), nullptr);
