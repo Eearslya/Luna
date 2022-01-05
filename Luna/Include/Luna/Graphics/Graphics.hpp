@@ -5,6 +5,7 @@
 #include <Luna/Graphics/ImGuiManager.hpp>
 #include <Luna/Input/Input.hpp>
 #include <Luna/Scene/Camera.hpp>
+#include <Luna/Scene/Scene.hpp>
 #include <Luna/Scene/StaticMesh.hpp>
 #include <Luna/Threading/Threading.hpp>
 #include <Luna/Utility/Delegate.hpp>
@@ -53,6 +54,7 @@ class Graphics : public Module::Registrar<Graphics> {
 	Vulkan::ImageHandle _whiteImage;
 
 	Camera _camera;
+	Scene _scene;
 	Vulkan::Program* _program = nullptr;
 	StaticMesh _mesh;
 	Vulkan::BufferHandle _positionBuffer;

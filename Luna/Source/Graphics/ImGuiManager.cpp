@@ -213,6 +213,14 @@ void main() {
 
 			return io.WantCaptureMouse;
 		};
+		mouse->OnScroll() += [this](const Vec2d& scroll) -> bool {
+			ImGuiIO& io = ImGui::GetIO();
+
+			io.MouseWheelH += scroll.x;
+			io.MouseWheel += scroll.y;
+
+			return io.WantCaptureMouse;
+		};
 	}
 }
 

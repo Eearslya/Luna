@@ -366,6 +366,7 @@ void Graphics::Update() {
 
 	_imgui->BeginFrame();
 	ImGui::ShowDemoWindow(nullptr);
+	_scene.DrawSceneGraph();
 	_onUiRender();
 
 	// Update Camera movement.

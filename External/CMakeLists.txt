@@ -2,6 +2,7 @@ set(ENABLE_GLSLANG_BINARIES Off CACHE BOOL "" FORCE)
 set(SPIRV_CROSS_CLI Off CACHE BOOL "" FORCE)
 set(SPIRV_CROSS_ENABLE_TESTS Off CACHE BOOL "" FORCE)
 
+add_subdirectory(entt)
 add_subdirectory(glfw)
 add_subdirectory(glm)
 add_subdirectory(glslang)
