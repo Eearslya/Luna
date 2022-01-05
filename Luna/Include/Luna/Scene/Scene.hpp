@@ -12,12 +12,18 @@ class Scene {
 	entt::registry& GetRegistry() {
 		return _registry;
 	}
+	entt::entity GetRoot() const {
+		return _root;
+	}
 
 	entt::entity CreateEntity(const std::string& name, std::optional<entt::entity> parent = std::nullopt);
+	void LoadModel(const std::string& filePath, entt::entity parent);
+
 	void DrawSceneGraph();
 
  private:
 	entt::registry _registry;
-	entt::entity _root;
+	entt::entity _root     = entt::null;
+	entt::entity _selected = entt::null;
 };
 }  // namespace Luna

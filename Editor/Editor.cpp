@@ -30,6 +30,9 @@ class EditorApp : public App {
 				return false;
 			},
 			this);
+
+		auto& scene = Graphics::Get()->GetScene();
+		scene.LoadModel("Models/Sponza/Sponza.gltf", scene.GetRoot());
 	}
 
 	virtual void Update() override {}

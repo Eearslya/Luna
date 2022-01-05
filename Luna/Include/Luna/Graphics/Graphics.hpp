@@ -25,6 +25,12 @@ class Graphics : public Module::Registrar<Graphics> {
 	Graphics();
 	~Graphics() noexcept;
 
+	Vulkan::Device& GetDevice() {
+		return *_device;
+	}
+	Scene& GetScene() {
+		return _scene;
+	}
 	Delegate<void()>& OnUiRender() {
 		return _onUiRender;
 	}
@@ -56,14 +62,8 @@ class Graphics : public Module::Registrar<Graphics> {
 	Camera _camera;
 	Scene _scene;
 	Vulkan::Program* _program = nullptr;
-	StaticMesh _mesh;
-	Vulkan::BufferHandle _positionBuffer;
-	Vulkan::BufferHandle _normalBuffer;
-	Vulkan::BufferHandle _indexBuffer;
-	Vulkan::BufferHandle _texcoordBuffer;
 	Vulkan::BufferHandle _cameraBuffer;
 	Vulkan::BufferHandle _sceneBuffer;
-	uint64_t _indexCount = 0;
-	bool _mouseControl   = false;
+	bool _mouseControl = false;
 };
 }  // namespace Luna
