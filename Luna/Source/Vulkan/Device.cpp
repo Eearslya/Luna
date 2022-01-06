@@ -15,6 +15,7 @@
 #include <Luna/Vulkan/Shader.hpp>
 #include <Luna/Vulkan/ShaderCompiler.hpp>
 #include <Luna/Vulkan/Swapchain.hpp>
+#include <Tracy.hpp>
 
 // Helper functions for dealing with multithreading.
 #ifdef LUNA_VULKAN_MT
@@ -34,9 +35,10 @@ static uint32_t GetThreadID() {
 // frame and move on, we need to make sure all of the command buffers we've given out have come back to us. This
 // currently allows five seconds for all command buffers to return before giving up.
 #	define WAIT_FOR_PENDING_COMMAND_BUFFERS()                                                                           \
+		std::unique_lock<std::mutex> _DeviceLock(_mutex);                                                                  \
 		do {                                                                                                               \
+			ZoneScopedN("WaitForCommandBuffers");                                                                            \
 			using namespace std::chrono_literals;                                                                            \
-			std::unique_lock<std::mutex> _DeviceLock(_mutex);                                                                \
 			if (!_pendingCommandBuffersCondition.wait_for(_DeviceLock, 5s, [&]() { return _pendingCommandBuffers == 0; })) { \
 				throw std::runtime_error("Timed out waiting for all requested command buffers to be submitted!");              \
 			}                                                                                                                \
@@ -157,12 +159,16 @@ void Device::AddWaitSemaphore(CommandBufferType bufferType,
 
 // End our frame's work and submit all work to the GPU.
 void Device::EndFrame() {
+	ZoneScopedN("Vulkan::Device::EndFrame");
+
 	WAIT_FOR_PENDING_COMMAND_BUFFERS();
 	EndFrameNoLock();
 }
 
 // Advance our frame context and get ready for new work submissions.
 void Device::NextFrame() {
+	ZoneScopedN("Vulkan::Device::NextFrame");
+
 	WAIT_FOR_PENDING_COMMAND_BUFFERS();
 
 	EndFrameNoLock();
@@ -300,11 +306,17 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo, const void
 }
 
 ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const InitialImageData* initialData) {
+	ZoneScopedN("Vulkan::Device::CreateImage");
+
+	const auto formatFeatures = _gpu.getFormatProperties(createInfo.Format);
+
 	// If we have image data to put into this image, we first prepare a staging buffer.
-	const bool generateMips = createInfo.Flags & ImageCreateFlagBits::GenerateMipmaps;
 	InitialImageBuffer initialBuffer;
 	if (initialData) {
-		// If we want to generate mipmaps, we first need to determine how many levels there will be.
+		const bool generateMips = createInfo.Flags & ImageCreateFlagBits::GenerateMipmaps;
+
+		// If we want to load mipmaps, we first need to determine how many levels there will be. If we are generating
+		// mipmaps, we only have one mip to load anyway.
 		uint32_t copyLevels = createInfo.MipLevels;
 		if (generateMips) {
 			copyLevels = 1;
@@ -312,35 +324,24 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 			copyLevels = CalculateMipLevels(createInfo.Extent);
 		}
 
-		Log::Trace("[Vulkan::Device] Creating initial image staging buffer.{}", generateMips ? " Generating mipmaps." : "");
-
 		// Next, we need our helper class initialized with our image layout to help with calculating mip offsets.
 		FormatLayout layout;
 		switch (createInfo.Type) {
 			case vk::ImageType::e1D:
-				Log::Trace("[Vulkan::Device] - 1D Image Size: {}", createInfo.Extent.width);
 				layout = FormatLayout(createInfo.Format, createInfo.Extent.width, createInfo.ArrayLayers, copyLevels);
 				break;
 			case vk::ImageType::e2D:
-				Log::Trace("[Vulkan::Device] - 2D Image Size: {}x{}", createInfo.Extent.width, createInfo.Extent.height);
 				layout = FormatLayout(createInfo.Format,
 				                      vk::Extent2D(createInfo.Extent.width, createInfo.Extent.height),
 				                      createInfo.ArrayLayers,
 				                      copyLevels);
 				break;
 			case vk::ImageType::e3D:
-				Log::Trace("[Vulkan::Device] - 3D Image Size: {}x{}x{}",
-				           createInfo.Extent.width,
-				           createInfo.Extent.height,
-				           createInfo.Extent.depth);
 				layout = FormatLayout(createInfo.Format, createInfo.Extent, copyLevels);
 				break;
 			default:
 				return {};
 		}
-
-		Log::Trace("[Vulkan::Device] - Copying {} mip levels * {} array layers.", copyLevels, createInfo.ArrayLayers);
-		Log::Trace("[Vulkan::Device] - Buffer requires {}B.", layout.GetRequiredSize());
 
 		// Now we create the actual staging buffer.
 		const BufferCreateInfo bufferCI(BufferDomain::Host,
@@ -380,6 +381,15 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 
 		initialBuffer.Buffer->Unmap();
 		initialBuffer.ImageCopies = layout.BuildBufferImageCopies();
+	}
+
+	// Verify whether this format is allowed to be used for mipmap generation.
+	bool generateMips                        = createInfo.Flags & ImageCreateFlagBits::GenerateMipmaps;
+	const auto requiredMipGenerationFeatures = vk::FormatFeatureFlagBits::eBlitDst | vk::FormatFeatureFlagBits::eBlitSrc;
+	if ((formatFeatures.optimalTilingFeatures & requiredMipGenerationFeatures) != requiredMipGenerationFeatures) {
+		Log::Warning("[Vulkan::Device] Mipmap generation was requested for image, but is unavailable for format {}.",
+		             vk::to_string(createInfo.Format));
+		generateMips = false;
 	}
 
 	// Now we adjust a few flags to ensure the image is created with all of the proper usages and flags before creating
@@ -810,6 +820,8 @@ void Device::AddWaitSemaphoreNoLock(QueueType queueType,
 }
 
 void Device::EndFrameNoLock() {
+	ZoneScopedN("Vulkan::Device::EndFrameNoLock");
+
 	constexpr static const QueueType flushOrder[] = {QueueType::Transfer, QueueType::Graphics, QueueType::Compute};
 	InternalFence submitFence;
 
@@ -879,6 +891,8 @@ void Device::SubmitNoLock(CommandBufferHandle cmd, FenceHandle* fence, std::vect
 }
 
 void Device::SubmitQueue(QueueType queueType, InternalFence* submitFence, std::vector<SemaphoreHandle>* semaphores) {
+	ZoneScopedN("SubmitQueue");
+
 	auto& queueData          = _queueData[static_cast<int>(queueType)];
 	auto& submissions        = Frame().Submissions[static_cast<int>(queueType)];
 	const bool hasSemaphores = semaphores != nullptr && semaphores->size() != 0;
@@ -1273,7 +1287,8 @@ void Device::SetObjectNameImpl(vk::ObjectType type, uint64_t handle, const std::
  * FrameContext Methods
  * ********** */
 Device::FrameContext::FrameContext(Device& device, uint32_t frameIndex) : Parent(device), FrameIndex(frameIndex) {
-	const auto threadCount = Threading::Get()->GetThreadCount();
+	// Have a set of objects for each worker thread, plus 1 for main thread.
+	const auto threadCount = Threading::Get()->GetThreadCount() + 1;
 	for (uint32_t type = 0; type < QueueTypeCount; ++type) {
 		const auto family = Parent._queues.Families[type];
 		for (uint32_t thread = 0; thread < threadCount; ++thread) {
@@ -1288,10 +1303,14 @@ Device::FrameContext::~FrameContext() noexcept {
 
 // Start our frame of work. Here, we perform cleanup of everything we know is no longer in use.
 void Device::FrameContext::Begin() {
+	ZoneScopedN("Vulkan::Device::FrameContext::Begin");
+
 	vk::Device device = Parent.GetDevice();
 
 	// Wait on our timeline semaphores to ensure this frame context has completed all of its pending work.
 	{
+		ZoneScopedN("Timeline Semaphore Wait");
+
 		bool hasTimelineSemaphores = true;
 		for (auto& queue : Parent._queueData) {
 			if (!queue.TimelineSemaphore) {
@@ -1324,6 +1343,7 @@ void Device::FrameContext::Begin() {
 	// Wait on our fences to ensure this frame context has completed all of its pending work.
 	// If we are able to use timeline semaphores, this should never be needed.
 	if (!FencesToAwait.empty()) {
+		ZoneScopedN("Fence Wait");
 		const auto waitResult = device.waitForFences(FencesToAwait, VK_TRUE, std::numeric_limits<uint64_t>::max());
 		if (waitResult != vk::Result::eSuccess) { Log::Error("[Vulkan::Device] Failed to wait on submit fences!"); }
 		FencesToAwait.clear();
@@ -1337,22 +1357,28 @@ void Device::FrameContext::Begin() {
 	}
 
 	// Reset all of our command pools.
-	for (auto& queuePools : CommandPools) {
-		for (auto& pool : queuePools) { pool->Reset(); }
+	{
+		ZoneScopedN("Command Pool Reset");
+		for (auto& queuePools : CommandPools) {
+			for (auto& pool : queuePools) { pool->Reset(); }
+		}
 	}
 
 	// Destroy or recycle all of our other resources that are no longer in use.
-	for (auto& buffer : BuffersToDestroy) { Parent._bufferPool.Free(buffer); }
-	for (auto& image : ImagesToDestroy) { Parent._imagePool.Free(image); }
-	for (auto& view : ImageViewsToDestroy) { Parent._imageViewPool.Free(view); }
-	for (auto& semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
-	for (auto& semaphore : SemaphoresToRecycle) { Parent.ReleaseSemaphore(semaphore); }
-	BuffersToDestroy.clear();
-	ImagesToDestroy.clear();
-	ImageViewsToDestroy.clear();
-	SamplersToDestroy.clear();
-	SemaphoresToDestroy.clear();
-	SemaphoresToRecycle.clear();
+	{
+		ZoneScopedN("Destroyed Object Cleanup");
+		for (auto& buffer : BuffersToDestroy) { Parent._bufferPool.Free(buffer); }
+		for (auto& image : ImagesToDestroy) { Parent._imagePool.Free(image); }
+		for (auto& view : ImageViewsToDestroy) { Parent._imageViewPool.Free(view); }
+		for (auto& semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
+		for (auto& semaphore : SemaphoresToRecycle) { Parent.ReleaseSemaphore(semaphore); }
+		BuffersToDestroy.clear();
+		ImagesToDestroy.clear();
+		ImageViewsToDestroy.clear();
+		SamplersToDestroy.clear();
+		SemaphoresToDestroy.clear();
+		SemaphoresToRecycle.clear();
+	}
 }
 
 // Trim our command pools to free up any unused memory they might still be holding onto.

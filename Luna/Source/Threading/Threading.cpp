@@ -1,5 +1,6 @@
 #include <Luna/Core/Log.hpp>
 #include <Luna/Threading/Threading.hpp>
+#include <Tracy.hpp>
 
 namespace Luna {
 static thread_local uint32_t ThreadID = ~0u;
@@ -167,7 +168,11 @@ void Threading::FreeTaskGroup(TaskGroup* group) {
 void Threading::WorkerThread(int threadID) {
 	Log::Trace("Starting worker thread {}.", threadID);
 
-	SetThreadID(threadID);
+	{
+		SetThreadID(threadID);
+		const std::string threadName = "Worker Thread " + std::to_string(threadID);
+		tracy::SetThreadName(threadName.c_str());
+	}
 
 	while (_running) {
 		Task* task = nullptr;

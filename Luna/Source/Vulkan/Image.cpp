@@ -6,6 +6,7 @@ namespace Luna {
 namespace Vulkan {
 void ImageDeleter::operator()(Image* image) {
 	image->_device.DestroyImage({}, image);
+	image->_defaultView->SetInternalSync();
 }
 
 void ImageViewDeleter::operator()(ImageView* view) {

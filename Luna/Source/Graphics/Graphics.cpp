@@ -2,7 +2,9 @@
 #include <tiny_gltf.h>
 
 #include <Luna/Core/Log.hpp>
+#include <Luna/Graphics/AssetManager.hpp>
 #include <Luna/Graphics/Graphics.hpp>
+#include <Luna/Scene/MeshRenderer.hpp>
 #include <Luna/Scene/TransformComponent.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
@@ -32,10 +34,11 @@ Graphics::Graphics() {
 
 	const auto instanceExtensions                   = Window::Get()->GetRequiredInstanceExtensions();
 	const std::vector<const char*> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-	_context   = std::make_unique<Vulkan::Context>(instanceExtensions, deviceExtensions);
-	_device    = std::make_unique<Vulkan::Device>(*_context);
-	_swapchain = std::make_unique<Vulkan::Swapchain>(*_device);
-	_imgui     = std::make_unique<ImGuiManager>(*_device);
+	_context      = std::make_unique<Vulkan::Context>(instanceExtensions, deviceExtensions);
+	_device       = std::make_unique<Vulkan::Device>(*_context);
+	_swapchain    = std::make_unique<Vulkan::Swapchain>(*_device);
+	_assetManager = std::make_unique<AssetManager>();
+	_imgui        = std::make_unique<ImGuiManager>(*_device);
 
 	// Create placeholder texture.
 	{
@@ -99,12 +102,18 @@ void Graphics::Update() {
 	if (!BeginFrame()) { return; }
 
 	_imgui->BeginFrame();
-	ImGui::ShowDemoWindow(nullptr);
-	_scene.DrawSceneGraph();
-	_onUiRender();
+
+	// Draw our UI.
+	{
+		ZoneScopedN("UI Update");
+		ImGui::ShowDemoWindow(nullptr);
+		_scene.DrawSceneGraph();
+		_onUiRender();
+	}
 
 	// Update Camera movement.
 	{
+		ZoneScopedN("Camera Update");
 		auto engine          = Engine::Get();
 		auto keyboard        = Keyboard::Get();
 		const auto deltaTime = engine->GetFrameDelta().Seconds();
@@ -120,6 +129,7 @@ void Graphics::Update() {
 
 	// Update Camera buffer.
 	{
+		ZoneScopedN("Camera Uniform Update");
 		const auto swapchainExtent = _swapchain->GetExtent();
 		const float aspectRatio    = float(swapchainExtent.width) / float(swapchainExtent.height);
 		_camera.SetAspectRatio(aspectRatio);
@@ -131,6 +141,7 @@ void Graphics::Update() {
 
 	// Update Scene buffer.
 	{
+		ZoneScopedN("Scene Uniform Update");
 		SceneData scene{.SunDirection = glm::normalize(glm::vec4(1.0f, 2.0f, 0.0f, 0.0f))};
 		auto* data = _sceneBuffer->Map();
 		memcpy(data, &scene, sizeof(SceneData));
@@ -143,53 +154,78 @@ void Graphics::Update() {
 
 	auto cmd = _device->RequestCommandBuffer();
 
-	auto rpInfo = _device->GetStockRenderPass(Vulkan::StockRenderPass::Depth);
-	rpInfo.ClearColors[0].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
-	rpInfo.ClearDepthStencil.setDepth(1.0f);
-	cmd->BeginRenderPass(rpInfo);
-	cmd->SetProgram(_program);
-	cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
-	cmd->SetVertexAttribute(1, 1, vk::Format::eR32G32B32Sfloat, 0);
-	cmd->SetVertexAttribute(2, 2, vk::Format::eR32G32Sfloat, 0);
-	cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
-	cmd->SetUniformBuffer(0, 1, *_sceneBuffer);
+	{
+		ZoneScopedN("Main Render Pass");
 
-	const auto SetTexture = [&](uint32_t set, uint32_t binding, const Texture& texture) -> void {
-		const auto& view = texture.Image ? *texture.Image->GetView() : *_whiteImage->GetView();
-		const auto sampler =
-			texture.Sampler ? texture.Sampler : _device->RequestSampler(Vulkan::StockSampler::DefaultGeometryFilterWrap);
-		cmd->SetTexture(set, binding, view, sampler);
-	};
+		auto rpInfo = _device->GetStockRenderPass(Vulkan::StockRenderPass::Depth);
+		rpInfo.ClearColors[0].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
+		rpInfo.ClearDepthStencil.setDepth(1.0f);
+		cmd->BeginRenderPass(rpInfo);
+		cmd->SetProgram(_program);
+		cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
+		cmd->SetVertexAttribute(1, 1, vk::Format::eR32G32B32Sfloat, 0);
+		cmd->SetVertexAttribute(2, 2, vk::Format::eR32G32Sfloat, 0);
+		cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
+		cmd->SetUniformBuffer(0, 1, *_sceneBuffer);
 
-	const auto& registry = _scene.GetRegistry();
-	const auto view      = registry.view<StaticMesh>();
-	for (const auto& entity : view) {
-		const auto& transform = registry.get<TransformComponent>(entity);
-		const auto& mesh      = registry.get<StaticMesh>(entity);
+		const auto SetTexture = [&](uint32_t set, uint32_t binding, const TextureHandle& texture) -> void {
+			const bool ready      = bool(texture) && texture->Ready;
+			const bool hasTexture = ready && texture->Image;
+			const bool hasSampler = ready && texture->Sampler;
+			const auto& view      = hasTexture ? *texture->Image->GetView() : *_whiteImage->GetView();
+			const auto sampler =
+				hasSampler ? texture->Sampler : _device->RequestSampler(Vulkan::StockSampler::DefaultGeometryFilterWrap);
+			cmd->SetTexture(set, binding, view, sampler);
+		};
 
-		cmd->SetVertexBinding(0, *mesh.PositionBuffer, 0, sizeof(glm::vec3), vk::VertexInputRate::eVertex);
-		cmd->SetVertexBinding(1, *mesh.NormalBuffer, 0, sizeof(glm::vec3), vk::VertexInputRate::eVertex);
-		cmd->SetVertexBinding(2, *mesh.TexcoordBuffer, 0, sizeof(glm::vec2), vk::VertexInputRate::eVertex);
-		cmd->SetIndexBuffer(*mesh.IndexBuffer, 0, vk::IndexType::eUint32);
+		auto& registry  = _scene.GetRegistry();
+		const auto view = registry.view<MeshRenderer>();
+		for (const auto& entity : view) {
+			const auto& transform = registry.get<TransformComponent>(entity);
+			auto& mesh            = registry.get<MeshRenderer>(entity);
 
-		PushConstant pc{.Model = transform.CachedGlobalTransform};
-		cmd->PushConstants(&pc, 0, sizeof(pc));
+			if (!mesh.Mesh->Ready) { continue; }
 
-		for (const auto& submesh : mesh.SubMeshes) {
-			const auto& material = mesh.Materials[submesh.Material];
-			cmd->SetCullMode(material.DualSided ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack);
-			cmd->SetUniformBuffer(1, 0, *material.Data);
-			SetTexture(1, 1, material.Albedo);
-			SetTexture(1, 2, material.Normal);
-			SetTexture(1, 3, material.PBR);
-			cmd->DrawIndexed(submesh.IndexCount, 1, submesh.FirstIndex, submesh.FirstVertex);
+			cmd->SetVertexBinding(
+				0, *mesh.Mesh->Buffer, mesh.Mesh->PositionOffset, sizeof(glm::vec3), vk::VertexInputRate::eVertex);
+			cmd->SetVertexBinding(
+				1, *mesh.Mesh->Buffer, mesh.Mesh->NormalOffset, sizeof(glm::vec3), vk::VertexInputRate::eVertex);
+			cmd->SetVertexBinding(
+				2, *mesh.Mesh->Buffer, mesh.Mesh->Texcoord0Offset, sizeof(glm::vec2), vk::VertexInputRate::eVertex);
+			cmd->SetIndexBuffer(*mesh.Mesh->Buffer, mesh.Mesh->IndexOffset, vk::IndexType::eUint32);
+			PushConstant pc{.Model = transform.CachedGlobalTransform};
+			cmd->PushConstants(&pc, 0, sizeof(pc));
+
+			for (size_t i = 0; i < mesh.Mesh->SubMeshes.size(); ++i) {
+				const auto& submesh = mesh.Mesh->SubMeshes[i];
+				auto& material      = mesh.Materials[i];
+
+				if (submesh.VertexCount == 0) { continue; }
+
+				material->Update();
+
+				cmd->SetCullMode(material->DualSided ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack);
+				SetTexture(1, 1, material->Albedo);
+				SetTexture(1, 2, material->Normal);
+				SetTexture(1, 3, material->PBR);
+				cmd->SetUniformBuffer(1, 0, *material->DataBuffer);
+
+				if (submesh.IndexCount > 0) {
+					cmd->DrawIndexed(submesh.IndexCount, 1, submesh.FirstIndex, submesh.FirstVertex, 0);
+				} else {
+					cmd->Draw(submesh.VertexCount, 1, submesh.FirstVertex, 0);
+				}
+			}
 		}
+
+		cmd->EndRenderPass();
 	}
 
-	cmd->EndRenderPass();
-
-	_imgui->EndFrame();
-	_imgui->Render(cmd);
+	{
+		ZoneScopedN("ImGUI Render");
+		_imgui->EndFrame();
+		_imgui->Render(cmd);
+	}
 
 	_device->Submit(cmd);
 
@@ -197,6 +233,8 @@ void Graphics::Update() {
 }
 
 bool Graphics::BeginFrame() {
+	ZoneScopedN("Graphics::BeginFrame");
+
 	_device->NextFrame();
 
 	const auto acquired = _swapchain->AcquireNextImage();
@@ -205,6 +243,8 @@ bool Graphics::BeginFrame() {
 }
 
 void Graphics::EndFrame() {
+	ZoneScopedN("Graphics::EndFrame");
+
 	_device->EndFrame();
 	_swapchain->Present();
 	FrameMark;

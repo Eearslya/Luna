@@ -27,6 +27,8 @@ void Timers::TimerThread() {
 
 	Log::Info("Timers thread started.");
 
+	tracy::SetThreadName("Timers Thread");
+
 	while (!_stop) {
 		if (_activeTimers.empty()) {
 			_timerCondition.wait(lock, [this]() { return _timersDirty; });

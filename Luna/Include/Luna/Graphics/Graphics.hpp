@@ -6,7 +6,6 @@
 #include <Luna/Input/Input.hpp>
 #include <Luna/Scene/Camera.hpp>
 #include <Luna/Scene/Scene.hpp>
-#include <Luna/Scene/StaticMesh.hpp>
 #include <Luna/Threading/Threading.hpp>
 #include <Luna/Utility/Delegate.hpp>
 #include <glm/glm.hpp>
@@ -17,6 +16,8 @@ class Context;
 class Device;
 }  // namespace Vulkan
 
+class AssetManager;
+
 class Graphics : public Module::Registrar<Graphics> {
 	static inline const bool Registered =
 		Register("Graphics", Stage::Render, Depends<Filesystem, Input, Threading, Window>());
@@ -25,6 +26,9 @@ class Graphics : public Module::Registrar<Graphics> {
 	Graphics();
 	~Graphics() noexcept;
 
+	AssetManager& GetAssetManager() {
+		return *_assetManager;
+	}
 	Vulkan::Device& GetDevice() {
 		return *_device;
 	}
@@ -55,6 +59,7 @@ class Graphics : public Module::Registrar<Graphics> {
 	std::unique_ptr<Vulkan::Context> _context;
 	std::unique_ptr<Vulkan::Device> _device;
 	std::unique_ptr<Vulkan::Swapchain> _swapchain;
+	std::unique_ptr<AssetManager> _assetManager;
 	std::unique_ptr<ImGuiManager> _imgui;
 	Delegate<void()> _onUiRender;
 	Vulkan::ImageHandle _whiteImage;

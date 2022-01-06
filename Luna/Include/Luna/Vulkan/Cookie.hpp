@@ -22,6 +22,11 @@ class Cookie {
 class InternalSyncEnabled {
 	friend class Device;
 
+ public:
+	void SetInternalSync() {
+		_internalSync = true;
+	}
+
  protected:
 	bool _internalSync = false;
 };

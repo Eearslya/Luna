@@ -3,6 +3,7 @@
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
 #include <Luna/Vulkan/Swapchain.hpp>
+#include <Tracy.hpp>
 
 namespace Luna {
 namespace Vulkan {
@@ -42,6 +43,8 @@ Swapchain::~Swapchain() noexcept {
 }
 
 bool Swapchain::AcquireNextImage() {
+	ZoneScopedN("Vulkan::Swapchain::AcquireNextImage");
+
 	if (_suboptimal) {
 		RecreateSwapchain();
 		_suboptimal = false;
@@ -83,6 +86,8 @@ bool Swapchain::AcquireNextImage() {
 void Swapchain::Present() {
 	if (_acquiredImage == std::numeric_limits<uint32_t>::max()) { return; }
 
+	ZoneScopedN("Vulkan::Swapchain::Present");
+
 	auto device = _device.GetDevice();
 	auto queues = _device.GetQueueInfo();
 	auto queue  = queues.Queue(QueueType::Graphics);
@@ -109,6 +114,8 @@ void Swapchain::Present() {
 }
 
 void Swapchain::RecreateSwapchain() {
+	ZoneScopedN("Vulkan::Swapchain::RecreateSwapchain");
+
 	auto gpu     = _device.GetGPU();
 	auto device  = _device.GetDevice();
 	auto surface = _device.GetSurface();

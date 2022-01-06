@@ -810,6 +810,7 @@ ImageHandle TransientAttachmentAllocator::RequestAttachment(
 	imageCI.Samples     = samples;
 	imageCI.ArrayLayers = layers;
 	node                = _attachments.Emplace(hash, _device.CreateImage(imageCI));
+	node->Image->SetInternalSync();
 
 	return node->Image;
 }
