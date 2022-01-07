@@ -43,7 +43,7 @@ class Context : NonCopyable {
 	vk::DynamicLoader _loader;
 	ExtensionInfo _extensions;
 	vk::Instance _instance;
-#ifdef LUNA_DEBUG
+#ifdef LUNA_VULKAN_DEBUG
 	vk::DebugUtilsMessengerEXT _debugMessenger;
 #endif
 	vk::SurfaceKHR _surface;

@@ -13,6 +13,7 @@ namespace Luna {
 class Scene;
 
 struct ModelLoadContext {
+	ElapsedTime LoadTime;
 	std::string File;
 	std::string FileName;
 	std::string FilePath;

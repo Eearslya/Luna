@@ -51,6 +51,7 @@ CommandBuffer::CommandBuffer(Device& device,
 CommandBuffer::~CommandBuffer() noexcept {}
 
 void CommandBuffer::Begin() {
+	ZoneScopedN("Vulkan::CommandBuffer::Begin");
 	const vk::CommandBufferBeginInfo cmdBI(vk::CommandBufferUsageFlagBits::eOneTimeSubmit, nullptr);
 	_commandBuffer.begin(cmdBI);
 }

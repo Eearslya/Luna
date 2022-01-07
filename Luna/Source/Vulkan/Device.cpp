@@ -24,18 +24,21 @@ static uint32_t GetThreadID() {
 }
 
 // One mutex to rule them all. This might be able to be optimized to several smaller mutexes at some point.
-#	define LOCK() std::lock_guard<std::mutex> _DeviceLock(_mutex)
+#	define LOCK()                         \
+		std::lock_guard _DeviceLock(_mutex); \
+		LockMark(_mutex)
 
 // Used for objects that can be internally synchronized. If the object has the internal sync flag, no lock is performed.
 // Otherwise, the lock is made.
 #	define MAYBE_LOCK(obj) \
-		auto _DeviceLock = (obj->_internalSync ? std::unique_lock<std::mutex>() : std::unique_lock<std::mutex>(_mutex))
+		auto _DeviceLock = (obj->_internalSync ? std::unique_lock<decltype(_mutex)>() : std::unique_lock(_mutex))
 
 // As we hand out command buffers on request, we keep track of how many we have given out. Once we want to finalize the
 // frame and move on, we need to make sure all of the command buffers we've given out have come back to us. This
 // currently allows five seconds for all command buffers to return before giving up.
 #	define WAIT_FOR_PENDING_COMMAND_BUFFERS()                                                                           \
-		std::unique_lock<std::mutex> _DeviceLock(_mutex);                                                                  \
+		std::unique_lock _DeviceLock(_mutex);                                                                              \
+		LockMark(_mutex);                                                                                                  \
 		do {                                                                                                               \
 			ZoneScopedN("WaitForCommandBuffers");                                                                            \
 			using namespace std::chrono_literals;                                                                            \
@@ -183,8 +186,23 @@ void Device::NextFrame() {
 // Request a command buffer from the specified queue. The returned command buffer will be started and ready to record
 // immediately.
 CommandBufferHandle Device::RequestCommandBuffer(CommandBufferType type) {
-	LOCK();
-	return RequestCommandBufferNoLock(type, GetThreadID());
+	CommandBufferHandle handle;
+
+	const auto threadIndex = GetThreadID();
+	const auto queueType   = GetQueueType(type);
+	auto& pool             = Frame().CommandPools[static_cast<int>(queueType)][threadIndex];
+	vk::CommandBuffer buffer;
+	{
+		ZoneScopedN("Acquire Command Buffer");
+		LOCK();
+		buffer = pool->RequestCommandBuffer();
+		_pendingCommandBuffers++;
+	}
+
+	handle = CommandBufferHandle(_commandBufferPool.Allocate(*this, buffer, type, threadIndex));
+	handle->Begin();
+
+	return handle;
 }
 
 // Submit a command buffer for processing. All command buffers retrieved from the device must be submitted on the same
@@ -272,6 +290,8 @@ void Device::WaitIdle() {
 // ===== Object Management =====
 
 BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo, const void* initialData) {
+	ZoneScopedN("Vulkan::Device::CreateBuffer");
+
 	BufferCreateInfo actualInfo = createInfo;
 	if (createInfo.Domain == BufferDomain::Device && initialData) {
 		actualInfo.Usage |= vk::BufferUsageFlagBits::eTransferDst;
@@ -313,6 +333,8 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 	// If we have image data to put into this image, we first prepare a staging buffer.
 	InitialImageBuffer initialBuffer;
 	if (initialData) {
+		ZoneScopedN("Copy Initial Data");
+
 		const bool generateMips = createInfo.Flags & ImageCreateFlagBits::GenerateMipmaps;
 
 		// If we want to load mipmaps, we first need to determine how many levels there will be. If we are generating
@@ -397,6 +419,8 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 	ImageCreateInfo actualInfo = createInfo;
 	ImageHandle handle;
 	{
+		ZoneScopedN("Create Image");
+
 		// If we have initial data, we need to be able to transfer into the image.
 		if (initialData) { actualInfo.Usage |= vk::ImageUsageFlagBits::eTransferDst; }
 
@@ -420,6 +444,8 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 
 	// If applicable, create a default ImageView.
 	{
+		ZoneScopedN("Create Image View");
+
 		const bool hasView(actualInfo.Usage &
 		                   (vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eDepthStencilAttachment |
 		                    vk::ImageUsageFlagBits::eInputAttachment | vk::ImageUsageFlagBits::eSampled |
@@ -440,6 +466,8 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 	// Here we copy over the initial image data (if present) and transition the image to the layout requested in
 	// ImageCreateInfo.
 	{
+		ZoneScopedN("Copy and Transition");
+
 		CommandBufferHandle transitionCmd;
 		// Now that we have the image, we copy over the initial data if we have some.
 		if (initialData) {
@@ -778,7 +806,7 @@ void Device::SetupSwapchain(Badge<Swapchain>, Swapchain& swapchain) {
 	for (size_t i = 0; i < images.size(); ++i) {
 		const auto& image = images[i];
 		Image* img        = _imagePool.Allocate(*this, createInfo, image);
-#ifdef LUNA_DEBUG
+#ifdef LUNA_VULKAN_DEBUG
 		const std::string imgName = fmt::format("Swapchain Image {}", i);
 		SetObjectName(img->GetImage(), imgName);
 #endif
@@ -788,7 +816,7 @@ void Device::SetupSwapchain(Badge<Swapchain>, Swapchain& swapchain) {
 
 		const ImageViewCreateInfo viewCI{.Image = img, .Format = format, .Type = vk::ImageViewType::e2D};
 		ImageViewHandle view(_imageViewPool.Allocate(*this, viewCI));
-#ifdef LUNA_DEBUG
+#ifdef LUNA_VULKAN_DEBUG
 		const std::string viewName = fmt::format("Swapchain Image View {}", i);
 		SetObjectName(view->GetImageView(), viewName);
 #endif
@@ -847,27 +875,18 @@ Device::FrameContext& Device::Frame() {
 	return *_frameContexts[_currentFrameContext];
 }
 
-// Private implementation of RequestCommandBuffer().
-CommandBufferHandle Device::RequestCommandBufferNoLock(CommandBufferType type, uint32_t threadIndex) {
-	const auto queueType = GetQueueType(type);
-	auto& pool           = Frame().CommandPools[static_cast<int>(queueType)][threadIndex];
-	auto buffer          = pool->RequestCommandBuffer();
-
-	CommandBufferHandle handle(_commandBufferPool.Allocate(*this, buffer, type, threadIndex));
-	handle->Begin();
-
-	_pendingCommandBuffers++;
-
-	return handle;
-}
-
 // Private implementation of Submit().
 void Device::SubmitNoLock(CommandBufferHandle cmd, FenceHandle* fence, std::vector<SemaphoreHandle>* semaphores) {
+	ZoneScopedN("Vulkan::Device::SubmitNoLock");
+
 	const auto queueType = GetQueueType(cmd->GetType());
 	auto& submissions    = Frame().Submissions[static_cast<int>(queueType)];
 
 	// End command buffer recording.
-	cmd->End();
+	{
+		ZoneScopedN("End Command Buffer");
+		cmd->End();
+	}
 
 	// Add this command buffer to the queue's list of submissions.
 	submissions.push_back(std::move(cmd));
@@ -886,12 +905,15 @@ void Device::SubmitNoLock(CommandBufferHandle cmd, FenceHandle* fence, std::vect
 	}
 
 	// Signal to any threads that are waiting for all command buffers to be submitted.
-	--_pendingCommandBuffers;
-	_pendingCommandBuffersCondition.notify_all();
+	{
+		ZoneScopedN("Condition Variable Notify");
+		--_pendingCommandBuffers;
+		_pendingCommandBuffersCondition.notify_all();
+	}
 }
 
 void Device::SubmitQueue(QueueType queueType, InternalFence* submitFence, std::vector<SemaphoreHandle>* semaphores) {
-	ZoneScopedN("SubmitQueue");
+	ZoneScopedN("Vulkan::Device::SubmitQueue");
 
 	auto& queueData          = _queueData[static_cast<int>(queueType)];
 	auto& submissions        = Frame().Submissions[static_cast<int>(queueType)];
@@ -1273,7 +1295,7 @@ RenderPass& Device::RequestRenderPass(const RenderPassInfo& info, bool compatibl
 	return *ret;
 }
 
-#ifdef LUNA_DEBUG
+#ifdef LUNA_VULKAN_DEBUG
 // Set an object's debug name for validation layers and RenderDoc functionality.
 void Device::SetObjectNameImpl(vk::ObjectType type, uint64_t handle, const std::string& name) {
 	if (!_extensions.DebugUtils) { return; }

@@ -47,7 +47,7 @@ Context::~Context() noexcept {
 	}
 	if (_instance) {
 		if (_surface) { _instance.destroySurfaceKHR(_surface); }
-#ifdef LUNA_DEBUG
+#ifdef LUNA_VULKAN_DEBUG
 		if (_debugMessenger) { _instance.destroyDebugUtilsMessengerEXT(_debugMessenger); }
 #endif
 		_instance.destroy();
@@ -137,7 +137,7 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 		_extensions.GetPhysicalDeviceProperties2 = TryExtension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 		_extensions.GetSurfaceCapabilities2      = TryExtension(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
 
-#ifdef LUNA_DEBUG
+#ifdef LUNA_VULKAN_DEBUG
 		TryLayer("VK_LAYER_KHRONOS_validation");
 
 		_extensions.DebugUtils         = TryExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -149,7 +149,7 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 		"Luna", VK_MAKE_API_VERSION(0, 1, 0, 0), "Luna", VK_MAKE_API_VERSION(0, 1, 0, 0), VK_API_VERSION_1_0);
 	const vk::InstanceCreateInfo instanceCI({}, &appInfo, enabledLayers, enabledExtensions);
 
-#ifdef LUNA_DEBUG
+#ifdef LUNA_VULKAN_DEBUG
 	const vk::DebugUtilsMessengerCreateInfoEXT debugCI(
 		{},
 		vk::DebugUtilsMessageSeverityFlagBitsEXT::eError | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning,
@@ -179,7 +179,7 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 
 	Log::Trace("Instance functions loaded.");
 
-#ifdef LUNA_DEBUG
+#ifdef LUNA_VULKAN_DEBUG
 	if (_extensions.DebugUtils) { _debugMessenger = _instance.createDebugUtilsMessengerEXT(debugCI); }
 #endif
 

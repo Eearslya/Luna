@@ -98,9 +98,7 @@ void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const
 			Log::Warning("[AssetManager] Encountered warning while loading {}: {}", gltfFileName, gltfWarning);
 		}
 
-		if (loaded) {
-			Log::Info("[AssetManager] Parsed {} in {}ms.", gltfFileName, gltfLoadTime.Get().Milliseconds());
-		} else {
+		if (!loaded) {
 			Log::Error("[AssetManager] Failed to load glTF model!");
 
 			_contextPool.Free(context);
@@ -191,7 +189,11 @@ void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const
 
 	// Clean up our multithreading context.
 	auto cleanupGroup = threading->CreateTaskGroup();
-	cleanupGroup->Enqueue([this, context]() { _contextPool.Free(context); });
+	cleanupGroup->Enqueue([this, context]() {
+		context->LoadTime.Update();
+		Log::Info("[AssetManager] {} loaded in {}ms.", context->FileName, context->LoadTime.Get().Milliseconds());
+		_contextPool.Free(context);
+	});
 	cleanupGroup->DependOn(*meshesGroup);
 	cleanupGroup->DependOn(*materialsGroup);
 	cleanupGroup->DependOn(*texturesGroup);
@@ -266,6 +268,7 @@ void AssetManager::LoadMeshTask(ModelLoadContext* context, size_t meshIndex) con
 	std::vector<PrimitiveContext> primData(gltfMesh.primitives.size());
 	{
 		ZoneScopedN("SubMesh Parse");
+		mesh->SubMeshes.resize(gltfMesh.primitives.size());
 		for (size_t prim = 0; prim < gltfMesh.primitives.size(); ++prim) {
 			const auto& gltfPrimitive = gltfMesh.primitives[prim];
 			if (gltfPrimitive.mode != 4) {
@@ -325,13 +328,16 @@ void AssetManager::LoadMeshTask(ModelLoadContext* context, size_t meshIndex) con
 	mesh->Texcoord0Offset = totalPositionSize + totalNormalSize;
 	mesh->IndexOffset     = totalPositionSize + totalNormalSize + totalTexcoord0Size;
 
-	std::vector<uint8_t> bufferData(bufferSize);
-	uint8_t* positionCursor  = bufferData.data();
-	uint8_t* normalCursor    = bufferData.data() + totalPositionSize;
-	uint8_t* texcoord0Cursor = bufferData.data() + totalPositionSize + totalNormalSize;
-	uint8_t* indexCursor     = bufferData.data() + totalPositionSize + totalNormalSize + totalTexcoord0Size;
+	std::unique_ptr<uint8_t[]> bufferData;
+	{
+		ZoneScopedN("Buffer Data Allocation");
+		bufferData.reset(new uint8_t[bufferSize]);
+	}
+	uint8_t* positionCursor  = bufferData.get();
+	uint8_t* normalCursor    = bufferData.get() + totalPositionSize;
+	uint8_t* texcoord0Cursor = bufferData.get() + totalPositionSize + totalNormalSize;
+	uint8_t* indexCursor     = bufferData.get() + totalPositionSize + totalNormalSize + totalTexcoord0Size;
 
-	mesh->SubMeshes.resize(gltfMesh.primitives.size());
 	{
 		ZoneScopedN("Buffer Data Creation");
 
@@ -393,7 +399,7 @@ void AssetManager::LoadMeshTask(ModelLoadContext* context, size_t meshIndex) con
       Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Device,
                                bufferSize,
                                vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer),
-      bufferData.data());
+      bufferData.get());
 	}
 
 	mesh->Ready = true;

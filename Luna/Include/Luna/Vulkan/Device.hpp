@@ -3,6 +3,7 @@
 #include <vk_mem_alloc.h>
 
 #include <Luna/Vulkan/Common.hpp>
+#include <Tracy.hpp>
 
 namespace Luna {
 namespace Vulkan {
@@ -60,6 +61,7 @@ class Device final : NonCopyable {
 	// General functionality.
 	vk::Format GetDefaultDepthFormat() const;
 	vk::Format GetDefaultDepthStencilFormat() const;
+	QueueType GetQueueType(CommandBufferType bufferType) const;
 	RenderPassInfo GetStockRenderPass(StockRenderPass type) const;
 	bool ImageFormatSupported(vk::Format format, vk::FormatFeatureFlags features, vk::ImageTiling tiling) const;
 	void WaitIdle();
@@ -100,7 +102,7 @@ class Device final : NonCopyable {
 	RenderPass& RequestRenderPass(Badge<FramebufferAllocator>, const RenderPassInfo& info, bool compatible = false);
 	void SetAcquireSemaphore(Badge<Swapchain>, uint32_t imageIndex, SemaphoreHandle& semaphore);
 	void SetupSwapchain(Badge<Swapchain>, Swapchain& swapchain);
-#ifdef LUNA_DEBUG
+#ifdef LUNA_VULKAN_DEBUG
 	template <typename T>
 	void SetObjectName(T object, const std::string& name) {
 		SetObjectNameImpl(T::objectType, *reinterpret_cast<uint64_t*>(&object), name);
@@ -162,13 +164,11 @@ class Device final : NonCopyable {
 	void EndFrameNoLock();
 	FrameContext& Frame();
 	void FlushFrameNoLock(QueueType queueType);
-	CommandBufferHandle RequestCommandBufferNoLock(CommandBufferType type, uint32_t threadIndex);
 	void SubmitNoLock(CommandBufferHandle cmd, FenceHandle* fence, std::vector<SemaphoreHandle>* semaphores);
 	void SubmitQueue(QueueType queueType, InternalFence* submitFence, std::vector<SemaphoreHandle>* semaphores);
 	void SubmitStaging(CommandBufferHandle& cmd, vk::BufferUsageFlags usage, bool flush);
 
 	// General functionality.
-	QueueType GetQueueType(CommandBufferType bufferType) const;
 	void WaitIdleNoLock();
 
 	// Internal setup and cleanup.
@@ -181,7 +181,7 @@ class Device final : NonCopyable {
 	void ReleaseFence(vk::Fence fence);
 	void ReleaseSemaphore(vk::Semaphore semaphore);
 	RenderPass& RequestRenderPass(const RenderPassInfo& info, bool compatible);
-#ifdef LUNA_DEBUG
+#ifdef LUNA_VULKAN_DEBUG
 	void SetObjectNameImpl(vk::ObjectType type, uint64_t handle, const std::string& name);
 #endif
 
@@ -201,9 +201,13 @@ class Device final : NonCopyable {
 	std::vector<vk::Fence> _availableFences;
 	std::vector<vk::Semaphore> _availableSemaphores;
 #ifdef LUNA_VULKAN_MT
+#	ifdef TRACY_ENABLE
+	TracyLockableN(std::mutex, _mutex, "Vulkan Device Lock");
+#	else
 	std::mutex _mutex;
+#	endif
 	std::atomic_uint64_t _nextCookie;
-	std::condition_variable _pendingCommandBuffersCondition;
+	std::condition_variable_any _pendingCommandBuffersCondition;
 #else
 	uint64_t _nextCookie = 0;
 #endif
