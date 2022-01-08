@@ -9,6 +9,7 @@
 #include <Luna/Scene/MeshRenderer.hpp>
 #include <Luna/Scene/Scene.hpp>
 #include <Luna/Scene/TransformComponent.hpp>
+#include <Luna/Scene/WorldData.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Image.hpp>
@@ -41,6 +42,11 @@ entt::entity Scene::CreateEntity(const std::string& name, std::optional<entt::en
 	}
 
 	return e;
+}
+
+void Scene::LoadEnvironment(const std::string& filePath) {
+	auto graphics = Graphics::Get();
+	graphics->GetAssetManager().LoadEnvironment(filePath, *this);
 }
 
 void Scene::LoadModel(const std::string& filePath, entt::entity parent) {
@@ -78,6 +84,7 @@ void Scene::DrawSceneGraph() {
 			ImGui::TableNextColumn();
 			if (_registry.valid(_selected)) {
 				if (auto* comp = _registry.try_get<TransformComponent>(_selected)) { comp->DrawComponent(_registry); }
+				if (auto* comp = _registry.try_get<WorldData>(_selected)) { comp->DrawComponent(_registry); }
 				if (auto* comp = _registry.try_get<MeshRenderer>(_selected)) { comp->DrawComponent(_registry); }
 			}
 

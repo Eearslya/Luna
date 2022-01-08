@@ -17,6 +17,7 @@ class Scene {
 	}
 
 	entt::entity CreateEntity(const std::string& name, std::optional<entt::entity> parent = std::nullopt);
+	void LoadEnvironment(const std::string& filePath);
 	void LoadModel(const std::string& filePath, entt::entity parent);
 
 	void DrawSceneGraph();

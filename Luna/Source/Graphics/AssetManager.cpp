@@ -11,10 +11,14 @@
 #include <Luna/Graphics/Graphics.hpp>
 #include <Luna/Scene/MeshRenderer.hpp>
 #include <Luna/Scene/TransformComponent.hpp>
+#include <Luna/Scene/WorldData.hpp>
 #include <Luna/Threading/Threading.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
+#include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Device.hpp>
+#include <Luna/Vulkan/Fence.hpp>
 #include <Luna/Vulkan/Image.hpp>
+#include <Luna/Vulkan/RenderPass.hpp>
 #include <Luna/Vulkan/Sampler.hpp>
 #include <Tracy.hpp>
 #include <filesystem>
@@ -52,12 +56,253 @@ AssetManager::AssetManager() {}
 
 AssetManager::~AssetManager() noexcept {}
 
+void AssetManager::LoadEnvironment(const std::string& filePath, Scene& scene) {
+	auto threading           = Threading::Get();
+	auto loadEnvironmentTask = threading->CreateTaskGroup();
+	loadEnvironmentTask->Enqueue([this, filePath, &scene]() { LoadEnvironmentTask(filePath, scene); });
+	loadEnvironmentTask->Flush();
+}
+
 void AssetManager::LoadModel(const std::string& gltfFile, Scene& scene, entt::entity parentEntity) {
 	auto threading = Threading::Get();
 
 	auto loadGltfTask = threading->CreateTaskGroup();
 	loadGltfTask->Enqueue([this, gltfFile, &scene, parentEntity]() { LoadGltfTask(gltfFile, scene, parentEntity); });
 	loadGltfTask->Flush();
+}
+
+void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene) {
+	ZoneScopedN("AssetManager::LoadEnvironmentTask");
+
+	// Determine our base filename and parent directory.
+	const std::filesystem::path envPath(filePath);
+	const auto envFileName  = envPath.filename().string();
+	const auto envFileNameC = envFileName.c_str();
+	ZoneText(envFileNameC, strlen(envFileNameC));
+
+	ElapsedTime elapsed;
+
+	EnvironmentHandle env = EnvironmentHandle(_environmentPool.Allocate());
+
+	// Create our scene component.
+	auto& registry        = scene.GetRegistry();
+	auto rootNode         = scene.GetRoot();
+	auto& worldData       = registry.get_or_emplace<WorldData>(rootNode);
+	worldData.Environment = env;
+
+	auto filesystem                           = Filesystem::Get();
+	std::optional<std::vector<uint8_t>> bytes = std::nullopt;
+	{
+		ZoneScopedN("Filesystem Load");
+		const std::string envPathStr = envPath.string();
+		const char* envPathC         = envPathStr.c_str();
+		ZoneText(envPathC, strlen(envPathC));
+		bytes = filesystem->ReadBytes(envPath);
+	}
+	if (!bytes.has_value()) {
+		Log::Error("[AssetManager] Failed to load environment map {}!", filePath);
+		return;
+	}
+
+	int width, height, components;
+	float* pixels = nullptr;
+	{
+		ZoneScopedN("STBI Parse");
+		pixels =
+			stbi_loadf_from_memory(bytes.value().data(), bytes.value().size(), &width, &height, &components, STBI_rgb_alpha);
+		stbi__vertical_flip(pixels, width, height, STBI_rgb_alpha * sizeof(float));
+	}
+	if (!pixels) {
+		Log::Error("[AssetManager] Failed to parse environment map {}!", envFileName);
+		return;
+	}
+
+	auto graphics = Graphics::Get();
+	auto& device  = graphics->GetDevice();
+
+	Vulkan::Program* cubeMapProgram    = nullptr;
+	Vulkan::Program* irradianceProgram = nullptr;
+	{
+		ZoneScopedN("Load Environment Shaders");
+
+		auto cubeMapVertCode = filesystem->Read("Shaders/CubeMap.vert.glsl");
+		if (!cubeMapVertCode.has_value()) {
+			Log::Error("[AssetManager] Failed to load CubeMap vertex shader!");
+			return;
+		}
+		auto cubeMapFragCode = filesystem->Read("Shaders/CubeMap.frag.glsl");
+		if (!cubeMapFragCode.has_value()) {
+			Log::Error("[AssetManager] Failed to load CubeMap fragment shader!");
+			return;
+		}
+		auto irradianceFragCode = filesystem->Read("Shaders/CubeMapConvolute.frag.glsl");
+		if (!irradianceFragCode.has_value()) {
+			Log::Error("[AssetManager] Failed to load CubeMap convolution fragment shader!");
+			return;
+		}
+
+		auto cubeMapVert    = device.RequestShader(vk::ShaderStageFlagBits::eVertex, cubeMapVertCode.value());
+		auto cubeMapFrag    = device.RequestShader(vk::ShaderStageFlagBits::eFragment, cubeMapFragCode.value());
+		auto irradianceFrag = device.RequestShader(vk::ShaderStageFlagBits::eFragment, irradianceFragCode.value());
+
+		cubeMapProgram = device.RequestProgram(cubeMapVert, cubeMapFrag);
+		if (cubeMapProgram == nullptr) {
+			Log::Error("[AssetManager] Failed to load shader program for cubemap generation!");
+			return;
+		}
+		irradianceProgram = device.RequestProgram(cubeMapVert, irradianceFrag);
+		if (irradianceProgram == nullptr) {
+			Log::Error("[AssetManager] Failed to load shader program for cubemap irradiance generation!");
+			return;
+		}
+	}
+
+	Vulkan::ImageHandle baseHdr;
+	{
+		ZoneScopedN("Image Creation");
+		const Vulkan::InitialImageData initialData{.Data = pixels};
+		const auto imageCI =
+			Vulkan::ImageCreateInfo::Immutable2D(vk::Format::eR32G32B32A32Sfloat, vk::Extent2D(width, height), true);
+		baseHdr = device.CreateImage(imageCI, &initialData);
+	}
+
+	Vulkan::ImageHandle skybox;
+	Vulkan::ImageHandle irradiance;
+	std::array<Vulkan::ImageViewHandle, 6> skyboxFaces;
+	std::array<Vulkan::ImageViewHandle, 6> irradianceFaces;
+	{
+		ZoneScopedN("Image Creation");
+
+		Vulkan::ImageCreateInfo cubeImageCI{
+			.Domain        = Vulkan::ImageDomain::Physical,
+			.Format        = vk::Format::eR16G16B16A16Sfloat,
+			.Type          = vk::ImageType::e2D,
+			.Usage         = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+			.Extent        = vk::Extent3D(),
+			.ArrayLayers   = 6,
+			.MipLevels     = 1,
+			.Samples       = vk::SampleCountFlagBits::e1,
+			.InitialLayout = vk::ImageLayout::eColorAttachmentOptimal,
+			.Flags         = Vulkan::ImageCreateFlagBits::CreateCubeCompatible};
+
+		const auto GetFaces = [&](Vulkan::ImageHandle& image, std::array<Vulkan::ImageViewHandle, 6>& faces) {
+			for (uint32_t i = 0; i < 6; ++i) {
+				const Vulkan::ImageViewCreateInfo viewCI{.Image          = image.Get(),
+				                                         .Format         = cubeImageCI.Format,
+				                                         .Type           = vk::ImageViewType::e2D,
+				                                         .BaseMipLevel   = 0,
+				                                         .MipLevels      = 1,
+				                                         .BaseArrayLayer = i,
+				                                         .ArrayLayers    = 1};
+				faces[i] = device.CreateImageView(viewCI);
+			}
+		};
+
+		cubeImageCI.Extent = vk::Extent3D(1024, 1024, 1);
+		skybox             = device.CreateImage(cubeImageCI);
+		GetFaces(skybox, skyboxFaces);
+
+		cubeImageCI.Extent = vk::Extent3D(32, 32, 1);
+		irradiance         = device.CreateImage(cubeImageCI);
+		GetFaces(irradiance, irradianceFaces);
+	}
+
+	auto cmdBuf = device.RequestCommandBuffer(Vulkan::CommandBufferType::AsyncGraphics);
+
+	glm::mat4 captureProjection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
+	// captureProjection[1][1] *= -1.0f;
+	const glm::mat4 captureViews[] = {
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f)),
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
+		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, -1.0f, 0.0f))};
+	struct PushConstant {
+		glm::mat4 ViewProjection;
+	};
+
+	// Convert our equirectangular map into a cubemap.
+	{
+		ZoneScopedN("Render Cubemap");
+
+		auto rpInfo                 = Vulkan::RenderPassInfo{};
+		rpInfo.ColorAttachmentCount = 1;
+		rpInfo.StoreAttachments     = 1 << 0;
+
+		for (uint32_t i = 0; i < 6; ++i) {
+			const PushConstant pc{.ViewProjection = captureProjection * captureViews[i]};
+			rpInfo.ColorAttachments[0] = skyboxFaces[i].Get();
+			cmdBuf->BeginRenderPass(rpInfo);
+			cmdBuf->SetProgram(cubeMapProgram);
+			cmdBuf->SetCullMode(vk::CullModeFlagBits::eNone);
+			cmdBuf->SetTexture(0, 0, *baseHdr->GetView(), Vulkan::StockSampler::LinearClamp);
+			cmdBuf->PushConstants(&pc, 0, sizeof(pc));
+			cmdBuf->Draw(36);
+			cmdBuf->EndRenderPass();
+		}
+
+		const vk::ImageMemoryBarrier barrier(vk::AccessFlagBits::eColorAttachmentWrite,
+		                                     vk::AccessFlagBits::eShaderRead,
+		                                     vk::ImageLayout::eColorAttachmentOptimal,
+		                                     vk::ImageLayout::eShaderReadOnlyOptimal,
+		                                     VK_QUEUE_FAMILY_IGNORED,
+		                                     VK_QUEUE_FAMILY_IGNORED,
+		                                     skybox->GetImage(),
+		                                     vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6));
+		cmdBuf->Barrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+		                vk::PipelineStageFlagBits::eFragmentShader,
+		                nullptr,
+		                nullptr,
+		                barrier);
+	}
+
+	// Convolute the cubemap into an irradiance map.
+	{
+		ZoneScopedN("Render Irradiance");
+
+		auto rpInfo                 = Vulkan::RenderPassInfo{};
+		rpInfo.ColorAttachmentCount = 1;
+		rpInfo.StoreAttachments     = 1 << 0;
+
+		for (uint32_t i = 0; i < 6; ++i) {
+			const PushConstant pc{.ViewProjection = captureProjection * captureViews[i]};
+			rpInfo.ColorAttachments[0] = irradianceFaces[i].Get();
+			cmdBuf->BeginRenderPass(rpInfo);
+			cmdBuf->SetProgram(irradianceProgram);
+			cmdBuf->SetCullMode(vk::CullModeFlagBits::eNone);
+			cmdBuf->SetTexture(0, 0, *skybox->GetView(), Vulkan::StockSampler::LinearClamp);
+			cmdBuf->PushConstants(&pc, 0, sizeof(pc));
+			cmdBuf->Draw(36);
+			cmdBuf->EndRenderPass();
+		}
+
+		const vk::ImageMemoryBarrier barrier(vk::AccessFlagBits::eColorAttachmentWrite,
+		                                     vk::AccessFlagBits::eShaderRead,
+		                                     vk::ImageLayout::eColorAttachmentOptimal,
+		                                     vk::ImageLayout::eShaderReadOnlyOptimal,
+		                                     VK_QUEUE_FAMILY_IGNORED,
+		                                     VK_QUEUE_FAMILY_IGNORED,
+		                                     irradiance->GetImage(),
+		                                     vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6));
+		cmdBuf->Barrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+		                vk::PipelineStageFlagBits::eFragmentShader,
+		                nullptr,
+		                nullptr,
+		                barrier);
+	}
+
+	// Vulkan::FenceHandle waitFence;
+	// device.Submit(cmdBuf, &waitFence);
+	// if (waitFence) { waitFence->Wait(); }
+	device.Submit(cmdBuf);
+
+	env->Skybox     = std::move(skybox);
+	env->Irradiance = std::move(irradiance);
+	env->Ready      = true;
+
+	elapsed.Update();
+	Log::Info("[AssetManager] {} loaded in {}ms", envFileName, elapsed.Get().Milliseconds());
 }
 
 void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const entt::entity parentEntity) {
@@ -527,6 +772,10 @@ void AssetManager::LoadTextureTask(ModelLoadContext* context, size_t textureInde
 	}
 
 	texture->Ready.store(true);
+}
+
+void AssetManager::FreeEnvironment(Environment* environment) {
+	_environmentPool.Free(environment);
 }
 
 void AssetManager::FreeMaterial(Material* material) {

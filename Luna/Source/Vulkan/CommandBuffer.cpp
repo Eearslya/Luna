@@ -305,6 +305,10 @@ void CommandBuffer::SetCullMode(vk::CullModeFlagBits mode) {
 	SetStaticState(CullMode, mode);
 }
 
+void CommandBuffer::SetDepthCompareOp(vk::CompareOp op) {
+	SetStaticState(DepthCompare, op);
+}
+
 void CommandBuffer::SetFrontFace(vk::FrontFace front) {
 	SetStaticState(FrontFace, front);
 }

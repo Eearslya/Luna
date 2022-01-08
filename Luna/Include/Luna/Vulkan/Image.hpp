@@ -86,7 +86,7 @@ static inline vk::PipelineStageFlags ImageUsageToStages(vk::ImageUsageFlags usag
 	return stages;
 }
 
-enum class ImageCreateFlagBits { GenerateMipmaps = 1 << 0 };
+enum class ImageCreateFlagBits { GenerateMipmaps = 1 << 0, CreateCubeCompatible = 1 << 1 };
 using ImageCreateFlags = Bitmask<ImageCreateFlagBits>;
 
 enum class ImageDomain { Physical, Transient };
@@ -152,19 +152,7 @@ struct ImageViewCreateInfo {
 	uint32_t ArrayLayers    = VK_REMAINING_ARRAY_LAYERS;
 };
 
-static inline vk::ImageViewType GetImageViewType(const ImageCreateInfo& createInfo) {
-	switch (createInfo.Type) {
-		case vk::ImageType::e1D:
-			return createInfo.ArrayLayers > 1 ? vk::ImageViewType::e1DArray : vk::ImageViewType::e1D;
-		case vk::ImageType::e2D:
-			return createInfo.ArrayLayers > 1 ? vk::ImageViewType::e2DArray : vk::ImageViewType::e2D;
-		case vk::ImageType::e3D:
-			return vk::ImageViewType::e3D;
-	}
-
-	assert(false && "Invalid ImageCreateInfo!");
-	return vk::ImageViewType::e2D;
-}
+vk::ImageViewType GetImageViewType(const ImageCreateInfo& createInfo);
 
 struct ImageDeleter {
 	void operator()(Image* image);

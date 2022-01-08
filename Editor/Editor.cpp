@@ -32,6 +32,7 @@ class EditorApp : public App {
 			this);
 
 		auto& scene = Graphics::Get()->GetScene();
+		scene.LoadEnvironment("Environments/TokyoBigSight.hdr");
 		scene.LoadModel("Models/Sponza/Sponza.gltf", scene.GetRoot());
 	}
 

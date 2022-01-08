@@ -66,7 +66,8 @@ class Graphics : public Module::Registrar<Graphics> {
 
 	Camera _camera;
 	Scene _scene;
-	Vulkan::Program* _program = nullptr;
+	Vulkan::Program* _program       = nullptr;
+	Vulkan::Program* _programSkybox = nullptr;
 	Vulkan::BufferHandle _cameraBuffer;
 	Vulkan::BufferHandle _sceneBuffer;
 	bool _mouseControl = false;

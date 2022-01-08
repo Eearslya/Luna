@@ -6,6 +6,7 @@
 #include <Luna/Graphics/Graphics.hpp>
 #include <Luna/Scene/MeshRenderer.hpp>
 #include <Luna/Scene/TransformComponent.hpp>
+#include <Luna/Scene/WorldData.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Context.hpp>
@@ -161,12 +162,6 @@ void Graphics::Update() {
 		rpInfo.ClearColors[0].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
 		rpInfo.ClearDepthStencil.setDepth(1.0f);
 		cmd->BeginRenderPass(rpInfo);
-		cmd->SetProgram(_program);
-		cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
-		cmd->SetVertexAttribute(1, 1, vk::Format::eR32G32B32Sfloat, 0);
-		cmd->SetVertexAttribute(2, 2, vk::Format::eR32G32Sfloat, 0);
-		cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
-		cmd->SetUniformBuffer(0, 1, *_sceneBuffer);
 
 		const auto SetTexture = [&](uint32_t set, uint32_t binding, const TextureHandle& texture) -> void {
 			const bool ready      = bool(texture) && texture->Ready;
@@ -178,7 +173,17 @@ void Graphics::Update() {
 			cmd->SetTexture(set, binding, view, sampler);
 		};
 
-		auto& registry  = _scene.GetRegistry();
+		auto& registry      = _scene.GetRegistry();
+		const auto rootNode = _scene.GetRoot();
+
+		// Render meshes
+		cmd->SetOpaqueState();
+		cmd->SetProgram(_program);
+		cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
+		cmd->SetVertexAttribute(1, 1, vk::Format::eR32G32B32Sfloat, 0);
+		cmd->SetVertexAttribute(2, 2, vk::Format::eR32G32Sfloat, 0);
+		cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
+		cmd->SetUniformBuffer(0, 1, *_sceneBuffer);
 		const auto view = registry.view<MeshRenderer>();
 		for (const auto& entity : view) {
 			const auto& transform = registry.get<TransformComponent>(entity);
@@ -218,6 +223,19 @@ void Graphics::Update() {
 			}
 		}
 
+		// Render environment
+		if (WorldData* worldData = registry.try_get<WorldData>(rootNode)) {
+			if (worldData->Environment && worldData->Environment->Ready) {
+				cmd->SetOpaqueState();
+				cmd->SetProgram(_programSkybox);
+				cmd->SetDepthCompareOp(vk::CompareOp::eEqual);
+				cmd->SetCullMode(vk::CullModeFlagBits::eFront);
+				cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
+				cmd->SetTexture(1, 0, *worldData->Environment->Skybox->GetView(), Vulkan::StockSampler::LinearClamp);
+				cmd->Draw(36);
+			}
+		}
+
 		cmd->EndRenderPass();
 	}
 
@@ -253,11 +271,24 @@ void Graphics::EndFrame() {
 void Graphics::LoadShaders() {
 	auto filesystem = Filesystem::Get();
 
-	auto vert = filesystem->Read("Shaders/Basic.vert.glsl");
-	auto frag = filesystem->Read("Shaders/Basic.frag.glsl");
-	if (vert.has_value() && frag.has_value()) {
-		auto program = _device->RequestProgram(*vert, *frag);
-		if (program) { _program = program; }
+	// Basic
+	{
+		auto vert = filesystem->Read("Shaders/Basic.vert.glsl");
+		auto frag = filesystem->Read("Shaders/Basic.frag.glsl");
+		if (vert.has_value() && frag.has_value()) {
+			auto program = _device->RequestProgram(*vert, *frag);
+			if (program) { _program = program; }
+		}
+	}
+
+	// Skybox
+	{
+		auto vert = filesystem->Read("Shaders/Skybox.vert.glsl");
+		auto frag = filesystem->Read("Shaders/Skybox.frag.glsl");
+		if (vert.has_value() && frag.has_value()) {
+			auto program = _device->RequestProgram(*vert, *frag);
+			if (program) { _programSkybox = program; }
+		}
 	}
 }
 }  // namespace Luna

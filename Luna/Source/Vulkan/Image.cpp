@@ -4,6 +4,23 @@
 
 namespace Luna {
 namespace Vulkan {
+vk::ImageViewType GetImageViewType(const ImageCreateInfo& createInfo) {
+	switch (createInfo.Type) {
+		case vk::ImageType::e1D:
+			return createInfo.ArrayLayers > 1 ? vk::ImageViewType::e1DArray : vk::ImageViewType::e1D;
+		case vk::ImageType::e2D:
+			if ((createInfo.Flags & ImageCreateFlagBits::CreateCubeCompatible) && (createInfo.ArrayLayers % 6) == 0) {
+				return createInfo.ArrayLayers > 6 ? vk::ImageViewType::eCubeArray : vk::ImageViewType::eCube;
+			}
+			return createInfo.ArrayLayers > 1 ? vk::ImageViewType::e2DArray : vk::ImageViewType::e2D;
+		case vk::ImageType::e3D:
+			return vk::ImageViewType::e3D;
+	}
+
+	assert(false && "Invalid ImageCreateInfo!");
+	return vk::ImageViewType::e2D;
+}
+
 void ImageDeleter::operator()(Image* image) {
 	image->_device.DestroyImage({}, image);
 	image->_defaultView->SetInternalSync();
@@ -17,7 +34,9 @@ Image::Image(Device& device, const ImageCreateInfo& createInfo)
 		: Cookie(device), _device(device), _createInfo(createInfo) {
 	Log::Trace("[Vulkan::Image] Creating new Image.");
 
-	const vk::ImageCreateInfo imageCI({},
+	const vk::ImageCreateInfo imageCI(createInfo.Flags & ImageCreateFlagBits::CreateCubeCompatible
+	                                    ? vk::ImageCreateFlagBits::eCubeCompatible
+	                                    : vk::ImageCreateFlags{},
 	                                  createInfo.Type,
 	                                  createInfo.Format,
 	                                  createInfo.Extent,

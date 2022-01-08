@@ -60,7 +60,7 @@ struct TransformComponent {
 				Rotation       = glm::vec3(0, 0, 0);
 				transformDirty = true;
 			}
-			if (ImGui::DragFloat3("Scale##TransformComponent", glm::value_ptr(Scale), 0.1f, 0.0f)) { transformDirty = true; }
+			if (ImGui::DragFloat3("Scale##TransformComponent", glm::value_ptr(Scale), 0.1f, 0.01f)) { transformDirty = true; }
 			if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
 				Scale          = glm::vec3(1, 1, 1);
 				transformDirty = true;

@@ -557,7 +557,7 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 			}
 
 			transitionCmd = std::move(graphicsCmd);
-		} else if (actualInfo.InitialLayout != vk::ImageLayout::eUndefined) {
+		} else if (createInfo.InitialLayout != vk::ImageLayout::eUndefined) {
 			auto cmd = RequestCommandBuffer(CommandBufferType::Generic);
 			cmd->ImageBarrier(*handle,
 			                  actualInfo.InitialLayout,
