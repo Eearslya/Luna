@@ -2,6 +2,11 @@
 
 #include <map>
 
+namespace vk {
+template <typename F>
+class Flags;
+}
+
 namespace Luna {
 using Hash = std::uint64_t;
 
@@ -35,6 +40,11 @@ class Hasher {
 		const std::size_t hash = std::hash<T>{}(data);
 		_hash                  = (_hash * 0x100000001b3ull) ^ (hash & 0xffffffffu);
 		_hash                  = (_hash * 0x100000001b3ull) ^ (hash >> 32);
+	}
+
+	template <typename F>
+	void operator()(const vk::Flags<F>& flags) {
+		operator()(static_cast<uint32_t>(flags));
 	}
 
  private:
