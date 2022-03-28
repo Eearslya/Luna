@@ -22,6 +22,7 @@ struct MaterialData {
 	float AlphaCutoff         = 0.0f;
 	float Metallic            = 0.0f;
 	float Roughness           = 0.0f;
+	float DebugView           = 0.0f;
 };
 
 struct Material;
@@ -42,6 +43,7 @@ struct Material : public IntrusivePtrEnabled<Material, MaterialDeleter, MultiThr
 	TextureHandle Albedo;
 	TextureHandle Normal;
 	TextureHandle PBR;
+	float DebugView = 0.0f;
 
 	Hash CurrentDataHash = {};
 };
@@ -63,6 +65,7 @@ struct std::hash<Luna::MaterialData> {
 		h(data.AlphaCutoff);
 		h(data.Metallic);
 		h(data.Roughness);
+		h(data.DebugView);
 		return static_cast<size_t>(h.Get());
 	}
 };

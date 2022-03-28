@@ -109,6 +109,7 @@ void Graphics::Update() {
 		ZoneScopedN("UI Update");
 		ImGui::ShowDemoWindow(nullptr);
 		_scene.DrawSceneGraph();
+		DrawRenderSettings();
 		_onUiRender();
 	}
 
@@ -119,7 +120,8 @@ void Graphics::Update() {
 		auto keyboard        = Keyboard::Get();
 		const auto deltaTime = engine->GetFrameDelta().Seconds();
 		_camera.Update(deltaTime);
-		const float moveSpeed = 5.0f * deltaTime;
+		float moveSpeed = 5.0f * deltaTime;
+		if (keyboard->GetKey(Key::ShiftLeft) == InputAction::Press) { moveSpeed *= 2.0f; }
 		if (keyboard->GetKey(Key::W) == InputAction::Press) { _camera.Move(_camera.GetForward() * moveSpeed); }
 		if (keyboard->GetKey(Key::S) == InputAction::Press) { _camera.Move(-_camera.GetForward() * moveSpeed); }
 		if (keyboard->GetKey(Key::A) == InputAction::Press) { _camera.Move(-_camera.GetRight() * moveSpeed); }
@@ -140,10 +142,20 @@ void Graphics::Update() {
 		_cameraBuffer->Unmap();
 	}
 
+	auto& registry              = _scene.GetRegistry();
+	const auto rootNode         = _scene.GetRoot();
+	WorldData* worldData        = registry.try_get<WorldData>(rootNode);
+	const bool environmentReady = worldData->Environment && worldData->Environment->Ready;
+
 	// Update Scene buffer.
 	{
 		ZoneScopedN("Scene Uniform Update");
-		SceneData scene{.SunDirection = glm::normalize(glm::vec4(1.0f, 2.0f, 0.0f, 0.0f))};
+		SceneData scene{.SunDirection = glm::normalize(glm::vec4(1.0f, 2.0f, 0.0f, 0.0f)),
+		                .PrefilteredCubeMipLevels =
+		                  environmentReady ? worldData->Environment->Prefiltered->GetCreateInfo().MipLevels : 0.0f,
+		                .Exposure        = _exposure,
+		                .Gamma           = _gamma,
+		                .IBLContribution = environmentReady ? _iblContribution : 0.0f};
 		auto* data = _sceneBuffer->Map();
 		memcpy(data, &scene, sizeof(SceneData));
 		_sceneBuffer->Unmap();
@@ -177,9 +189,6 @@ void Graphics::Update() {
 			cmd->SetTexture(set, binding, view, sampler);
 		};
 
-		auto& registry      = _scene.GetRegistry();
-		const auto rootNode = _scene.GetRoot();
-
 		// Render meshes
 		{
 			ZoneScopedN("Meshes");
@@ -191,6 +200,17 @@ void Graphics::Update() {
 			cmd->SetVertexAttribute(2, 2, vk::Format::eR32G32Sfloat, 0);
 			cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
 			cmd->SetUniformBuffer(0, 1, *_sceneBuffer);
+
+			if (worldData->Environment && worldData->Environment->Ready) {
+				cmd->SetTexture(0, 2, *worldData->Environment->Irradiance->GetView(), Vulkan::StockSampler::LinearClamp);
+				cmd->SetTexture(0, 3, *worldData->Environment->Prefiltered->GetView(), Vulkan::StockSampler::LinearClamp);
+				cmd->SetTexture(0, 4, *worldData->Environment->BrdfLut->GetView(), Vulkan::StockSampler::LinearClamp);
+			} else {
+				cmd->SetTexture(0, 2, *_whiteImage->GetView(), Vulkan::StockSampler::LinearClamp);
+				cmd->SetTexture(0, 3, *_whiteImage->GetView(), Vulkan::StockSampler::LinearClamp);
+				cmd->SetTexture(0, 4, *_whiteImage->GetView(), Vulkan::StockSampler::LinearClamp);
+			}
+
 			const auto view = registry.view<MeshRenderer>();
 			for (const auto& entity : view) {
 				const auto& transform = registry.get<TransformComponent>(entity);
@@ -218,6 +238,7 @@ void Graphics::Update() {
 
 					ZoneScopedN("Submesh");
 
+					material->DebugView = _pbrDebug;
 					material->Update();
 
 					cmd->SetCullMode(material->DualSided ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack);
@@ -238,18 +259,23 @@ void Graphics::Update() {
 		}
 
 		// Render environment
-		if (WorldData* worldData = registry.try_get<WorldData>(rootNode)) {
+		if (_drawSkybox && environmentReady) {
 			ZoneScopedN("Environment");
+			struct SkyboxPC {
+				float DebugView = 0.0f;
+			};
+			SkyboxPC pc = {.DebugView = static_cast<float>(_skyDebug)};
 
-			if (worldData->Environment && worldData->Environment->Ready) {
-				cmd->SetOpaqueState();
-				cmd->SetProgram(_programSkybox);
-				cmd->SetDepthCompareOp(vk::CompareOp::eEqual);
-				cmd->SetCullMode(vk::CullModeFlagBits::eFront);
-				cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
-				cmd->SetTexture(1, 0, *worldData->Environment->Skybox->GetView(), Vulkan::StockSampler::LinearClamp);
-				cmd->Draw(36);
-			}
+			cmd->SetOpaqueState();
+			cmd->SetProgram(_programSkybox);
+			cmd->SetDepthCompareOp(vk::CompareOp::eEqual);
+			cmd->SetCullMode(vk::CullModeFlagBits::eFront);
+			cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
+			cmd->SetTexture(1, 0, *worldData->Environment->Skybox->GetView(), Vulkan::StockSampler::LinearClamp);
+			cmd->SetTexture(1, 1, *worldData->Environment->Irradiance->GetView(), Vulkan::StockSampler::LinearClamp);
+			cmd->SetTexture(1, 2, *worldData->Environment->Prefiltered->GetView(), Vulkan::StockSampler::LinearClamp);
+			cmd->PushConstants(&pc, 0, sizeof(pc));
+			cmd->Draw(36);
 		}
 
 		cmd->EndRenderPass();
@@ -264,7 +290,7 @@ void Graphics::Update() {
 	_device->Submit(cmd);
 
 	EndFrame();
-}
+}  // namespace Luna
 
 bool Graphics::BeginFrame() {
 	ZoneScopedN("Graphics::BeginFrame");
@@ -282,6 +308,25 @@ void Graphics::EndFrame() {
 	_device->EndFrame();
 	_swapchain->Present();
 	FrameMark;
+}
+
+void Graphics::DrawRenderSettings() {
+	if (ImGui::Begin("Renderer")) {
+		ImGui::Checkbox("Draw Skybox", &_drawSkybox);
+
+		static const std::vector<const char*> pbrDebugViews = {"Final Output", "Albedo", "Tangent", "Normal"};
+		ImGui::Combo("PBR Debug View", &_pbrDebug, pbrDebugViews.data(), static_cast<int>(pbrDebugViews.size()));
+
+		static const std::vector<const char*> skyDebugViews = {"Final Output", "Irradiance", "Prefiltered"};
+		ImGui::Combo("Skybox Debug View", &_skyDebug, skyDebugViews.data(), static_cast<int>(skyDebugViews.size()));
+
+		ImGui::DragFloat("Exposure", &_exposure, 0.1f, 0.0f, 50.0f);
+		ImGui::DragFloat("Gamma", &_gamma, 0.01f, 0.0f, 10.0f);
+		ImGui::DragFloat("IBL Contribution", &_iblContribution, 0.01f, 0.0f, 1.0f);
+
+		if (ImGui::Button("Reload Shaders")) { LoadShaders(); }
+		ImGui::End();
+	}
 }
 
 void Graphics::LoadShaders() {

@@ -45,6 +45,7 @@ class Graphics : public Module::Registrar<Graphics> {
 	bool BeginFrame();
 	void EndFrame();
 
+	void DrawRenderSettings();
 	void LoadShaders();
 
 	struct CameraData {
@@ -54,6 +55,10 @@ class Graphics : public Module::Registrar<Graphics> {
 	};
 	struct SceneData {
 		glm::vec4 SunDirection;
+		float PrefilteredCubeMipLevels;
+		float Exposure;
+		float Gamma;
+		float IBLContribution;
 	};
 
 	std::unique_ptr<Vulkan::Context> _context;
@@ -71,5 +76,12 @@ class Graphics : public Module::Registrar<Graphics> {
 	Vulkan::BufferHandle _cameraBuffer;
 	Vulkan::BufferHandle _sceneBuffer;
 	bool _mouseControl = false;
+
+	bool _drawSkybox       = true;
+	int _pbrDebug          = 0;
+	int _skyDebug          = 0;
+	float _exposure        = 4.5f;
+	float _gamma           = 2.2f;
+	float _iblContribution = 1.0f;
 };
 }  // namespace Luna

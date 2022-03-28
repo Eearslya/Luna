@@ -1226,7 +1226,8 @@ void Device::CreateStockSamplers() {
 		}
 
 		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::DefaultGeometryFilterWrap ||
-		    type == StockSampler::TrilinearClamp || type == StockSampler::TrilinearWrap) {
+		    type == StockSampler::LinearClamp || type == StockSampler::TrilinearClamp ||
+		    type == StockSampler::TrilinearWrap) {
 			info.MipmapMode = vk::SamplerMipmapMode::eLinear;
 		}
 

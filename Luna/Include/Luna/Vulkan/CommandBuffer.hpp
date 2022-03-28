@@ -187,6 +187,13 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void CopyBuffer(Buffer& dst, Buffer& src);
 	void CopyBuffer(Buffer& dst, vk::DeviceSize dstOffset, Buffer& src, vk::DeviceSize srcOffset, vk::DeviceSize bytes);
 	void CopyBufferToImage(Image& dst, Buffer& src, const std::vector<vk::BufferImageCopy>& copies);
+	void CopyImage(Image& dst,
+	               Image& src,
+	               const vk::Offset3D& dstOffset,
+	               const vk::Offset3D& srcOffset,
+	               const vk::Extent3D& extent,
+	               const vk::ImageSubresourceLayers& dstSubresource,
+	               const vk::ImageSubresourceLayers& srcSubresource);
 	void GenerateMipmaps(Image& image,
 	                     vk::ImageLayout baseLayout,
 	                     vk::PipelineStageFlags srcStage,
@@ -242,7 +249,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	vk::Pipeline BuildGraphicsPipeline(bool synchronous);
 	bool FlushGraphicsPipeline(bool synchronous);
 	bool FlushRenderState(bool synchronous);
-	void SetViewportScissor();
+	void SetViewportScissor(const RenderPassInfo& info);
 
 	Device& _device;
 	vk::CommandBuffer _commandBuffer;

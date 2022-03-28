@@ -19,14 +19,11 @@ layout(location = 1) out vec3 outNormal;
 layout(location = 2) out vec2 outUV0;
 
 void main() {
-	//vec4 locPos;
-	//locPos = Model.Transform * vec4(inPosition, 1.0f);
-	//outNormal = normalize(transpose(inverse(mat3(Model.Transform))) * inNormal);
-
-	outWorldPos = vec3(Model.Transform * vec4(inPosition, 1.0));
-	outNormal = mat3(Model.Transform) * inNormal;
-
+	vec4 locPos;
+	locPos = Model.Transform * mat4(1.0) * vec4(inPosition, 1.0);
+	outNormal = normalize(transpose(inverse(mat3(Model.Transform * mat4(1.0)))) * inNormal);
+	outWorldPos = locPos.xyz / locPos.w;
 	outUV0 = inUV0;
-	//outWorldPos = locPos.xyz / locPos.w;
-	gl_Position = Camera.Projection * Camera.View * vec4(outWorldPos, 1.0f);
+
+	gl_Position = Camera.Projection * Camera.View * vec4(outWorldPos, 1.0);
 }

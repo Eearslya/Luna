@@ -106,8 +106,8 @@ vec3 GetNormal() {
 vec3 GetIBLContribution(PBRInfo pbr, vec3 n, vec3 reflection) {
 	const float lod = pbr.PerceptualRoughness * Scene.PrefilteredCubeMipLevels;
 	const vec2 brdf = (texture(TexBrdfLut, vec2(pbr.NdotV, 1.0 - pbr.PerceptualRoughness))).rg;
-	//const vec3 diffuseLight = SrgbToLinear(Tonemap(texture(TexIrradiance, n))).rgb;
-	const vec3 diffuseLight = SrgbToLinear(Tonemap(textureLod(TexIrradiance, n, 0.0))).rgb;
+	const vec3 diffuseLight = SrgbToLinear(Tonemap(texture(TexIrradiance, n))).rgb;
+	//const vec3 diffuseLight = SrgbToLinear(Tonemap(textureLod(TexIrradiance, n, 0.0))).rgb;
 	const vec3 specularLight = SrgbToLinear(Tonemap(textureLod(TexPrefiltered, reflection, lod))).rgb;
 	const vec3 diffuse = (diffuseLight * pbr.DiffuseColor) * Scene.IBLContribution;
 	const vec3 specular = (specularLight * (pbr.SpecularColor * brdf.x + brdf.y) * Scene.IBLContribution);

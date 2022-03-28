@@ -17,6 +17,7 @@
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Fence.hpp>
+#include <Luna/Vulkan/Format.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
 #include <Luna/Vulkan/Sampler.hpp>
@@ -122,6 +123,8 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 
 	Vulkan::Program* cubeMapProgram    = nullptr;
 	Vulkan::Program* irradianceProgram = nullptr;
+	Vulkan::Program* prefilterProgram  = nullptr;
+	Vulkan::Program* brdfProgram       = nullptr;
 	{
 		ZoneScopedN("Load Environment Shaders");
 
@@ -140,10 +143,28 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 			Log::Error("[AssetManager] Failed to load CubeMap convolution fragment shader!");
 			return;
 		}
+		auto prefilterFragCode = filesystem->Read("Shaders/CubeMapPreFilter.frag.glsl");
+		if (!prefilterFragCode.has_value()) {
+			Log::Error("[AssetManager] Failed to load CubeMap prefilter fragment shader!");
+			return;
+		}
+		auto brdfVertCode = filesystem->Read("Shaders/BrdfLut.vert.glsl");
+		if (!brdfVertCode.has_value()) {
+			Log::Error("[AssetManager] Failed to load BRDF LUT vertex shader!");
+			return;
+		}
+		auto brdfFragCode = filesystem->Read("Shaders/BrdfLut.frag.glsl");
+		if (!brdfFragCode.has_value()) {
+			Log::Error("[AssetManager] Failed to load BRDF LUT fragment shader!");
+			return;
+		}
 
 		auto cubeMapVert    = device.RequestShader(vk::ShaderStageFlagBits::eVertex, cubeMapVertCode.value());
 		auto cubeMapFrag    = device.RequestShader(vk::ShaderStageFlagBits::eFragment, cubeMapFragCode.value());
 		auto irradianceFrag = device.RequestShader(vk::ShaderStageFlagBits::eFragment, irradianceFragCode.value());
+		auto prefilterFrag  = device.RequestShader(vk::ShaderStageFlagBits::eFragment, prefilterFragCode.value());
+		auto brdfVert       = device.RequestShader(vk::ShaderStageFlagBits::eVertex, brdfVertCode.value());
+		auto brdfFrag       = device.RequestShader(vk::ShaderStageFlagBits::eFragment, brdfFragCode.value());
 
 		cubeMapProgram = device.RequestProgram(cubeMapVert, cubeMapFrag);
 		if (cubeMapProgram == nullptr) {
@@ -155,56 +176,71 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 			Log::Error("[AssetManager] Failed to load shader program for cubemap irradiance generation!");
 			return;
 		}
+		prefilterProgram = device.RequestProgram(cubeMapVert, prefilterFrag);
+		if (prefilterProgram == nullptr) {
+			Log::Error("[AssetManager] Failed to load shader program for cubemap prefilter generation!");
+			return;
+		}
+		brdfProgram = device.RequestProgram(brdfVert, brdfFrag);
+		if (brdfProgram == nullptr) {
+			Log::Error("[AssetManager] Failed to load shader program for BRDF LUT generation!");
+			return;
+		}
 	}
 
 	Vulkan::ImageHandle baseHdr;
 	{
-		ZoneScopedN("Image Creation");
+		ZoneScopedN("Base Image Creation");
 		const Vulkan::InitialImageData initialData{.Data = pixels};
 		const auto imageCI =
-			Vulkan::ImageCreateInfo::Immutable2D(vk::Format::eR32G32B32A32Sfloat, vk::Extent2D(width, height), true);
+			Vulkan::ImageCreateInfo::Immutable2D(vk::Format::eR32G32B32A32Sfloat, vk::Extent2D(width, height));
 		baseHdr = device.CreateImage(imageCI, &initialData);
+		device.SetObjectName(baseHdr->GetImage(), "Environment Base HDR Image");
 	}
 
 	Vulkan::ImageHandle skybox;
 	Vulkan::ImageHandle irradiance;
-	std::array<Vulkan::ImageViewHandle, 6> skyboxFaces;
-	std::array<Vulkan::ImageViewHandle, 6> irradianceFaces;
+	Vulkan::ImageHandle prefilter;
 	{
-		ZoneScopedN("Image Creation");
+		ZoneScopedN("Cube Image Creation");
 
 		Vulkan::ImageCreateInfo cubeImageCI{
 			.Domain        = Vulkan::ImageDomain::Physical,
 			.Format        = vk::Format::eR16G16B16A16Sfloat,
 			.Type          = vk::ImageType::e2D,
-			.Usage         = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+			.Usage         = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
 			.Extent        = vk::Extent3D(),
 			.ArrayLayers   = 6,
 			.MipLevels     = 1,
 			.Samples       = vk::SampleCountFlagBits::e1,
-			.InitialLayout = vk::ImageLayout::eColorAttachmentOptimal,
+			.InitialLayout = vk::ImageLayout::eTransferDstOptimal,
 			.Flags         = Vulkan::ImageCreateFlagBits::CreateCubeCompatible};
 
-		const auto GetFaces = [&](Vulkan::ImageHandle& image, std::array<Vulkan::ImageViewHandle, 6>& faces) {
-			for (uint32_t i = 0; i < 6; ++i) {
-				const Vulkan::ImageViewCreateInfo viewCI{.Image          = image.Get(),
-				                                         .Format         = cubeImageCI.Format,
-				                                         .Type           = vk::ImageViewType::e2D,
-				                                         .BaseMipLevel   = 0,
-				                                         .MipLevels      = 1,
-				                                         .BaseArrayLayer = i,
-				                                         .ArrayLayers    = 1};
-				faces[i] = device.CreateImageView(viewCI);
-			}
-		};
+		cubeImageCI.Extent    = vk::Extent3D(1024, 1024, 1);
+		cubeImageCI.MipLevels = Vulkan::CalculateMipLevels(cubeImageCI.Extent);
+		skybox                = device.CreateImage(cubeImageCI);
+		device.SetObjectName(skybox->GetImage(), "Environment Skybox Image");
 
-		cubeImageCI.Extent = vk::Extent3D(1024, 1024, 1);
-		skybox             = device.CreateImage(cubeImageCI);
-		GetFaces(skybox, skyboxFaces);
+		cubeImageCI.Extent    = vk::Extent3D(64, 64, 1);
+		cubeImageCI.MipLevels = Vulkan::CalculateMipLevels(cubeImageCI.Extent);
+		irradiance            = device.CreateImage(cubeImageCI);
+		device.SetObjectName(irradiance->GetImage(), "Environment Irradiance Image");
 
-		cubeImageCI.Extent = vk::Extent3D(32, 32, 1);
-		irradiance         = device.CreateImage(cubeImageCI);
-		GetFaces(irradiance, irradianceFaces);
+		cubeImageCI.Extent    = vk::Extent3D(512, 512, 1);
+		cubeImageCI.MipLevels = Vulkan::CalculateMipLevels(cubeImageCI.Extent);
+		prefilter             = device.CreateImage(cubeImageCI);
+		device.SetObjectName(prefilter->GetImage(), "Environment Prefiltered Image");
+	}
+
+	// Create an image to render all of the cubemap faces to.
+	Vulkan::ImageHandle renderTarget;
+	{
+		auto imageCI = Vulkan::ImageCreateInfo::RenderTarget(
+			vk::Format::eR16G16B16A16Sfloat,
+			vk::Extent2D(skybox->GetCreateInfo().Extent.width, skybox->GetCreateInfo().Extent.height));
+		imageCI.Usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc;
+		renderTarget  = device.CreateImage(imageCI);
+		device.SetObjectName(renderTarget->GetImage(), "Environment Render Target Image");
 	}
 
 	auto cmdBuf = device.RequestCommandBuffer(Vulkan::CommandBufferType::AsyncGraphics);
@@ -220,62 +256,136 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 		glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, -1.0f, 0.0f))};
 	struct PushConstant {
 		glm::mat4 ViewProjection;
+		float Roughness;
 	};
+
+	// Define a lambda function for these steps, as they're almost entirely identical.
+	const auto ProcessCubeMap =
+		[&](Vulkan::Program* program, Vulkan::ImageHandle& srcCubeMap, Vulkan::ImageHandle& dstCubeMap) {
+			auto rpInfo                 = Vulkan::RenderPassInfo{};
+			rpInfo.ColorAttachmentCount = 1;
+			rpInfo.ColorAttachments[0]  = renderTarget->GetView().Get();
+			rpInfo.StoreAttachments     = 1 << 0;
+
+			const uint32_t mips = dstCubeMap->GetCreateInfo().MipLevels;
+			const uint32_t dim  = dstCubeMap->GetCreateInfo().Extent.width;
+
+			for (uint32_t mip = 0; mip < mips; ++mip) {
+				const uint32_t mipDim = static_cast<float>(dim * std::pow(0.5f, mip));
+
+				for (uint32_t i = 0; i < 6; ++i) {
+					const PushConstant pc{.ViewProjection = captureProjection * captureViews[i],
+				                        .Roughness      = static_cast<float>(mip) / static_cast<float>(mips - 1)};
+					rpInfo.RenderArea = vk::Rect2D{{0, 0}, {mipDim, mipDim}};
+					cmdBuf->BeginRenderPass(rpInfo);
+					cmdBuf->SetProgram(program);
+					cmdBuf->SetCullMode(vk::CullModeFlagBits::eNone);
+					cmdBuf->SetTexture(0, 0, *srcCubeMap->GetView(), Vulkan::StockSampler::LinearClamp);
+					cmdBuf->PushConstants(&pc, 0, sizeof(pc));
+					cmdBuf->Draw(36);
+					cmdBuf->EndRenderPass();
+
+					const vk::ImageMemoryBarrier barrier(vk::AccessFlagBits::eColorAttachmentWrite,
+				                                       vk::AccessFlagBits::eTransferRead,
+				                                       vk::ImageLayout::eColorAttachmentOptimal,
+				                                       vk::ImageLayout::eTransferSrcOptimal,
+				                                       VK_QUEUE_FAMILY_IGNORED,
+				                                       VK_QUEUE_FAMILY_IGNORED,
+				                                       renderTarget->GetImage(),
+				                                       vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+					cmdBuf->Barrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+				                  vk::PipelineStageFlagBits::eTransfer,
+				                  nullptr,
+				                  nullptr,
+				                  barrier);
+
+					cmdBuf->CopyImage(*dstCubeMap,
+				                    *renderTarget,
+				                    {},
+				                    {},
+				                    vk::Extent3D(mipDim, mipDim, 1),
+				                    vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, mip, i, 1),
+				                    vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1));
+
+					const vk::ImageMemoryBarrier barrier2(vk::AccessFlagBits::eTransferWrite,
+				                                        vk::AccessFlagBits::eColorAttachmentWrite,
+				                                        vk::ImageLayout::eTransferSrcOptimal,
+				                                        vk::ImageLayout::eColorAttachmentOptimal,
+				                                        VK_QUEUE_FAMILY_IGNORED,
+				                                        VK_QUEUE_FAMILY_IGNORED,
+				                                        renderTarget->GetImage(),
+				                                        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+					cmdBuf->Barrier(vk::PipelineStageFlagBits::eTransfer,
+				                  vk::PipelineStageFlagBits::eColorAttachmentOutput,
+				                  nullptr,
+				                  nullptr,
+				                  barrier2);
+				}
+			}
+
+			const vk::ImageMemoryBarrier barrier(
+				vk::AccessFlagBits::eTransferWrite,
+				vk::AccessFlagBits::eShaderRead,
+				vk::ImageLayout::eTransferDstOptimal,
+				vk::ImageLayout::eShaderReadOnlyOptimal,
+				VK_QUEUE_FAMILY_IGNORED,
+				VK_QUEUE_FAMILY_IGNORED,
+				dstCubeMap->GetImage(),
+				vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, dstCubeMap->GetCreateInfo().MipLevels, 0, 6));
+			cmdBuf->Barrier(
+				vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, nullptr, nullptr, barrier);
+		};
 
 	// Convert our equirectangular map into a cubemap.
 	{
 		ZoneScopedN("Render Cubemap");
 
-		auto rpInfo                 = Vulkan::RenderPassInfo{};
-		rpInfo.ColorAttachmentCount = 1;
-		rpInfo.StoreAttachments     = 1 << 0;
-
-		for (uint32_t i = 0; i < 6; ++i) {
-			const PushConstant pc{.ViewProjection = captureProjection * captureViews[i]};
-			rpInfo.ColorAttachments[0] = skyboxFaces[i].Get();
-			cmdBuf->BeginRenderPass(rpInfo);
-			cmdBuf->SetProgram(cubeMapProgram);
-			cmdBuf->SetCullMode(vk::CullModeFlagBits::eNone);
-			cmdBuf->SetTexture(0, 0, *baseHdr->GetView(), Vulkan::StockSampler::LinearClamp);
-			cmdBuf->PushConstants(&pc, 0, sizeof(pc));
-			cmdBuf->Draw(36);
-			cmdBuf->EndRenderPass();
-		}
-
-		const vk::ImageMemoryBarrier barrier(vk::AccessFlagBits::eColorAttachmentWrite,
-		                                     vk::AccessFlagBits::eShaderRead,
-		                                     vk::ImageLayout::eColorAttachmentOptimal,
-		                                     vk::ImageLayout::eShaderReadOnlyOptimal,
-		                                     VK_QUEUE_FAMILY_IGNORED,
-		                                     VK_QUEUE_FAMILY_IGNORED,
-		                                     skybox->GetImage(),
-		                                     vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6));
-		cmdBuf->Barrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
-		                vk::PipelineStageFlagBits::eFragmentShader,
-		                nullptr,
-		                nullptr,
-		                barrier);
+		ProcessCubeMap(cubeMapProgram, baseHdr, skybox);
 	}
+
+	// Free the base HDR image, as all future calculations will be based off of the cubemap instead.
+	baseHdr.Reset();
 
 	// Convolute the cubemap into an irradiance map.
 	{
 		ZoneScopedN("Render Irradiance");
 
+		ProcessCubeMap(irradianceProgram, skybox, irradiance);
+	}
+
+	// Prefilter the cubemap
+	{
+		ZoneScopedN("Render Prefiltered");
+
+		ProcessCubeMap(prefilterProgram, skybox, prefilter);
+	}
+
+	renderTarget.Reset();
+
+	// Create our BRDF LUT image.
+	Vulkan::ImageHandle brdfLut;
+	{
+		auto imageCI          = Vulkan::ImageCreateInfo::RenderTarget(vk::Format::eR16G16Sfloat, vk::Extent2D(512, 512));
+		imageCI.Usage         = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled;
+		imageCI.InitialLayout = vk::ImageLayout::eColorAttachmentOptimal;
+		brdfLut               = device.CreateImage(imageCI);
+		device.SetObjectName(brdfLut->GetImage(), "Environment BRDF LUT Image");
+	}
+
+	// Render our BRDF LUT.
+	{
+		ZoneScopedN("Render BRDF LUT");
+
 		auto rpInfo                 = Vulkan::RenderPassInfo{};
 		rpInfo.ColorAttachmentCount = 1;
+		rpInfo.ColorAttachments[0]  = brdfLut->GetView().Get();
 		rpInfo.StoreAttachments     = 1 << 0;
 
-		for (uint32_t i = 0; i < 6; ++i) {
-			const PushConstant pc{.ViewProjection = captureProjection * captureViews[i]};
-			rpInfo.ColorAttachments[0] = irradianceFaces[i].Get();
-			cmdBuf->BeginRenderPass(rpInfo);
-			cmdBuf->SetProgram(irradianceProgram);
-			cmdBuf->SetCullMode(vk::CullModeFlagBits::eNone);
-			cmdBuf->SetTexture(0, 0, *skybox->GetView(), Vulkan::StockSampler::LinearClamp);
-			cmdBuf->PushConstants(&pc, 0, sizeof(pc));
-			cmdBuf->Draw(36);
-			cmdBuf->EndRenderPass();
-		}
+		cmdBuf->BeginRenderPass(rpInfo);
+		cmdBuf->SetProgram(brdfProgram);
+		cmdBuf->SetCullMode(vk::CullModeFlagBits::eNone);
+		cmdBuf->Draw(3);
+		cmdBuf->EndRenderPass();
 
 		const vk::ImageMemoryBarrier barrier(vk::AccessFlagBits::eColorAttachmentWrite,
 		                                     vk::AccessFlagBits::eShaderRead,
@@ -283,8 +393,8 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 		                                     vk::ImageLayout::eShaderReadOnlyOptimal,
 		                                     VK_QUEUE_FAMILY_IGNORED,
 		                                     VK_QUEUE_FAMILY_IGNORED,
-		                                     irradiance->GetImage(),
-		                                     vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6));
+		                                     brdfLut->GetImage(),
+		                                     vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
 		cmdBuf->Barrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
 		                vk::PipelineStageFlagBits::eFragmentShader,
 		                nullptr,
@@ -297,9 +407,11 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 	// if (waitFence) { waitFence->Wait(); }
 	device.Submit(cmdBuf);
 
-	env->Skybox     = std::move(skybox);
-	env->Irradiance = std::move(irradiance);
-	env->Ready      = true;
+	env->Skybox      = std::move(skybox);
+	env->Irradiance  = std::move(irradiance);
+	env->Prefiltered = std::move(prefilter);
+	env->BrdfLut     = std::move(brdfLut);
+	env->Ready       = true;
 
 	elapsed.Update();
 	Log::Info("[AssetManager] {} loaded in {}ms", envFileName, elapsed.Get().Milliseconds());

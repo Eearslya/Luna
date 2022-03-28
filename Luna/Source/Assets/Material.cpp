@@ -25,6 +25,7 @@ void Material::Update() {
 	Data.HasAlbedo = bool(Albedo) && Albedo->Ready;
 	Data.HasNormal = bool(Normal) && Normal->Ready;
 	Data.HasPBR    = bool(PBR) && PBR->Ready;
+	Data.DebugView = DebugView;
 
 	const auto dataHash = Hasher(Data).Get();
 	if (dataHash != CurrentDataHash) {

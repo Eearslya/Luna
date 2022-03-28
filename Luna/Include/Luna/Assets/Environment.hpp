@@ -16,6 +16,8 @@ struct Environment : public IntrusivePtrEnabled<Environment, EnvironmentDeleter,
 
 	Vulkan::ImageHandle Skybox;
 	Vulkan::ImageHandle Irradiance;
+	Vulkan::ImageHandle Prefiltered;
+	Vulkan::ImageHandle BrdfLut;
 	std::atomic_bool Ready = false;
 };
 

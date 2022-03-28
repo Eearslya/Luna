@@ -20,7 +20,7 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
-// #define LUNA_VULKAN_DEBUG
+#define LUNA_VULKAN_DEBUG
 #if defined(LUNA_DEBUG) && !defined(LUNA_VULKAN_DEBUG)
 #	define LUNA_VULKAN_DEBUG
 #endif

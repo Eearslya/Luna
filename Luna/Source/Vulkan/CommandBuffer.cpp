@@ -123,6 +123,21 @@ void CommandBuffer::CopyBufferToImage(Image& dst, Buffer& src, const std::vector
 		src.GetBuffer(), dst.GetImage(), dst.GetLayout(vk::ImageLayout::eTransferDstOptimal), copies);
 }
 
+void CommandBuffer::CopyImage(Image& dst,
+                              Image& src,
+                              const vk::Offset3D& dstOffset,
+                              const vk::Offset3D& srcOffset,
+                              const vk::Extent3D& extent,
+                              const vk::ImageSubresourceLayers& dstSubresource,
+                              const vk::ImageSubresourceLayers& srcSubresource) {
+	const vk::ImageCopy region(srcSubresource, srcOffset, dstSubresource, dstOffset, extent);
+	_commandBuffer.copyImage(src.GetImage(),
+	                         src.GetLayout(vk::ImageLayout::eTransferSrcOptimal),
+	                         dst.GetImage(),
+	                         dst.GetLayout(vk::ImageLayout::eTransferDstOptimal),
+	                         region);
+}
+
 void CommandBuffer::GenerateMipmaps(Image& image,
                                     vk::ImageLayout baseLayout,
                                     vk::PipelineStageFlags srcStage,
@@ -227,7 +242,7 @@ void CommandBuffer::BeginRenderPass(const RenderPassInfo& info) {
 		clearValueCount = info.ColorAttachmentCount + 1;
 	}
 
-	SetViewportScissor();
+	SetViewportScissor(info);
 
 	const vk::RenderPassBeginInfo rpBI(
 		_actualRenderPass->GetRenderPass(), _framebuffer->GetFramebuffer(), _scissor, clearValueCount, clearValues.data());
@@ -777,8 +792,7 @@ bool CommandBuffer::FlushRenderState(bool synchronous) {
 	return true;
 }
 
-void CommandBuffer::SetViewportScissor() {
-	const auto& rpInfo   = _actualRenderPass->GetRenderPassInfo();
+void CommandBuffer::SetViewportScissor(const RenderPassInfo& rpInfo) {
 	const auto& fbExtent = _framebuffer->GetExtent();
 
 	_scissor               = rpInfo.RenderArea;
