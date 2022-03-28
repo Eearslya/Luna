@@ -640,6 +640,8 @@ vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 }
 
 bool CommandBuffer::FlushGraphicsPipeline(bool synchronous) {
+	ZoneScopedN("Vulkan::CommandBuffer::FlushGraphicsPipeline()");
+
 	_pipelineCompileInfo.CachedHash = _pipelineCompileInfo.GetHash();
 	_pipeline                       = _pipelineCompileInfo.Program->GetPipeline(_pipelineCompileInfo.CachedHash);
 	if (!_pipeline) { _pipeline = BuildGraphicsPipeline(synchronous); }
@@ -647,11 +649,15 @@ bool CommandBuffer::FlushGraphicsPipeline(bool synchronous) {
 }
 
 bool CommandBuffer::FlushRenderState(bool synchronous) {
+	ZoneScopedN("Vulkan::CommandBuffer::FlushRenderState()");
+
 	if (!_pipelineCompileInfo.Program) { return false; }
 	if (!_pipeline) { _dirty |= CommandBufferDirtyFlagBits::Pipeline; }
 
 	if (_dirty & (CommandBufferDirtyFlagBits::StaticState | CommandBufferDirtyFlagBits::Pipeline |
 	              CommandBufferDirtyFlagBits::StaticVertex)) {
+		ZoneScopedN("Pipeline");
+
 		vk::Pipeline oldPipeline = _pipeline;
 		if (!FlushGraphicsPipeline(synchronous)) { return false; }
 
@@ -667,6 +673,8 @@ bool CommandBuffer::FlushRenderState(bool synchronous) {
 
 	// Flush descriptor sets.
 	{
+		ZoneScopedN("Descriptor Sets");
+
 		const auto& layout = _programLayout->GetResourceLayout();
 
 		uint32_t setUpdate = layout.DescriptorSetMask & _dirtyDescriptorSets;
@@ -696,6 +704,8 @@ bool CommandBuffer::FlushRenderState(bool synchronous) {
 
 			// If we didn't get an existing set, we need to write it.
 			if (!allocated.second) {
+				ZoneScopedN("Descriptor Write");
+
 				std::vector<vk::WriteDescriptorSet> writes;
 
 				ForEachBit(setLayout.UniformBufferMask, [&](uint32_t binding) {
@@ -738,6 +748,8 @@ bool CommandBuffer::FlushRenderState(bool synchronous) {
 	}
 
 	if (_dirty & CommandBufferDirtyFlagBits::PushConstants) {
+		ZoneScopedN("Push Constants");
+
 		const auto& range = _programLayout->GetResourceLayout().PushConstantRange;
 		if (range.stageFlags) {
 			_commandBuffer.pushConstants(
@@ -751,12 +763,16 @@ bool CommandBuffer::FlushRenderState(bool synchronous) {
 	if (_dirty & CommandBufferDirtyFlagBits::Scissor) { _commandBuffer.setScissor(0, _scissor); }
 	_dirty &= ~CommandBufferDirtyFlagBits::Scissor;
 
-	const uint32_t updateVBOs = _dirtyVertexBuffers & _pipelineCompileInfo.ActiveVertexBuffers;
-	ForEachBitRange(updateVBOs, [&](uint32_t binding, uint32_t bindingCount) {
-		_commandBuffer.bindVertexBuffers(
-			binding, bindingCount, &_vertexBindings.Buffers[binding], &_vertexBindings.Offsets[binding]);
-	});
-	_dirtyVertexBuffers &= ~updateVBOs;
+	{
+		ZoneScopedN("Vertex Buffers");
+
+		const uint32_t updateVBOs = _dirtyVertexBuffers & _pipelineCompileInfo.ActiveVertexBuffers;
+		ForEachBitRange(updateVBOs, [&](uint32_t binding, uint32_t bindingCount) {
+			_commandBuffer.bindVertexBuffers(
+				binding, bindingCount, &_vertexBindings.Buffers[binding], &_vertexBindings.Offsets[binding]);
+		});
+		_dirtyVertexBuffers &= ~updateVBOs;
+	}
 
 	return true;
 }

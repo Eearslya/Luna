@@ -49,9 +49,15 @@ void Scene::LoadEnvironment(const std::string& filePath) {
 	graphics->GetAssetManager().LoadEnvironment(filePath, *this);
 }
 
-void Scene::LoadModel(const std::string& filePath, entt::entity parent) {
-	auto graphics = Graphics::Get();
-	graphics->GetAssetManager().LoadModel(filePath, *this, parent);
+entt::entity Scene::LoadModel(const std::string& filePath, entt::entity parent) {
+	const std::filesystem::path gltfPath(filePath);
+	const auto gltfFileName = gltfPath.filename().string();
+
+	auto graphics   = Graphics::Get();
+	auto rootEntity = CreateEntity(gltfFileName, parent);
+	graphics->GetAssetManager().LoadModel(filePath, *this, rootEntity);
+
+	return rootEntity;
 }
 
 void Scene::DrawSceneGraph() {

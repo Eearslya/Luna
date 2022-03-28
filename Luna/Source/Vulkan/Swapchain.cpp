@@ -147,7 +147,7 @@ void Swapchain::RecreateSwapchain() {
 	                                             vk::SurfaceTransformFlagBitsKHR::eIdentity,
 	                                             vk::CompositeAlphaFlagBitsKHR::eOpaque,
 	                                             _presentMode,
-	                                             VK_FALSE,
+	                                             VK_TRUE,
 	                                             _swapchain);
 	auto newSwapchain = device.createSwapchainKHR(swapchainCI);
 	if (_swapchain) { device.destroySwapchainKHR(_swapchain); }

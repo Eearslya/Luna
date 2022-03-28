@@ -158,10 +158,14 @@ void Graphics::Update() {
 	{
 		ZoneScopedN("Main Render Pass");
 
-		auto rpInfo = _device->GetStockRenderPass(Vulkan::StockRenderPass::Depth);
-		rpInfo.ClearColors[0].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
-		rpInfo.ClearDepthStencil.setDepth(1.0f);
-		cmd->BeginRenderPass(rpInfo);
+		{
+			ZoneScopedN("Begin");
+
+			auto rpInfo = _device->GetStockRenderPass(Vulkan::StockRenderPass::Depth);
+			rpInfo.ClearColors[0].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
+			rpInfo.ClearDepthStencil.setDepth(1.0f);
+			cmd->BeginRenderPass(rpInfo);
+		}
 
 		const auto SetTexture = [&](uint32_t set, uint32_t binding, const TextureHandle& texture) -> void {
 			const bool ready      = bool(texture) && texture->Ready;
@@ -177,54 +181,66 @@ void Graphics::Update() {
 		const auto rootNode = _scene.GetRoot();
 
 		// Render meshes
-		cmd->SetOpaqueState();
-		cmd->SetProgram(_program);
-		cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
-		cmd->SetVertexAttribute(1, 1, vk::Format::eR32G32B32Sfloat, 0);
-		cmd->SetVertexAttribute(2, 2, vk::Format::eR32G32Sfloat, 0);
-		cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
-		cmd->SetUniformBuffer(0, 1, *_sceneBuffer);
-		const auto view = registry.view<MeshRenderer>();
-		for (const auto& entity : view) {
-			const auto& transform = registry.get<TransformComponent>(entity);
-			auto& mesh            = registry.get<MeshRenderer>(entity);
+		{
+			ZoneScopedN("Meshes");
 
-			if (!mesh.Mesh->Ready) { continue; }
+			cmd->SetOpaqueState();
+			cmd->SetProgram(_program);
+			cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
+			cmd->SetVertexAttribute(1, 1, vk::Format::eR32G32B32Sfloat, 0);
+			cmd->SetVertexAttribute(2, 2, vk::Format::eR32G32Sfloat, 0);
+			cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
+			cmd->SetUniformBuffer(0, 1, *_sceneBuffer);
+			const auto view = registry.view<MeshRenderer>();
+			for (const auto& entity : view) {
+				const auto& transform = registry.get<TransformComponent>(entity);
+				auto& mesh            = registry.get<MeshRenderer>(entity);
 
-			cmd->SetVertexBinding(
-				0, *mesh.Mesh->Buffer, mesh.Mesh->PositionOffset, sizeof(glm::vec3), vk::VertexInputRate::eVertex);
-			cmd->SetVertexBinding(
-				1, *mesh.Mesh->Buffer, mesh.Mesh->NormalOffset, sizeof(glm::vec3), vk::VertexInputRate::eVertex);
-			cmd->SetVertexBinding(
-				2, *mesh.Mesh->Buffer, mesh.Mesh->Texcoord0Offset, sizeof(glm::vec2), vk::VertexInputRate::eVertex);
-			cmd->SetIndexBuffer(*mesh.Mesh->Buffer, mesh.Mesh->IndexOffset, vk::IndexType::eUint32);
-			PushConstant pc{.Model = transform.CachedGlobalTransform};
-			cmd->PushConstants(&pc, 0, sizeof(pc));
+				if (!mesh.Mesh->Ready) { continue; }
 
-			for (size_t i = 0; i < mesh.Mesh->SubMeshes.size(); ++i) {
-				const auto& submesh = mesh.Mesh->SubMeshes[i];
-				auto& material      = mesh.Materials[i];
+				ZoneScopedN("Mesh");
 
-				if (submesh.VertexCount == 0) { continue; }
+				cmd->SetVertexBinding(
+					0, *mesh.Mesh->Buffer, mesh.Mesh->PositionOffset, sizeof(glm::vec3), vk::VertexInputRate::eVertex);
+				cmd->SetVertexBinding(
+					1, *mesh.Mesh->Buffer, mesh.Mesh->NormalOffset, sizeof(glm::vec3), vk::VertexInputRate::eVertex);
+				cmd->SetVertexBinding(
+					2, *mesh.Mesh->Buffer, mesh.Mesh->Texcoord0Offset, sizeof(glm::vec2), vk::VertexInputRate::eVertex);
+				cmd->SetIndexBuffer(*mesh.Mesh->Buffer, mesh.Mesh->IndexOffset, vk::IndexType::eUint32);
+				PushConstant pc{.Model = transform.CachedGlobalTransform};
+				cmd->PushConstants(&pc, 0, sizeof(pc));
 
-				material->Update();
+				for (size_t i = 0; i < mesh.Mesh->SubMeshes.size(); ++i) {
+					const auto& submesh = mesh.Mesh->SubMeshes[i];
+					auto& material      = mesh.Materials[i];
 
-				cmd->SetCullMode(material->DualSided ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack);
-				SetTexture(1, 1, material->Albedo);
-				SetTexture(1, 2, material->Normal);
-				SetTexture(1, 3, material->PBR);
-				cmd->SetUniformBuffer(1, 0, *material->DataBuffer);
+					if (submesh.VertexCount == 0) { continue; }
 
-				if (submesh.IndexCount > 0) {
-					cmd->DrawIndexed(submesh.IndexCount, 1, submesh.FirstIndex, submesh.FirstVertex, 0);
-				} else {
-					cmd->Draw(submesh.VertexCount, 1, submesh.FirstVertex, 0);
+					ZoneScopedN("Submesh");
+
+					material->Update();
+
+					cmd->SetCullMode(material->DualSided ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack);
+					SetTexture(1, 1, material->Albedo);
+					SetTexture(1, 2, material->Normal);
+					SetTexture(1, 3, material->PBR);
+					cmd->SetUniformBuffer(1, 0, *material->DataBuffer);
+
+					if (submesh.IndexCount > 0) {
+						ZoneScopedN("DrawIndexed");
+						cmd->DrawIndexed(submesh.IndexCount, 1, submesh.FirstIndex, submesh.FirstVertex, 0);
+					} else {
+						ZoneScopedN("Draw");
+						cmd->Draw(submesh.VertexCount, 1, submesh.FirstVertex, 0);
+					}
 				}
 			}
 		}
 
 		// Render environment
 		if (WorldData* worldData = registry.try_get<WorldData>(rootNode)) {
+			ZoneScopedN("Environment");
+
 			if (worldData->Environment && worldData->Environment->Ready) {
 				cmd->SetOpaqueState();
 				cmd->SetProgram(_programSkybox);

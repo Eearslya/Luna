@@ -2,6 +2,8 @@
 
 #include <Luna/Vulkan/Common.hpp>
 
+#undef MemoryBarrier
+
 namespace Luna {
 namespace Vulkan {
 struct IndexState {

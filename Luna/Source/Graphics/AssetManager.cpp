@@ -63,11 +63,11 @@ void AssetManager::LoadEnvironment(const std::string& filePath, Scene& scene) {
 	loadEnvironmentTask->Flush();
 }
 
-void AssetManager::LoadModel(const std::string& gltfFile, Scene& scene, entt::entity parentEntity) {
+void AssetManager::LoadModel(const std::string& gltfFile, Scene& scene, entt::entity rootEntity) {
 	auto threading = Threading::Get();
 
 	auto loadGltfTask = threading->CreateTaskGroup();
-	loadGltfTask->Enqueue([this, gltfFile, &scene, parentEntity]() { LoadGltfTask(gltfFile, scene, parentEntity); });
+	loadGltfTask->Enqueue([this, gltfFile, &scene, rootEntity]() { LoadGltfTask(gltfFile, scene, rootEntity); });
 	loadGltfTask->Flush();
 }
 
@@ -305,7 +305,7 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 	Log::Info("[AssetManager] {} loaded in {}ms", envFileName, elapsed.Get().Milliseconds());
 }
 
-void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const entt::entity parentEntity) {
+void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const entt::entity rootEntity) {
 	ZoneScopedN("AssetManager::LoadGltfTask");
 
 	// Determine our base filename and parent directory.
@@ -366,7 +366,6 @@ void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const
 	// Quickly traverse the node tree and create the scene entities we need.
 	{
 		ZoneScopedN("Scene Graph Population");
-		auto rootEntity = scene.CreateEntity(context->FileName, parentEntity);
 
 		const std::function<void(const tinygltf::Node&, entt::entity)> ParseNode = [&](const tinygltf::Node& gltfNode,
 		                                                                               entt::entity parent) -> void {
