@@ -133,6 +133,8 @@ class Window : public Module::Registrar<Window> {
 
 	std::vector<std::unique_ptr<Monitor>> _monitors;
 
+	bool _titleDirty = false;
+
 	Delegate<void(bool)> _onBorderlessChanged;
 	Delegate<void()> _onClosed;
 	Delegate<void(bool)> _onFocusChanged;

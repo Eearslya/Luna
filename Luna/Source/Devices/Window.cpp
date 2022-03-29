@@ -128,6 +128,11 @@ void Window::Update() {
 	ZoneScopedN("Window::Update()");
 
 	glfwPollEvents();
+
+	if (_titleDirty) {
+		glfwSetWindowTitle(_window, _title.c_str());
+		_titleDirty = false;
+	}
 }
 
 const Monitor* Window::GetCurrentMonitor() const {
@@ -244,7 +249,7 @@ void Window::SetSize(const Vec2ui& size) {
 
 void Window::SetTitle(const std::string& title) {
 	_title = title;
-	glfwSetWindowTitle(_window, _title.c_str());
+	_titleDirty = true;
 	_onTitleChanged(_title);
 }
 }  // namespace Luna

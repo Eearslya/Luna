@@ -10,7 +10,7 @@ namespace Luna {
 #ifdef __GNUC__
 #	define LeadingZeroes(x)  ((x) == 0 ? 32 : __builtin_clz(x))
 #	define TrailingZeroes(x) ((x) == 0 ? 32 : __builtin_ctz(x))
-#	define TrailingOnes(x)   __builting_ctz(~uint32_t(x))
+#	define TrailingOnes(x)   __builtin_ctz(~uint32_t(x))
 #elif defined(_MSC_VER)
 static inline uint32_t CountLeadingZeroes(uint32_t x) {
 	unsigned long result;

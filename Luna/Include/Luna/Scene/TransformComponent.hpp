@@ -43,7 +43,11 @@ struct TransformComponent {
 	void DrawComponent(const entt::registry& registry) {
 		if (ImGui::CollapsingHeader("Transform##TransformComponent", ImGuiTreeNodeFlags_DefaultOpen)) {
 			char nameBuf[64];
+#ifdef _WIN32
 			strncpy_s(nameBuf, Name.c_str(), sizeof(nameBuf));
+#else
+			strncpy(nameBuf, Name.c_str(), sizeof(nameBuf));
+#endif
 			if (ImGui::InputText(
 						"Name##TransformComponent", nameBuf, sizeof(nameBuf), ImGuiInputTextFlags_EnterReturnsTrue)) {
 				if (strlen(nameBuf) > 0) { Name = nameBuf; }
