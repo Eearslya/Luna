@@ -39,6 +39,21 @@ WindowManager::~WindowManager() noexcept {
 	_instance = nullptr;
 }
 
+VkSurfaceKHR WindowManager::CreateSurface(VkInstance instance) {
+	VkSurfaceKHR surface = VK_NULL_HANDLE;
+	const auto result    = glfwCreateWindowSurface(instance, _window, nullptr, &surface);
+	if (result != VK_SUCCESS) { throw std::runtime_error("Failed to create Vulkan surface!"); }
+
+	return surface;
+}
+
+std::vector<const char*> WindowManager::GetVulkanExtensions() {
+	uint32_t extCount = 0;
+	const char** ext  = glfwGetRequiredInstanceExtensions(&extCount);
+
+	return std::vector<const char*>(ext, ext + extCount);
+}
+
 void WindowManager::Update() {
 	glfwPollEvents();
 

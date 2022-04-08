@@ -1,0 +1,658 @@
+#include <Luna/Core/Core.hpp>
+#include <Luna/Core/Log.hpp>
+#include <Luna/Core/WindowManager.hpp>
+#include <Luna/Graphics/Vulkan/Device.hpp>
+
+VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
+
+namespace Luna {
+namespace Graphics {
+namespace Vulkan {
+static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+                                                          VkDebugUtilsMessageTypeFlagsEXT type,
+                                                          const VkDebugUtilsMessengerCallbackDataEXT* data,
+                                                          void* userData) {
+	// Suppress certain validation messages
+	switch (data->messageIdNumber) {
+		// UNASSIGNED-BestPractices-vkCreateInstance-specialuse-extension-debugging
+		case int32_t(0x822806fa):
+			return VK_FALSE;
+
+		default:
+			break;
+	}
+
+	switch (severity) {
+		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+			Log::Error("VulkanValidation", "{}", data->pMessage);
+			break;
+		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+			Log::Warning("VulkanValidation", "{}", data->pMessage);
+			break;
+		default:
+			Log::Debug("VulkanValidation", "{}", data->pMessage);
+			break;
+	}
+
+	return VK_FALSE;
+}
+
+constexpr std::array<const char*, 1> RequiredDeviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+
+Device::Device() {
+	if (!_loader.success()) { throw std::runtime_error("Failed to load Vulkan loader!"); }
+
+	VULKAN_HPP_DEFAULT_DISPATCHER.init(_loader.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr"));
+
+	DumpInstanceInformation();
+	CreateInstance();
+	SelectPhysicalDevice();
+	DumpDeviceInformation();
+	CreateDevice();
+}
+
+Device::~Device() noexcept {
+	if (_device) {
+		_device.waitIdle();
+		_device.destroy();
+	}
+	if (_instance) {
+		if (_surface) { _instance.destroySurfaceKHR(_surface); }
+#ifdef LUNA_VULKAN_DEBUG
+		if (_debugMessenger) { _instance.destroyDebugUtilsMessengerEXT(_debugMessenger); }
+#endif
+		_instance.destroy();
+	}
+}
+
+void Device::DumpInstanceInformation() const {
+	Log::Trace("Vulkan::Device", "----- Vulkan Global Information -----");
+
+	const auto instanceVersion = vk::enumerateInstanceVersion();
+	Log::Trace("Vulkan::Device",
+	           "Instance Version: {}.{}.{}.{}",
+	           VK_API_VERSION_VARIANT(instanceVersion),
+	           VK_API_VERSION_MAJOR(instanceVersion),
+	           VK_API_VERSION_MINOR(instanceVersion),
+	           VK_API_VERSION_PATCH(instanceVersion));
+
+	const auto instanceExtensions = vk::enumerateInstanceExtensionProperties(nullptr);
+	Log::Trace("Vulkan::Device", "Instance Extensions ({}):", instanceExtensions.size());
+	for (const auto& ext : instanceExtensions) {
+		Log::Trace("Vulkan::Device", " - {} v{}", ext.extensionName, ext.specVersion);
+	}
+
+	const auto instanceLayers = vk::enumerateInstanceLayerProperties();
+	Log::Trace("Vulkan::Device", "Instance Layers ({}):", instanceLayers.size());
+	for (const auto& layer : instanceLayers) {
+		Log::Trace("Vulkan::Device",
+		           " - {} v{} (Vulkan {}.{}.{}) - {}",
+		           layer.layerName,
+		           layer.implementationVersion,
+		           VK_API_VERSION_MAJOR(layer.specVersion),
+		           VK_API_VERSION_MINOR(layer.specVersion),
+		           VK_API_VERSION_PATCH(layer.specVersion),
+		           layer.description);
+		const auto layerExtensions = vk::enumerateInstanceExtensionProperties(std::string(layer.layerName));
+		for (const auto& ext : layerExtensions) {
+			Log::Trace("Vulkan::Device", "  - {} v{}", ext.extensionName, ext.specVersion);
+		}
+	}
+
+	Log::Trace("Vulkan::Device", "----- End Vulkan Global Information -----");
+}
+
+void Device::CreateInstance() {
+	struct Extension {
+		std::string Name;
+		uint32_t Version;
+		std::string Layer;  // Layer will be an empty string if the extension is in the base layer.
+	};
+
+	std::vector<const char*> requiredExtensions = WindowManager::Get()->GetVulkanExtensions();
+	const auto availableLayers                  = vk::enumerateInstanceLayerProperties();
+	std::unordered_map<std::string, Extension> availableExtensions;
+	std::vector<const char*> enabledExtensions;
+	std::vector<const char*> enabledLayers;
+
+	// Find all of our instance extensions. This will look through all of the available layers, and if an extension is
+	// available in multiple ways, it will prefer whatever layer has the highest spec version.
+	{
+		const auto EnumerateExtensions = [&](const vk::LayerProperties* layer) -> void {
+			std::vector<vk::ExtensionProperties> extensions;
+			if (layer == nullptr) {
+				extensions = vk::enumerateInstanceExtensionProperties(nullptr);
+			} else {
+				extensions = vk::enumerateInstanceExtensionProperties(std::string(layer->layerName));
+			}
+
+			for (const auto& extension : extensions) {
+				const std::string name = std::string(extension.extensionName);
+				Extension ext{name, extension.specVersion, layer ? std::string(layer->layerName) : ""};
+				auto it = availableExtensions.find(name);
+				if (it == availableExtensions.end() || it->second.Version < ext.Version) { availableExtensions[name] = ext; }
+			}
+		};
+		EnumerateExtensions(nullptr);
+		for (const auto& layer : availableLayers) { EnumerateExtensions(&layer); }
+	}
+
+	// Enable all of the required extensions and a handful of preferred extensions or layers. If we can't find any of the
+	// required extensions, we fail.
+	{
+		const auto HasLayer = [&availableLayers](const char* layerName) -> bool {
+			for (const auto& layer : availableLayers) {
+				if (strcmp(layer.layerName, layerName) == 0) { return true; }
+			}
+
+			return false;
+		};
+		const auto TryLayer = [&](const char* layerName) -> bool {
+			if (!HasLayer(layerName)) { return false; }
+			for (const auto& name : enabledLayers) {
+				if (strcmp(name, layerName) == 0) { return true; }
+			}
+			Log::Debug("Vulkan::Device", "Enabling instance layer '{}'.", layerName);
+			enabledLayers.push_back(layerName);
+			return true;
+		};
+		const auto HasExtension = [&availableExtensions](const char* extensionName) -> bool {
+			const std::string name(extensionName);
+			const auto it = availableExtensions.find(name);
+			return it != availableExtensions.end();
+		};
+		const auto TryExtension = [&](const char* extensionName) -> bool {
+			for (const auto& name : enabledExtensions) {
+				if (strcmp(name, extensionName) == 0) { return true; }
+			}
+			if (!HasExtension(extensionName)) { return false; }
+			const std::string name(extensionName);
+			const auto it = availableExtensions.find(name);
+			if (it->second.Layer.length() != 0) { TryLayer(it->second.Layer.c_str()); }
+			Log::Debug("Vulkan::Device", "Enabling instance extension '{}'.", extensionName);
+			enabledExtensions.push_back(extensionName);
+			return true;
+		};
+
+		for (const auto& ext : requiredExtensions) {
+			if (!TryExtension(ext)) {
+				throw vk::ExtensionNotPresentError("Extension " + std::string(ext) + " was not available!");
+			}
+		}
+
+		// If we can't get the real sync2, see if we can get the fake compatibility extension.
+		TryLayer("VK_LAYER_KHRONOS_synchronization2");
+
+		_extensions.GetPhysicalDeviceProperties2 = TryExtension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+		_extensions.GetSurfaceCapabilities2      = TryExtension(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
+
+#ifdef LUNA_VULKAN_DEBUG
+		TryLayer("VK_LAYER_KHRONOS_validation");
+
+		_extensions.DebugUtils         = TryExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+		_extensions.ValidationFeatures = TryExtension(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
+#endif
+	}
+
+	const vk::ApplicationInfo appInfo(
+		"Luna", VK_MAKE_API_VERSION(0, 1, 0, 0), "Luna", VK_MAKE_API_VERSION(0, 1, 0, 0), VK_API_VERSION_1_0);
+	const vk::InstanceCreateInfo instanceCI({}, &appInfo, enabledLayers, enabledExtensions);
+
+#ifdef LUNA_VULKAN_DEBUG
+	const vk::DebugUtilsMessengerCreateInfoEXT debugCI(
+		{},
+		vk::DebugUtilsMessageSeverityFlagBitsEXT::eError | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning,
+		vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
+			vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
+		VulkanDebugCallback,
+		this);
+	const std::vector<vk::ValidationFeatureEnableEXT> validationEnable = {
+		vk::ValidationFeatureEnableEXT::eBestPractices, vk::ValidationFeatureEnableEXT::eSynchronizationValidation};
+	const std::vector<vk::ValidationFeatureDisableEXT> validationDisable;
+	const vk::ValidationFeaturesEXT validationCI(validationEnable, validationDisable);
+
+	vk::StructureChain<vk::InstanceCreateInfo, vk::DebugUtilsMessengerCreateInfoEXT, vk::ValidationFeaturesEXT> chain(
+		instanceCI, debugCI, validationCI);
+
+	if (!_extensions.DebugUtils) { chain.unlink<vk::DebugUtilsMessengerCreateInfoEXT>(); }
+	if (!_extensions.ValidationFeatures) { chain.unlink<vk::ValidationFeaturesEXT>(); }
+
+	_instance = vk::createInstance(chain.get());
+#else
+	_instance = vk::createInstance(instanceCI);
+#endif
+
+	Log::Trace("Vulkan::Device", "Instance created.");
+
+	VULKAN_HPP_DEFAULT_DISPATCHER.init(_instance);
+
+	Log::Trace("Vulkan::Device", "Instance functions loaded.");
+
+#ifdef LUNA_VULKAN_DEBUG
+	if (_extensions.DebugUtils) {
+		_debugMessenger = _instance.createDebugUtilsMessengerEXT(debugCI);
+		Log::Trace("Vulkan::Device", "Debug messenger created.");
+	}
+#endif
+
+	_surface = WindowManager::Get()->CreateSurface(_instance);
+	Log::Trace("Vulkan::Device", "Surface created.");
+}
+
+void Device::SelectPhysicalDevice() {
+	const auto gpus = _instance.enumeratePhysicalDevices();
+	for (const auto& gpu : gpus) {
+		GPUInfo gpuInfo;
+
+		// Enumerate basic information.
+		gpuInfo.AvailableExtensions = gpu.enumerateDeviceExtensionProperties(nullptr);
+		gpuInfo.Layers              = gpu.enumerateDeviceLayerProperties();
+		gpuInfo.Memory              = gpu.getMemoryProperties();
+		gpuInfo.QueueFamilies       = gpu.getQueueFamilyProperties();
+
+		// Find any extensions hidden within enabled layers.
+		for (const auto& layer : gpuInfo.Layers) {
+			const auto layerExtensions = gpu.enumerateDeviceExtensionProperties(std::string(layer.layerName));
+			for (const auto& ext : layerExtensions) {
+				auto it = std::find_if(gpuInfo.AvailableExtensions.begin(),
+				                       gpuInfo.AvailableExtensions.end(),
+				                       [ext](const vk::ExtensionProperties& props) -> bool {
+																 return strcmp(props.extensionName, ext.extensionName) == 0;
+															 });
+				if (it == gpuInfo.AvailableExtensions.end()) {
+					gpuInfo.AvailableExtensions.push_back(ext);
+				} else if (it->specVersion < ext.specVersion) {
+					it->specVersion = ext.specVersion;
+				}
+			}
+		}
+
+		const auto HasExtension = [&](const char* extensionName) -> bool {
+			return std::find_if(gpuInfo.AvailableExtensions.begin(),
+			                    gpuInfo.AvailableExtensions.end(),
+			                    [extensionName](const vk::ExtensionProperties& props) -> bool {
+														return strcmp(extensionName, props.extensionName) == 0;
+													}) != gpuInfo.AvailableExtensions.end();
+		};
+
+		// Enumerate all of the properties and features.
+		if (_extensions.GetPhysicalDeviceProperties2) {
+			vk::StructureChain<vk::PhysicalDeviceFeatures2,
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+			                   vk::PhysicalDevicePortabilitySubsetFeaturesKHR,
+#endif
+			                   vk::PhysicalDeviceSynchronization2FeaturesKHR,
+			                   vk::PhysicalDeviceTimelineSemaphoreFeatures>
+				features;
+			vk::StructureChain<vk::PhysicalDeviceProperties2,
+			                   vk::PhysicalDeviceDriverProperties,
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+			                   vk::PhysicalDevicePortabilitySubsetPropertiesKHR,
+#endif
+			                   vk::PhysicalDeviceTimelineSemaphoreProperties>
+				properties;
+
+			if (!HasExtension(VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME)) {
+				properties.unlink<vk::PhysicalDeviceDriverProperties>();
+			}
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+			if (!HasExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) {
+				features.unlink<vk::PhysicalDevicePortabilitySubsetFeaturesKHR>();
+				properties.unlink<vk::PhysicalDevicePortabilitySubsetPropertiesKHR>();
+			}
+#endif
+			if (!HasExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)) {
+				features.unlink<vk::PhysicalDeviceSynchronization2FeaturesKHR>();
+			}
+			if (!HasExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME)) {
+				features.unlink<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
+				properties.unlink<vk::PhysicalDeviceTimelineSemaphoreProperties>();
+			}
+
+			gpu.getFeatures2(&features.get());
+			gpu.getProperties2(&properties.get());
+
+			gpuInfo.AvailableFeatures.Features = features.get().features;
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+			gpuInfo.AvailableFeatures.PortabilitySubset = features.get<vk::PhysicalDevicePortabilitySubsetFeaturesKHR>();
+#endif
+			gpuInfo.AvailableFeatures.Synchronization2  = features.get<vk::PhysicalDeviceSynchronization2FeaturesKHR>();
+			gpuInfo.AvailableFeatures.TimelineSemaphore = features.get<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
+
+			gpuInfo.Properties.Properties = properties.get().properties;
+			gpuInfo.Properties.Driver     = properties.get<vk::PhysicalDeviceDriverProperties>();
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+			gpuInfo.Properties.PortabilitySubset = properties.get<vk::PhysicalDevicePortabilitySubsetPropertiesKHR>();
+#endif
+			gpuInfo.Properties.TimelineSemaphore = properties.get<vk::PhysicalDeviceTimelineSemaphoreProperties>();
+		} else {
+			gpuInfo.AvailableFeatures.Features = gpu.getFeatures();
+			gpuInfo.Properties.Properties      = gpu.getProperties();
+		}
+
+		// Validate that the device meets requirements.
+		bool extensions = true;
+		for (const auto& ext : RequiredDeviceExtensions) {
+			if (!HasExtension(ext)) {
+				extensions = false;
+				break;
+			}
+		}
+		if (!extensions) { continue; }
+
+		bool graphicsQueue = false;
+		for (size_t q = 0; q < gpuInfo.QueueFamilies.size(); ++q) {
+			const auto& family = gpuInfo.QueueFamilies[q];
+			const auto present = gpu.getSurfaceSupportKHR(q, _surface);
+			if (family.queueFlags & vk::QueueFlagBits::eGraphics && family.queueFlags & vk::QueueFlagBits::eCompute &&
+			    present) {
+				graphicsQueue = true;
+				break;
+			}
+		}
+		if (!graphicsQueue) { continue; }
+
+		// We have a winner!
+		_gpu     = gpu;
+		_gpuInfo = gpuInfo;
+		return;
+	}
+
+	throw std::runtime_error("Failed to find a compatible physical device!");
+}
+
+void Device::CreateDevice() {
+	std::vector<const char*> enabledExtensions;
+	// Find and enable all required extensions, and any extensions we would like to have but are not required.
+	{
+		const auto HasExtension = [&](const char* extensionName) -> bool {
+			for (const auto& ext : _gpuInfo.AvailableExtensions) {
+				if (strcmp(ext.extensionName, extensionName) == 0) { return true; }
+			}
+			return false;
+		};
+		const auto TryExtension = [&](const char* extensionName) -> bool {
+			if (!HasExtension(extensionName)) { return false; }
+			for (const auto& name : enabledExtensions) {
+				if (strcmp(name, extensionName) == 0) { return true; }
+			}
+			Log::Debug("Vulkan::Device", "Enabling device extension '{}'.", extensionName);
+			enabledExtensions.push_back(extensionName);
+
+			return true;
+		};
+		for (const auto& name : RequiredDeviceExtensions) {
+			if (!TryExtension(name)) {
+				throw vk::ExtensionNotPresentError("Extension " + std::string(name) + " was not available!");
+			}
+		}
+
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+		// If this extension is available, it is REQUIRED to enable.
+		TryExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+#endif
+
+		_extensions.Maintenance1      = TryExtension(VK_KHR_MAINTENANCE1_EXTENSION_NAME);
+		_extensions.Synchronization2  = TryExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+		_extensions.TimelineSemaphore = TryExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+	}
+
+	// Find and assign all of our queues.
+	auto familyProps = _gpuInfo.QueueFamilies;
+	std::vector<std::vector<float>> familyPriorities(familyProps.size());
+	std::vector<vk::DeviceQueueCreateInfo> queueCIs(QueueTypeCount);
+	{
+		std::vector<uint32_t> nextFamilyIndex(familyProps.size(), 0);
+
+		// Assign each of our Graphics, Compute, and Transfer queues. Prefer finding separate queues for
+		// each if at all possible.
+		const auto AssignQueue = [&](QueueType type, vk::QueueFlags required, vk::QueueFlags ignored) -> bool {
+			for (size_t q = 0; q < familyProps.size(); ++q) {
+				auto& family = familyProps[q];
+				if (family.queueFlags & ignored || family.queueCount == 0) { continue; }
+
+				// Require presentation support for our graphics queue.
+				if (type == QueueType::Graphics) {
+					const auto present = _gpu.getSurfaceSupportKHR(q, _surface);
+					if (!present) { continue; }
+				}
+
+				_queues.Family(type) = q;
+				_queues.Index(type)  = nextFamilyIndex[q]++;
+				--family.queueCount;
+				familyPriorities[q].push_back(1.0f);
+
+				Log::Debug("Vulkan::Device",
+				           "Using queue {}.{} for {}.",
+				           _queues.Family(type),
+				           _queues.Index(type),
+				           VulkanEnumToString(type));
+
+				return true;
+			}
+
+			return false;
+		};
+
+		// First find our main Graphics queue.
+		if (!AssignQueue(QueueType::Graphics, vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute, {})) {
+			throw vk::IncompatibleDriverError("Could not find a suitable graphics/compute queue!");
+		}
+
+		// Then, attempt to find a dedicated compute queue, or any unused queue with compute. Fall back
+		// to sharing with graphics.
+		if (!AssignQueue(QueueType::Compute, vk::QueueFlagBits::eCompute, vk::QueueFlagBits::eGraphics) &&
+		    !AssignQueue(QueueType::Compute, vk::QueueFlagBits::eCompute, {})) {
+			_queues.Family(QueueType::Compute) = _queues.Family(QueueType::Graphics);
+			_queues.Index(QueueType::Compute)  = _queues.Index(QueueType::Graphics);
+			Log::Debug("Vulkan::Device", "Sharing Compute queue with Graphics.");
+		}
+
+		// Finally, attempt to find a dedicated transfer queue. Try to avoid graphics/compute, then
+		// compute, then just take what we can. Fall back to sharing with compute.
+		if (!AssignQueue(QueueType::Transfer,
+		                 vk::QueueFlagBits::eTransfer,
+		                 vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute) &&
+		    !AssignQueue(QueueType::Transfer, vk::QueueFlagBits::eTransfer, vk::QueueFlagBits::eCompute) &&
+		    !AssignQueue(QueueType::Transfer, vk::QueueFlagBits::eTransfer, {})) {
+			_queues.Family(QueueType::Transfer) = _queues.Family(QueueType::Compute);
+			_queues.Index(QueueType::Transfer)  = _queues.Index(QueueType::Compute);
+			Log::Debug("Vulkan::Device", "Sharing Transfer queue with Compute.");
+		}
+
+		uint32_t familyCount = 0;
+		uint32_t queueCount  = 0;
+		for (uint32_t i = 0; i < familyProps.size(); ++i) {
+			if (nextFamilyIndex[i] > 0) {
+				queueCount += nextFamilyIndex[i];
+				queueCIs[familyCount++] = vk::DeviceQueueCreateInfo({}, i, nextFamilyIndex[i], familyPriorities[i].data());
+			}
+		}
+		queueCIs.resize(familyCount);
+		Log::Trace("Vulkan::Device", "Creating {} queues on {} unique families.", queueCount, familyCount);
+	}
+
+	// Determine what features we want to enable.
+	vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceTimelineSemaphoreFeatures> enabledFeaturesChain;
+	{
+		auto& features = enabledFeaturesChain.get<vk::PhysicalDeviceFeatures2>().features;
+		if (_gpuInfo.AvailableFeatures.Features.samplerAnisotropy == VK_TRUE) {
+			Log::Trace("Vulkan::Device",
+			           "Enabling Sampler Anisotropy (x{}).",
+			           _gpuInfo.Properties.Properties.limits.maxSamplerAnisotropy);
+			features.samplerAnisotropy = VK_TRUE;
+		}
+		if (_gpuInfo.AvailableFeatures.Features.depthClamp == VK_TRUE) {
+			Log::Trace("Vulkan::Device", "Enabling Depth Clamp.");
+			features.depthClamp = VK_TRUE;
+		}
+
+		if (_extensions.TimelineSemaphore) {
+			auto& timelineSemaphore = enabledFeaturesChain.get<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
+			if (_gpuInfo.AvailableFeatures.TimelineSemaphore.timelineSemaphore == VK_TRUE) {
+				Log::Trace("Vulkan::Device", "Enabling Timeline Semaphores.");
+				timelineSemaphore.timelineSemaphore = VK_TRUE;
+			}
+		} else {
+			enabledFeaturesChain.unlink<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
+		}
+
+		_gpuInfo.EnabledFeatures.Features = features;
+		_gpuInfo.EnabledFeatures.TimelineSemaphore =
+			enabledFeaturesChain.get<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
+	}
+
+	// Create our device.
+	const vk::DeviceCreateInfo deviceCI(
+		{},
+		queueCIs,
+		nullptr,
+		enabledExtensions,
+		_extensions.GetPhysicalDeviceProperties2 ? nullptr : &_gpuInfo.EnabledFeatures.Features);
+	vk::StructureChain<vk::DeviceCreateInfo, vk::PhysicalDeviceFeatures2> chain(deviceCI, enabledFeaturesChain.get());
+	if (!_extensions.GetPhysicalDeviceProperties2) { chain.unlink<vk::PhysicalDeviceFeatures2>(); }
+
+	_device = _gpu.createDevice(chain.get());
+	VULKAN_HPP_DEFAULT_DISPATCHER.init(_device);
+
+	// Fetch our created queues.
+	for (int q = 0; q < QueueTypeCount; ++q) {
+		if (_queues.Families[q] != VK_QUEUE_FAMILY_IGNORED && _queues.Indices[q] != VK_QUEUE_FAMILY_IGNORED) {
+			_queues.Queues[q] = _device.getQueue(_queues.Families[q], _queues.Indices[q]);
+		}
+	}
+}
+
+void Device::DumpDeviceInformation() const {
+	const auto HasExtension = [&](const char* name) {
+		return std::find_if(_gpuInfo.AvailableExtensions.begin(),
+		                    _gpuInfo.AvailableExtensions.end(),
+		                    [&](const vk::ExtensionProperties& ext) { return strcmp(name, ext.extensionName) == 0; }) !=
+		       _gpuInfo.AvailableExtensions.end();
+	};
+
+	Log::Trace("Vulkan::Device", "----- Vulkan Physical Device Info -----");
+
+	Log::Trace("Vulkan::Device", "- Device Name: {}", _gpuInfo.Properties.Properties.deviceName);
+	Log::Trace("Vulkan::Device", "- Device Type: {}", vk::to_string(_gpuInfo.Properties.Properties.deviceType));
+	Log::Trace("Vulkan::Device",
+	           "- Device API Version: {}.{}.{}",
+	           VK_API_VERSION_MAJOR(_gpuInfo.Properties.Properties.apiVersion),
+	           VK_API_VERSION_MINOR(_gpuInfo.Properties.Properties.apiVersion),
+	           VK_API_VERSION_PATCH(_gpuInfo.Properties.Properties.apiVersion));
+	Log::Trace("Vulkan::Device",
+	           "- Device Driver Version: {}.{}.{}",
+	           VK_API_VERSION_MAJOR(_gpuInfo.Properties.Properties.driverVersion),
+	           VK_API_VERSION_MINOR(_gpuInfo.Properties.Properties.driverVersion),
+	           VK_API_VERSION_PATCH(_gpuInfo.Properties.Properties.driverVersion));
+
+	Log::Trace("Vulkan::Device", "- Layers ({}):", _gpuInfo.Layers.size());
+	for (const auto& layer : _gpuInfo.Layers) {
+		Log::Trace("Vulkan::Device",
+		           " - {} v{} (Vulkan {}.{}.{}) - {}",
+		           layer.layerName,
+		           layer.implementationVersion,
+		           VK_API_VERSION_MAJOR(layer.specVersion),
+		           VK_API_VERSION_MINOR(layer.specVersion),
+		           VK_API_VERSION_PATCH(layer.specVersion),
+		           layer.description);
+	}
+
+	Log::Trace("Vulkan::Device", "- Device Extensions ({}):", _gpuInfo.AvailableExtensions.size());
+	for (const auto& ext : _gpuInfo.AvailableExtensions) {
+		Log::Trace("Vulkan::Device", "  - {} v{}", ext.extensionName, ext.specVersion);
+	}
+
+	Log::Trace("Vulkan::Device", "- Memory Heaps ({}):", _gpuInfo.Memory.memoryHeapCount);
+	for (size_t i = 0; i < _gpuInfo.Memory.memoryHeapCount; ++i) {
+		const auto& heap = _gpuInfo.Memory.memoryHeaps[i];
+		Log::Trace("Vulkan::Device", "  - {} {}", FormatSize(heap.size), vk::to_string(heap.flags));
+	}
+	Log::Trace("Vulkan::Device", "- Memory Types ({}):", _gpuInfo.Memory.memoryTypeCount);
+	for (size_t i = 0; i < _gpuInfo.Memory.memoryTypeCount; ++i) {
+		const auto& type = _gpuInfo.Memory.memoryTypes[i];
+		Log::Trace("Vulkan::Device", "  - Heap {} {}", type.heapIndex, vk::to_string(type.propertyFlags));
+	}
+
+	Log::Trace("Vulkan::Device", "- Queue Families ({}):", _gpuInfo.QueueFamilies.size());
+	for (size_t i = 0; i < _gpuInfo.QueueFamilies.size(); ++i) {
+		const auto& family = _gpuInfo.QueueFamilies[i];
+		Log::Trace("Vulkan::Device",
+		           "  - Family {}: {} Queues {} Granularity {}x{}x{} TimestampBits {}",
+		           i,
+		           family.queueCount,
+		           vk::to_string(family.queueFlags),
+		           family.minImageTransferGranularity.width,
+		           family.minImageTransferGranularity.height,
+		           family.minImageTransferGranularity.depth,
+		           family.timestampValidBits);
+	}
+
+	if (static_cast<uint32_t>(_gpuInfo.Properties.Driver.driverID) != 0) {
+		Log::Trace("Vulkan::Device", "- Driver:");
+		Log::Trace("Vulkan::Device", "  - ID: {}", vk::to_string(_gpuInfo.Properties.Driver.driverID));
+		Log::Trace("Vulkan::Device", "  - Name: {}", _gpuInfo.Properties.Driver.driverName);
+		Log::Trace("Vulkan::Device", "  - Info: {}", _gpuInfo.Properties.Driver.driverInfo);
+		Log::Trace("Vulkan::Device",
+		           "  - Conformance Version: {}.{}.{}.{}",
+		           _gpuInfo.Properties.Driver.conformanceVersion.major,
+		           _gpuInfo.Properties.Driver.conformanceVersion.minor,
+		           _gpuInfo.Properties.Driver.conformanceVersion.patch,
+		           _gpuInfo.Properties.Driver.conformanceVersion.subminor);
+	}
+
+	Log::Trace("Vulkan::Device", "- Features:");
+	Log::Trace(
+		"Vulkan::Device", "  - Geometry Shader: {}", _gpuInfo.AvailableFeatures.Features.geometryShader == VK_TRUE);
+	Log::Trace(
+		"Vulkan::Device", "  - Sampler Anisotropy: {}", _gpuInfo.AvailableFeatures.Features.samplerAnisotropy == VK_TRUE);
+	Log::Trace("Vulkan::Device",
+	           "  - Synchronization 2: {}",
+	           _gpuInfo.AvailableFeatures.Synchronization2.synchronization2 == VK_TRUE);
+	Log::Trace(
+		"Vulkan::Device", "  - Tesselation Shader: {}", _gpuInfo.AvailableFeatures.Features.tessellationShader == VK_TRUE);
+	Log::Trace("Vulkan::Device",
+	           "  - Timeline Semaphores: {}",
+	           _gpuInfo.AvailableFeatures.TimelineSemaphore.timelineSemaphore == VK_TRUE);
+	Log::Trace("Vulkan::Device", "  - Wide Lines: {}", _gpuInfo.AvailableFeatures.Features.wideLines == VK_TRUE);
+
+	Log::Trace("Vulkan::Device", "- Properties:");
+	if (_gpuInfo.AvailableFeatures.Features.samplerAnisotropy) {
+		Log::Trace("Vulkan::Device", "  - Max Anisotropy: {}", _gpuInfo.Properties.Properties.limits.maxSamplerAnisotropy);
+	}
+
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+	if (HasExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) {
+		Log::Trace("Vulkan::Device", "- Portability Subset:");
+		Log::Trace("Vulkan::Device",
+		           "  - Minimum Vertex Binding Stride Alignment: {}",
+		           _gpuInfo.Properties.PortabilitySubset.minVertexInputBindingStrideAlignment);
+
+		Log::Trace("Vulkan::Device", "  - The following features are UNAVAILABLE:");
+#	define FEAT(flag, name)                                                                                     \
+		do {                                                                                                       \
+			if (!_gpuInfo.AvailableFeatures.PortabilitySubset.flag) { Log::Trace("Vulkan::Device", "    - " name); } \
+		} while (0)
+		FEAT(constantAlphaColorBlendFactors, "Constant Alpha Color Blend Factors");
+		FEAT(events, "Events");
+		FEAT(imageViewFormatReinterpretation, "Image View Format Reinterpretation");
+		FEAT(imageViewFormatSwizzle, "Image View Format Swizzle");
+		FEAT(imageView2DOn3DImage, "Image View 2D on 3D Image");
+		FEAT(multisampleArrayImage, "Multisample Array Image");
+		FEAT(mutableComparisonSamplers, "Mutable Comparison Samplers");
+		FEAT(pointPolygons, "Point Polygons");
+		FEAT(samplerMipLodBias, "Sampler Mip LOD Bias");
+		FEAT(separateStencilMaskRef, "Separate Stencil Mask Ref");
+		FEAT(shaderSampleRateInterpolationFunctions, "Shader Sample Rate Interpolation Functions");
+		FEAT(tessellationIsolines, "Tesselation Isolines");
+		FEAT(tessellationPointMode, "Tesselation Point Mode");
+		FEAT(vertexAttributeAccessBeyondStride, "Vertex Attribute Access Beyond Stride");
+#	undef FEAT
+	}
+#endif
+
+	Log::Trace("Vulkan::Device", "----- End Vulkan Physical Device Info -----");
+}
+}  // namespace Vulkan
+}  // namespace Graphics
+}  // namespace Luna

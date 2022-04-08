@@ -1,6 +1,10 @@
 #pragma once
 
+#include <vector>
+
 struct GLFWwindow;
+typedef struct VkInstance_T* VkInstance;
+typedef struct VkSurfaceKHR_T* VkSurfaceKHR;
 
 namespace Luna {
 class WindowManager final {
@@ -9,6 +13,8 @@ class WindowManager final {
  public:
 	~WindowManager() noexcept;
 
+	VkSurfaceKHR CreateSurface(VkInstance instance);
+	std::vector<const char*> GetVulkanExtensions();
 	void Update();
 
 	static WindowManager* Get();
