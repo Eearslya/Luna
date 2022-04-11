@@ -320,6 +320,12 @@ void CommandBuffer::SetCullMode(vk::CullModeFlagBits mode) {
 	SetStaticState(CullMode, mode);
 }
 
+void CommandBuffer::SetDepthClamp(bool clamp) {
+	// Require the device feature to be enabled.
+	clamp = clamp & _device.GetGPUInfo().EnabledFeatures.Features.depthClamp;
+	SetStaticState(DepthClamp, clamp);
+}
+
 void CommandBuffer::SetDepthCompareOp(vk::CompareOp op) {
 	SetStaticState(DepthCompare, op);
 }
@@ -555,7 +561,7 @@ vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 		{},
 		{},
 		0.0f,
-		1.0f);
+		0.0f);
 	if (depthStencil.depthTestEnable) { depthStencil.depthCompareOp = static_cast<vk::CompareOp>(state.DepthCompare); }
 	if (depthStencil.stencilTestEnable) {
 		depthStencil.front.compareOp   = static_cast<vk::CompareOp>(state.StencilFrontCompareOp);
@@ -604,7 +610,7 @@ vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 
 	const vk::PipelineRasterizationStateCreateInfo rasterizer(
 		{},
-		VK_FALSE,
+		state.DepthClamp,
 		VK_FALSE,
 		state.Wireframe ? vk::PolygonMode::eLine : vk::PolygonMode::eFill,
 		static_cast<vk::CullModeFlagBits>(state.CullMode),
