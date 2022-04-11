@@ -64,6 +64,7 @@ class Window : public Module::Registrar<Window> {
 	std::vector<const char*> GetRequiredInstanceExtensions() const;
 
 	VkSurfaceKHR CreateSurface(VkInstance instance) const;
+	void Maximize();
 	void SetBorderless(bool borderless);
 	void SetFloating(bool floating);
 	void SetFullscreen(bool fullscreen, const Monitor* monitor = nullptr);

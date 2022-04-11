@@ -186,6 +186,10 @@ VkSurfaceKHR Window::CreateSurface(VkInstance instance) const {
 	}
 }
 
+void Window::Maximize() {
+	glfwMaximizeWindow(_window);
+}
+
 void Window::SetBorderless(bool borderless) {
 	if (borderless == _borderless) { return; }
 	_borderless = borderless;
@@ -248,7 +252,7 @@ void Window::SetSize(const Vec2ui& size) {
 }
 
 void Window::SetTitle(const std::string& title) {
-	_title = title;
+	_title      = title;
 	_titleDirty = true;
 	_onTitleChanged(_title);
 }
