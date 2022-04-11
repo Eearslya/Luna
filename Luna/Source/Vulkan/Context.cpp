@@ -423,6 +423,10 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 			Log::Trace("Enabling Sampler Anisotropy (x{}).", _gpuInfo.Properties.Properties.limits.maxSamplerAnisotropy);
 			features.samplerAnisotropy = VK_TRUE;
 		}
+		if (_gpuInfo.AvailableFeatures.Features.depthClamp == VK_TRUE) {
+			Log::Trace("Enabling Depth Clamp.");
+			features.depthClamp = VK_TRUE;
+		}
 
 		if (_extensions.TimelineSemaphore) {
 			auto& timelineSemaphore = enabledFeaturesChain.get<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
