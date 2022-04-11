@@ -20,6 +20,9 @@ Timers::~Timers() noexcept {
 	}
 
 	_workerThread.join();
+	for (auto& timer : _activeTimers) {
+		_timerPool.Free(timer);
+	}
 }
 
 void Timers::TimerThread() {
