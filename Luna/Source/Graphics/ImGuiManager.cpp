@@ -172,7 +172,7 @@ void main() {
 		                                          .MaxLod           = 1000.0f};
 		_fontSampler = _device.RequestSampler(samplerCI);
 
-		io.Fonts->SetTexID(reinterpret_cast<ImTextureID>(_fontTexture.Get()));
+		io.Fonts->SetTexID((reinterpret_cast<ImTextureID>(const_cast<Vulkan::ImageView*>(_fontTexture->GetView().Get()))));
 	}
 
 	// Attach to keyboard and mouse events.
@@ -352,6 +352,14 @@ void ImGuiManager::Render(Vulkan::CommandBufferHandle& cmd) {
 						{static_cast<int32_t>(clipMin.x), static_cast<int32_t>(clipMin.y)},
 						{static_cast<uint32_t>(clipMax.x - clipMin.x), static_cast<uint32_t>(clipMax.y - clipMin.y)});
 					cmd->SetScissor(scissor);
+
+					if (drawCmd.TextureId == 0) {
+						cmd->SetTexture(0, 0, *_fontTexture->GetView(), _fontSampler);
+					} else {
+						Vulkan::ImageView* view = reinterpret_cast<Vulkan::ImageView*>(drawCmd.TextureId);
+						cmd->SetTexture(0, 0, *view, Vulkan::StockSampler::LinearClamp);
+					}
+
 					cmd->DrawIndexed(
 						drawCmd.ElemCount, 1, drawCmd.IdxOffset + globalIdxOffset, drawCmd.VtxOffset + globalVtxOffset, 0);
 				}
@@ -375,7 +383,6 @@ void ImGuiManager::SetRenderState(Vulkan::CommandBufferHandle& cmd, ImDrawData* 
 	cmd->SetVertexAttribute(2, 0, vk::Format::eR8G8B8A8Unorm, offsetof(ImDrawVert, col));
 	cmd->SetVertexBinding(0, *_vertexBuffer, 0, sizeof(ImDrawVert), vk::VertexInputRate::eVertex);
 	cmd->SetIndexBuffer(*_indexBuffer, 0, sizeof(ImDrawIdx) == 2 ? vk::IndexType::eUint16 : vk::IndexType::eUint32);
-	cmd->SetTexture(0, 0, *_fontTexture->GetView(), _fontSampler);
 
 	struct PushConstant {
 		float ScaleX;
