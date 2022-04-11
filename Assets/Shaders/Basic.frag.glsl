@@ -1,12 +1,14 @@
 #version 450 core
 
 layout(location = 0) in vec3 inWorldPos;
-layout(location = 1) in vec3 inNormal;
-layout(location = 2) in vec2 inUV0;
+layout(location = 1) in vec3 inViewPos;
+layout(location = 2) in vec3 inNormal;
+layout(location = 3) in vec2 inUV0;
 
 layout(set = 0, binding = 0) uniform CameraData {
 	mat4 Projection;
 	mat4 View;
+	mat4 ViewInverse;
 	vec3 Position;
 } Camera;
 
@@ -103,17 +105,6 @@ vec3 GetNormal() {
 	return normalize(TBN * tangentNormal);
 }
 
-vec3 GetIBLContribution(PBRInfo pbr, vec3 n, vec3 reflection) {
-	const float lod = pbr.PerceptualRoughness * Scene.PrefilteredCubeMipLevels;
-	const vec2 brdf = (texture(TexBrdfLut, vec2(pbr.NdotV, 1.0 - pbr.PerceptualRoughness))).rg;
-	//const vec3 diffuseLight = SrgbToLinear(Tonemap(texture(TexIrradiance, n))).rgb;
-	const vec3 diffuseLight = SrgbToLinear(Tonemap(textureLod(TexIrradiance, n, 0.0))).rgb;
-	const vec3 specularLight = SrgbToLinear(Tonemap(textureLod(TexPrefiltered, reflection, lod))).rgb;
-	const vec3 diffuse = (diffuseLight * pbr.DiffuseColor) * Scene.IBLContribution;
-	const vec3 specular = (specularLight * (pbr.SpecularColor * brdf.x + brdf.y) * Scene.IBLContribution);
-	return diffuse + specular;
-}
-
 vec3 Diffuse(PBRInfo pbr) {
   return pbr.DiffuseColor / PI;
 }
@@ -171,7 +162,7 @@ void main() {
 	vec3 l = normalize(Scene.SunDirection.xyz);
 	vec3 h = normalize(l + v);
 	vec3 reflection = -normalize(reflect(v, n));
-	reflection.y += -1.0f;
+	reflection.y *= -1.0f;
 	float NdotL = clamp(dot(n, l), 0.001, 1.0);
 	float NdotV = clamp(abs(dot(n, v)), 0.001, 1.0);
 	float NdotH = clamp(dot(n, h), 0.0, 1.0);
@@ -200,19 +191,46 @@ void main() {
 	
 	vec3 diffuseContrib = (1.0 - F) * Diffuse(pbr);
 	vec3 specularContrib = F * G * D / (4.0 * NdotL * NdotV);
-	vec3 color = NdotL * sunColor * (diffuseContrib + specularContrib);
-	color += GetIBLContribution(pbr, n, reflection);
+
+
+	vec3 iblDiffuse = vec3(0.0);
+	vec3 iblSpecular = vec3(0.0);
+	{
+	const float lod = pbr.PerceptualRoughness * Scene.PrefilteredCubeMipLevels;
+	const vec2 brdf = (texture(TexBrdfLut, vec2(pbr.NdotV, 1.0 - pbr.PerceptualRoughness))).rg;
+	//const vec3 diffuseLight = SrgbToLinear(Tonemap(texture(TexIrradiance, n))).rgb;
+	const vec3 diffuseLight = SrgbToLinear(Tonemap(textureLod(TexIrradiance, n, 0.0))).rgb;
+	const vec3 specularLight = SrgbToLinear(Tonemap(textureLod(TexPrefiltered, reflection, lod))).rgb;
+	iblDiffuse = (diffuseLight * pbr.DiffuseColor) * Scene.IBLContribution;
+	iblSpecular = (specularLight * (pbr.SpecularColor * brdf.x + brdf.y) * Scene.IBLContribution);
+	}
+
+	vec3 iblContrib = iblDiffuse + iblSpecular;
+	vec3 color = (NdotL * sunColor * (diffuseContrib + specularContrib)) + iblContrib;
 
 	outColor = vec4(color, baseColor.a);
 
 	if (Material.DebugView > 0.0) {
 		const int index = int(Material.DebugView);
+		float v = 0.0;
 		switch(index) {
 			case 1:
 				outColor.rgba = texture(texAlbedo, inUV0).rgba;
 				break;
 			case 2:
 				outColor.rgb = texture(texNormal, inUV0).rgb;
+				break;
+			case 3:
+				outColor.rgb = n;
+				break;
+			case 4:
+				outColor.rgb = diffuseContrib;
+				break;
+			case 5:
+				outColor.rgb = specularContrib;
+				break;
+			case 6:
+				outColor.rgb = iblContrib;
 				break;
 		}
 		outColor = SrgbToLinear(outColor);
