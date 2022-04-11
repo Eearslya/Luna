@@ -159,10 +159,9 @@ void main() {
 	vec3 specularEnvironmentR90 = vec3(1.0, 1.0, 1.0) * reflectance90;
 	const vec3 n = Material.HasNormal == 1 ? GetNormal() : normalize(inNormal);
 	const vec3 v = normalize(Camera.Position - inWorldPos);
-	vec3 l = normalize(Scene.SunDirection.xyz);
+	vec3 l = -normalize(Scene.SunDirection.xyz);
 	vec3 h = normalize(l + v);
 	vec3 reflection = -normalize(reflect(v, n));
-	reflection.y *= -1.0f;
 	float NdotL = clamp(dot(n, l), 0.001, 1.0);
 	float NdotV = clamp(abs(dot(n, v)), 0.001, 1.0);
 	float NdotH = clamp(dot(n, h), 0.0, 1.0);

@@ -10,19 +10,30 @@
 
 namespace Luna {
 struct TransformComponent {
-	entt::entity Parent = {};
+	bool Enabled        = true;
+	entt::entity Parent = entt::null;
 	std::vector<entt::entity> Children;
 	std::string Name   = "Entity";
 	glm::vec3 Position = glm::vec3(0, 0, 0);
-	glm::vec3 Rotation = glm::vec3(0, 0, 0);
+	glm::quat Rotation = glm::quat();
 	glm::vec3 Scale    = glm::vec3(1, 1, 1);
 
 	mutable glm::mat4 CachedGlobalTransform = glm::mat4(1.0f);
 
+	bool IsEnabled(const entt::registry& registry) const {
+		if (!Enabled) { return false; }
+
+		if (registry.valid(Parent)) {
+			const auto& parentTransform = registry.get<TransformComponent>(Parent);
+			return parentTransform.IsEnabled(registry);
+		}
+
+		return true;
+	}
+
 	void UpdateGlobalTransform(const entt::registry& registry) const {
-		glm::mat4 myTransform           = glm::translate(glm::mat4(1.0f), Position);
-		const glm::vec3 rotationRadians = glm::radians(Rotation);
-		myTransform *= glm::mat4(glm::eulerAngleXYZ(rotationRadians.x, rotationRadians.y, rotationRadians.z));
+		glm::mat4 myTransform = glm::translate(glm::mat4(1.0f), Position);
+		myTransform *= glm::mat4(Rotation);
 		myTransform = glm::scale(myTransform, Scale);
 
 		if (registry.valid(Parent)) {
@@ -42,6 +53,8 @@ struct TransformComponent {
 
 	void DrawComponent(const entt::registry& registry) {
 		if (ImGui::CollapsingHeader("Transform##TransformComponent", ImGuiTreeNodeFlags_DefaultOpen)) {
+			ImGui::Checkbox("Enabled", &Enabled);
+
 			char nameBuf[64];
 #ifdef _WIN32
 			strncpy_s(nameBuf, Name.c_str(), sizeof(nameBuf));
@@ -59,7 +72,10 @@ struct TransformComponent {
 				Position       = glm::vec3(0, 0, 0);
 				transformDirty = true;
 			}
-			if (ImGui::DragFloat3("Rotation##TransformComponent", glm::value_ptr(Rotation), 1.0f)) { transformDirty = true; }
+			glm::vec3 eulerAngles = glm::degrees(glm::eulerAngles(Rotation));
+			if (ImGui::DragFloat3("Rotation##TransformComponent", glm::value_ptr(eulerAngles), 1.0f)) {
+				transformDirty = true;
+			}
 			if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
 				Rotation       = glm::vec3(0, 0, 0);
 				transformDirty = true;
@@ -70,7 +86,11 @@ struct TransformComponent {
 				transformDirty = true;
 			}
 
-			if (transformDirty) { UpdateGlobalTransform(registry); }
+			if (transformDirty) {
+				const glm::quat newRot = glm::quat(glm::radians(eulerAngles));
+				Rotation               = newRot;
+				UpdateGlobalTransform(registry);
+			}
 		}
 	}
 };

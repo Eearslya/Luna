@@ -166,9 +166,9 @@ void Graphics::Update() {
 		SceneData scene{.SunDirection = glm::vec4(_sunDirection, 0.0f),
 		                .PrefilteredCubeMipLevels =
 		                  environmentReady ? worldData->Environment->Prefiltered->GetCreateInfo().MipLevels : 0.0f,
-		                .Exposure          = _exposure,
-		                .Gamma             = _gamma,
-		                .IBLContribution   = environmentReady ? _iblContribution : 0.0f};
+		                .Exposure        = _exposure,
+		                .Gamma           = _gamma,
+		                .IBLContribution = environmentReady ? _iblContribution : 0.0f};
 		auto* data = _sceneBuffer->Map();
 		memcpy(data, &scene, sizeof(SceneData));
 		_sceneBuffer->Unmap();
@@ -229,7 +229,7 @@ void Graphics::Update() {
 				const auto& transform = registry.get<TransformComponent>(entity);
 				auto& mesh            = registry.get<MeshRenderer>(entity);
 
-				if (!mesh.Mesh->Ready) { continue; }
+				if (!transform.IsEnabled(registry) || !mesh.Mesh->Ready) { continue; }
 
 				ZoneScopedN("Mesh");
 

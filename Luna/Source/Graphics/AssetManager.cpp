@@ -509,7 +509,8 @@ void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const
 			} else {
 				if (gltfNode.translation.size() > 0) { nodeTransform.Position = glm::make_vec3(gltfNode.translation.data()); }
 				if (gltfNode.rotation.size() > 0) {
-					nodeTransform.Rotation = glm::eulerAngles(glm::make_quat(gltfNode.rotation.data()));
+					nodeTransform.Rotation =
+						glm::quat(gltfNode.rotation[3], gltfNode.rotation[0], gltfNode.rotation[1], gltfNode.rotation[2]);
 				}
 				if (gltfNode.scale.size() > 0) { nodeTransform.Scale = glm::make_vec3(gltfNode.scale.data()); }
 			}
@@ -578,7 +579,7 @@ void AssetManager::LoadMaterialsTask(ModelLoadContext* context) const {
 
 	for (size_t materialIndex = 0; materialIndex < gltfModel.materials.size(); ++materialIndex) {
 		const auto& gltfMaterial = gltfModel.materials[materialIndex];
-		MaterialHandle material       = context->Materials[materialIndex];
+		MaterialHandle material  = context->Materials[materialIndex];
 
 		material->DualSided = gltfMaterial.doubleSided;
 		if (gltfMaterial.pbrMetallicRoughness.baseColorFactor.size() == 4) {
@@ -599,8 +600,7 @@ void AssetManager::LoadMaterialsTask(ModelLoadContext* context) const {
 			material->Normal = context->Textures[gltfMaterial.normalTexture.index];
 		}
 		if (gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
-			material->PBR =
-				context->Textures[gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index];
+			material->PBR = context->Textures[gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index];
 		}
 
 		material->Update();
@@ -614,7 +614,7 @@ void AssetManager::LoadMeshTask(ModelLoadContext* context, size_t meshIndex) con
 
 	const auto& gltfModel = context->Model;
 	const auto& gltfMesh  = gltfModel.meshes[meshIndex];
-	StaticMeshHandle mesh      = context->Meshes[meshIndex];
+	StaticMeshHandle mesh = context->Meshes[meshIndex];
 
 	struct PrimitiveContext {
 		uint64_t VertexCount       = 0;
@@ -780,7 +780,7 @@ void AssetManager::LoadTextureTask(ModelLoadContext* context, size_t textureInde
 	auto& device            = graphics->GetDevice();
 	const auto& gltfModel   = context->Model;
 	const auto& gltfTexture = gltfModel.textures[textureIndex];
-	TextureHandle texture        = context->Textures[textureIndex];
+	TextureHandle texture   = context->Textures[textureIndex];
 	if (gltfTexture.source < 0) {
 		Log::Error("[AssetManager] {} texture {} does not specify a source image!", context->FileName, textureIndex);
 		return;
