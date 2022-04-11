@@ -96,8 +96,7 @@ void Scene::DrawSceneGraph() {
 
 			ImGui::EndTable();
 		}
-
-		ImGui::End();
 	}
+	ImGui::End();
 }
 }  // namespace Luna
