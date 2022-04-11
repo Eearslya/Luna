@@ -6,8 +6,14 @@ namespace Luna {
 class Camera {
  public:
 	Camera();
-	Camera(float fovDegrees, float aspectRatio, float nearPlane = 0.01f, float farPlane = 1000.0f);
+	Camera(float fovDegrees, float aspectRatio, float nearPlane = 0.01f, float farPlane = 100.0f);
 
+	float GetFarPlane() const {
+		return _farPlane;
+	}
+	float GetNearPlane() const {
+		return _nearPlane;
+	}
 	float GetPitch() const {
 		return _pitch;
 	}
@@ -32,6 +38,7 @@ class Camera {
 	void Move(const glm::vec3& positionDelta);
 	void Rotate(float pitchDelta, float yawDelta);
 	void SetAspectRatio(float aspectRatio);
+	void SetClipping(float zNear, float zFar);
 	void SetFOV(float fovDegrees);
 	void SetPosition(const glm::vec3& position);
 	void SetRotation(float pitch, float yaw);
@@ -52,6 +59,6 @@ class Camera {
 	float _aspectRatio = 1.0f;
 	float _fovDegrees  = 70.0f;
 	float _nearPlane   = 0.01f;
-	float _farPlane    = 1000.0f;
+	float _farPlane    = 100.0f;
 };
 }  // namespace Luna

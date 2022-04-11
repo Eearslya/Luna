@@ -45,6 +45,12 @@ void Camera::SetAspectRatio(float aspectRatio) {
 	RecalculateProjection();
 }
 
+void Camera::SetClipping(float zNear, float zFar) {
+	_nearPlane = zNear;
+	_farPlane  = zFar;
+	RecalculateProjection();
+}
+
 void Camera::SetFOV(float fovDegrees) {
 	_fovDegrees = fovDegrees;
 	RecalculateProjection();
