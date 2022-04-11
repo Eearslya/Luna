@@ -51,6 +51,7 @@ class Graphics : public Module::Registrar<Graphics> {
 	struct CameraData {
 		glm::mat4 Projection;
 		glm::mat4 View;
+		glm::mat4 ViewInverse;
 		glm::vec3 Position;
 	};
 	struct SceneData {
@@ -75,13 +76,15 @@ class Graphics : public Module::Registrar<Graphics> {
 	Vulkan::Program* _programSkybox = nullptr;
 	Vulkan::BufferHandle _cameraBuffer;
 	Vulkan::BufferHandle _sceneBuffer;
-	bool _mouseControl = false;
+	bool _mouseControl      = false;
+	glm::vec3 _sunDirection = glm::normalize(glm::vec3(1.0f, 2.0f, 0.5f));
+	glm::vec3 _sunPosition;
 
-	bool _drawSkybox       = true;
-	int _pbrDebug          = 0;
-	int _skyDebug          = 0;
-	float _exposure        = 4.5f;
-	float _gamma           = 2.2f;
+	bool _drawSkybox          = true;
+	int _pbrDebug             = 0;
+	int _skyDebug             = 0;
+	float _exposure           = 4.5f;
+	float _gamma              = 2.2f;
 	float _iblContribution = 1.0f;
 };
 }  // namespace Luna

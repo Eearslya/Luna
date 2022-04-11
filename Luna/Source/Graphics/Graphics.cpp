@@ -92,6 +92,8 @@ Graphics::Graphics() {
 		return false;
 	};
 
+	_camera.SetClipping(0.01f, 48.0f);
+	_camera.SetFOV(70.0f);
 	_camera.SetPosition(glm::vec3(0, 1, 0));
 }
 
@@ -130,13 +132,24 @@ void Graphics::Update() {
 		if (keyboard->GetKey(Key::F) == InputAction::Press) { _camera.Move(-_camera.GetUp() * moveSpeed); }
 	}
 
+	const auto now           = Time::Now().Seconds() * 0.025f;
+	const float sunAngle     = glm::radians(now * 360.0f);
+	const float sunRadius    = 40.0f;
+	const glm::vec3 lightPos = glm::vec3(cos(sunAngle) * sunRadius, sunRadius, sin(sunAngle) * sunRadius);
+	_sunPosition             = lightPos;
+	_sunDirection            = glm::normalize(-_sunPosition);
+
 	// Update Camera buffer.
 	{
 		ZoneScopedN("Camera Uniform Update");
 		const auto swapchainExtent = _swapchain->GetExtent();
 		const float aspectRatio    = float(swapchainExtent.width) / float(swapchainExtent.height);
 		_camera.SetAspectRatio(aspectRatio);
-		CameraData cam{.Projection = _camera.GetProjection(), .View = _camera.GetView(), .Position = _camera.GetPosition()};
+
+		CameraData cam{.Projection  = _camera.GetProjection(),
+		               .View        = _camera.GetView(),
+		               .ViewInverse = glm::inverse(_camera.GetView()),
+		               .Position    = _camera.GetPosition()};
 		auto* data = _cameraBuffer->Map();
 		memcpy(data, &cam, sizeof(CameraData));
 		_cameraBuffer->Unmap();
@@ -145,17 +158,17 @@ void Graphics::Update() {
 	auto& registry              = _scene.GetRegistry();
 	const auto rootNode         = _scene.GetRoot();
 	WorldData* worldData        = registry.try_get<WorldData>(rootNode);
-	const bool environmentReady = worldData->Environment && worldData->Environment->Ready;
+	const bool environmentReady = worldData && worldData->Environment && worldData->Environment->Ready;
 
 	// Update Scene buffer.
 	{
 		ZoneScopedN("Scene Uniform Update");
-		SceneData scene{.SunDirection = glm::normalize(glm::vec4(1.0f, 2.0f, 0.0f, 0.0f)),
+		SceneData scene{.SunDirection = glm::vec4(_sunDirection, 0.0f),
 		                .PrefilteredCubeMipLevels =
 		                  environmentReady ? worldData->Environment->Prefiltered->GetCreateInfo().MipLevels : 0.0f,
-		                .Exposure        = _exposure,
-		                .Gamma           = _gamma,
-		                .IBLContribution = environmentReady ? _iblContribution : 0.0f};
+		                .Exposure          = _exposure,
+		                .Gamma             = _gamma,
+		                .IBLContribution   = environmentReady ? _iblContribution : 0.0f};
 		auto* data = _sceneBuffer->Map();
 		memcpy(data, &scene, sizeof(SceneData));
 		_sceneBuffer->Unmap();
@@ -166,6 +179,16 @@ void Graphics::Update() {
 	};
 
 	auto cmd = _device->RequestCommandBuffer();
+
+	const auto SetTexture = [&](uint32_t set, uint32_t binding, const TextureHandle& texture) -> void {
+		const bool ready      = bool(texture) && texture->Ready;
+		const bool hasTexture = ready && texture->Image;
+		const bool hasSampler = ready && texture->Sampler;
+		const auto& view      = hasTexture ? *texture->Image->GetView() : *_whiteImage->GetView();
+		const auto sampler =
+			hasSampler ? texture->Sampler : _device->RequestSampler(Vulkan::StockSampler::DefaultGeometryFilterWrap);
+		cmd->SetTexture(set, binding, view, sampler);
+	};
 
 	{
 		ZoneScopedN("Main Render Pass");
@@ -178,16 +201,6 @@ void Graphics::Update() {
 			rpInfo.ClearDepthStencil.setDepth(1.0f);
 			cmd->BeginRenderPass(rpInfo);
 		}
-
-		const auto SetTexture = [&](uint32_t set, uint32_t binding, const TextureHandle& texture) -> void {
-			const bool ready      = bool(texture) && texture->Ready;
-			const bool hasTexture = ready && texture->Image;
-			const bool hasSampler = ready && texture->Sampler;
-			const auto& view      = hasTexture ? *texture->Image->GetView() : *_whiteImage->GetView();
-			const auto sampler =
-				hasSampler ? texture->Sampler : _device->RequestSampler(Vulkan::StockSampler::DefaultGeometryFilterWrap);
-			cmd->SetTexture(set, binding, view, sampler);
-		};
 
 		// Render meshes
 		{
@@ -314,19 +327,21 @@ void Graphics::DrawRenderSettings() {
 	if (ImGui::Begin("Renderer")) {
 		ImGui::Checkbox("Draw Skybox", &_drawSkybox);
 
-		static const std::vector<const char*> pbrDebugViews = {"Final Output", "Albedo", "Tangent", "Normal"};
+		static const std::vector<const char*> pbrDebugViews = {
+			"Final Output", "Albedo", "Tangent", "Normal", "Diffuse", "Specular", "IBL", "Shadow", "Shadow Depth"};
 		ImGui::Combo("PBR Debug View", &_pbrDebug, pbrDebugViews.data(), static_cast<int>(pbrDebugViews.size()));
 
 		static const std::vector<const char*> skyDebugViews = {"Final Output", "Irradiance", "Prefiltered"};
 		ImGui::Combo("Skybox Debug View", &_skyDebug, skyDebugViews.data(), static_cast<int>(skyDebugViews.size()));
 
+		ImGui::DragFloat3("Sun Direction", glm::value_ptr(_sunDirection));
 		ImGui::DragFloat("Exposure", &_exposure, 0.1f, 0.0f, 50.0f);
 		ImGui::DragFloat("Gamma", &_gamma, 0.01f, 0.0f, 10.0f);
 		ImGui::DragFloat("IBL Contribution", &_iblContribution, 0.01f, 0.0f, 1.0f);
 
 		if (ImGui::Button("Reload Shaders")) { LoadShaders(); }
-		ImGui::End();
 	}
+	ImGui::End();
 }
 
 void Graphics::LoadShaders() {
