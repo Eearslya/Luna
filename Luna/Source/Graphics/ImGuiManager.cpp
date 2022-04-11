@@ -14,6 +14,10 @@
 #include <Luna/Vulkan/Shader.hpp>
 #include <Tracy.hpp>
 
+//
+
+#include <ImGuizmo.h>
+
 namespace Luna {
 struct ImGuiRenderData {
 	Vulkan::Device* Device = nullptr;
@@ -266,6 +270,8 @@ void ImGuiManager::BeginFrame() {
 	}
 
 	ImGui::NewFrame();
+	ImGuizmo::BeginFrame();
+	ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 }
 
 void ImGuiManager::EndFrame() {

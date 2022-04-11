@@ -1,4 +1,6 @@
 #include <imgui.h>
+//
+#include <ImGuizmo.h>
 #include <stb_image.h>
 #include <tiny_gltf.h>
 

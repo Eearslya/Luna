@@ -9,6 +9,8 @@
 #include <Luna/Threading/Threading.hpp>
 #include <Luna/Utility/Delegate.hpp>
 #include <glm/glm.hpp>
+//
+#include <ImGuizmo.h>
 
 namespace Luna {
 namespace Vulkan {
@@ -80,11 +82,13 @@ class Graphics : public Module::Registrar<Graphics> {
 	glm::vec3 _sunDirection = glm::normalize(glm::vec3(1.0f, 2.0f, 0.5f));
 	glm::vec3 _sunPosition;
 
-	bool _drawSkybox          = true;
-	int _pbrDebug             = 0;
-	int _skyDebug             = 0;
-	float _exposure           = 4.5f;
-	float _gamma              = 2.2f;
-	float _iblContribution = 1.0f;
+	bool _drawSkybox             = true;
+	int _pbrDebug                = 0;
+	int _skyDebug                = 0;
+	float _exposure              = 4.5f;
+	float _gamma                 = 2.2f;
+	float _iblContribution       = 1.0f;
+	ImGuizmo::OPERATION _gizmoOp = ImGuizmo::TRANSLATE;
+	ImGuizmo::MODE _gizmoMode    = ImGuizmo::LOCAL;
 };
 }  // namespace Luna

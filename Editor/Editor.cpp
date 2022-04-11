@@ -35,7 +35,7 @@ class EditorApp : public App {
 
 		auto& scene = Graphics::Get()->GetScene();
 		scene.LoadEnvironment("Environments/TokyoBigSight.hdr");
-		scene.LoadModel("Models/TestScene2.glb", scene.GetRoot());
+		scene.LoadModel("Models/TestScene.glb", scene.GetRoot());
 	}
 
 	virtual void Update() override {}

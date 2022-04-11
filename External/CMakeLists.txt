@@ -17,13 +17,14 @@ add_subdirectory(vma)
 target_include_directories(physfs-static PUBLIC physfs/src)
 
 add_library(imgui STATIC)
-target_include_directories(imgui PUBLIC imgui)
+target_include_directories(imgui PUBLIC imgui imguizmo)
 target_sources(imgui PRIVATE
 	imgui/imgui.cpp
 	imgui/imgui_demo.cpp
 	imgui/imgui_draw.cpp
 	imgui/imgui_tables.cpp
-	imgui/imgui_widgets.cpp)
+	imgui/imgui_widgets.cpp
+	imguizmo/ImGuizmo.cpp)
 
 add_library(tracy STATIC)
 target_compile_definitions(tracy PRIVATE TRACY_ENABLE)

@@ -15,10 +15,19 @@ struct TransformComponent {
 	std::vector<entt::entity> Children;
 	std::string Name   = "Entity";
 	glm::vec3 Position = glm::vec3(0, 0, 0);
-	glm::quat Rotation = glm::quat();
+	glm::quat Rotation = glm::quat(1, 0, 0, 0);
 	glm::vec3 Scale    = glm::vec3(1, 1, 1);
 
 	mutable glm::mat4 CachedGlobalTransform = glm::mat4(1.0f);
+	mutable glm::quat CachedGlobalRotation  = glm::quat(1, 0, 0, 0);
+
+	glm::mat4 GetLocalTransform() const {
+		glm::mat4 myTransform = glm::translate(glm::mat4(1.0f), Position);
+		myTransform *= glm::mat4(Rotation);
+		myTransform = glm::scale(myTransform, Scale);
+
+		return myTransform;
+	}
 
 	bool IsEnabled(const entt::registry& registry) const {
 		if (!Enabled) { return false; }
@@ -32,15 +41,15 @@ struct TransformComponent {
 	}
 
 	void UpdateGlobalTransform(const entt::registry& registry) const {
-		glm::mat4 myTransform = glm::translate(glm::mat4(1.0f), Position);
-		myTransform *= glm::mat4(Rotation);
-		myTransform = glm::scale(myTransform, Scale);
+		const glm::mat4 myTransform = GetLocalTransform();
 
 		if (registry.valid(Parent)) {
 			const auto& parentTransform = registry.get<TransformComponent>(Parent);
 			CachedGlobalTransform       = parentTransform.CachedGlobalTransform * myTransform;
+			CachedGlobalRotation        = parentTransform.CachedGlobalRotation * Rotation;
 		} else {
 			CachedGlobalTransform = myTransform;
+			CachedGlobalRotation  = Rotation;
 		}
 
 		for (const auto& child : Children) {
@@ -77,7 +86,7 @@ struct TransformComponent {
 				transformDirty = true;
 			}
 			if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-				Rotation       = glm::vec3(0, 0, 0);
+				Rotation       = glm::quat(1, 0, 0, 0);
 				transformDirty = true;
 			}
 			if (ImGui::DragFloat3("Scale##TransformComponent", glm::value_ptr(Scale), 0.1f, 0.01f)) { transformDirty = true; }

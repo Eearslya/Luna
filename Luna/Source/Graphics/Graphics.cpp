@@ -4,6 +4,7 @@
 #include <Luna/Core/Log.hpp>
 #include <Luna/Graphics/AssetManager.hpp>
 #include <Luna/Graphics/Graphics.hpp>
+#include <Luna/Scene/Entity.hpp>
 #include <Luna/Scene/MeshRenderer.hpp>
 #include <Luna/Scene/TransformComponent.hpp>
 #include <Luna/Scene/WorldData.hpp>
@@ -22,6 +23,11 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/matrix_decompose.hpp>
+
+//
+
+#include <ImGuizmo.h>
 
 namespace Luna {
 Graphics::Graphics() {
@@ -60,6 +66,16 @@ Graphics::Graphics() {
 		if (key == Key::F2 && action == InputAction::Press) {
 			LoadShaders();
 			return true;
+		}
+		if (key == Key::_1 && action == InputAction::Press) { _gizmoOp = ImGuizmo::TRANSLATE; }
+		if (key == Key::_2 && action == InputAction::Press) { _gizmoOp = ImGuizmo::ROTATE; }
+		if (key == Key::_3 && action == InputAction::Press) { _gizmoOp = ImGuizmo::SCALE; }
+		if (key == Key::GraveAccent && action == InputAction::Press) {
+			if (_gizmoMode == ImGuizmo::LOCAL) {
+				_gizmoMode = ImGuizmo::WORLD;
+			} else {
+				_gizmoMode = ImGuizmo::LOCAL;
+			}
 		}
 
 		return false;
@@ -105,21 +121,12 @@ void Graphics::Update() {
 	if (!BeginFrame()) { return; }
 
 	_imgui->BeginFrame();
-
-	// Draw our UI.
-	{
-		ZoneScopedN("UI Update");
-		ImGui::ShowDemoWindow(nullptr);
-		_scene.DrawSceneGraph();
-		DrawRenderSettings();
-		_onUiRender();
-	}
+	auto keyboard = Keyboard::Get();
 
 	// Update Camera movement.
 	{
 		ZoneScopedN("Camera Update");
 		auto engine          = Engine::Get();
-		auto keyboard        = Keyboard::Get();
 		const auto deltaTime = engine->GetFrameDelta().Seconds();
 		_camera.Update(deltaTime);
 		float moveSpeed = 5.0f * deltaTime;
@@ -140,18 +147,19 @@ void Graphics::Update() {
 	_sunDirection            = glm::normalize(-_sunPosition);
 
 	// Update Camera buffer.
+	CameraData cameraData = {};
 	{
 		ZoneScopedN("Camera Uniform Update");
 		const auto swapchainExtent = _swapchain->GetExtent();
 		const float aspectRatio    = float(swapchainExtent.width) / float(swapchainExtent.height);
 		_camera.SetAspectRatio(aspectRatio);
 
-		CameraData cam{.Projection  = _camera.GetProjection(),
-		               .View        = _camera.GetView(),
-		               .ViewInverse = glm::inverse(_camera.GetView()),
-		               .Position    = _camera.GetPosition()};
-		auto* data = _cameraBuffer->Map();
-		memcpy(data, &cam, sizeof(CameraData));
+		cameraData.Projection  = _camera.GetProjection();
+		cameraData.View        = _camera.GetView();
+		cameraData.ViewInverse = glm::inverse(_camera.GetView());
+		cameraData.Position    = _camera.GetPosition();
+		auto* data             = _cameraBuffer->Map();
+		memcpy(data, &cameraData, sizeof(CameraData));
 		_cameraBuffer->Unmap();
 	}
 
@@ -161,16 +169,17 @@ void Graphics::Update() {
 	const bool environmentReady = worldData && worldData->Environment && worldData->Environment->Ready;
 
 	// Update Scene buffer.
+	SceneData sceneData = {};
 	{
 		ZoneScopedN("Scene Uniform Update");
-		SceneData scene{.SunDirection = glm::vec4(_sunDirection, 0.0f),
-		                .PrefilteredCubeMipLevels =
-		                  environmentReady ? worldData->Environment->Prefiltered->GetCreateInfo().MipLevels : 0.0f,
-		                .Exposure        = _exposure,
-		                .Gamma           = _gamma,
-		                .IBLContribution = environmentReady ? _iblContribution : 0.0f};
-		auto* data = _sceneBuffer->Map();
-		memcpy(data, &scene, sizeof(SceneData));
+		sceneData.SunDirection = glm::vec4(_sunDirection, 0.0f);
+		sceneData.PrefilteredCubeMipLevels =
+			environmentReady ? worldData->Environment->Prefiltered->GetCreateInfo().MipLevels : 0.0f;
+		sceneData.Exposure        = _exposure;
+		sceneData.Gamma           = _gamma;
+		sceneData.IBLContribution = environmentReady ? _iblContribution : 0.0f;
+		auto* data                = _sceneBuffer->Map();
+		memcpy(data, &sceneData, sizeof(SceneData));
 		_sceneBuffer->Unmap();
 	}
 
@@ -292,6 +301,57 @@ void Graphics::Update() {
 		}
 
 		cmd->EndRenderPass();
+	}
+
+	// Draw our UI.
+	{
+		ZoneScopedN("UI Update");
+		ImGui::ShowDemoWindow(nullptr);
+
+		_scene.DrawSceneGraph();
+		if (registry.valid(_scene.GetSelectedEntity())) {
+			Entity selected(_scene.GetSelectedEntity());
+			glm::mat4 proj = cameraData.Projection;
+			proj[1][1] *= -1.0f;
+			auto& transform = selected.Transform();
+
+			glm::mat4 matrix = transform.CachedGlobalTransform;
+			glm::mat4 delta  = glm::mat4(1.0f);
+			// TODO: Translation/scale gizmos show the wrong axes when the model is rotated.
+			if (ImGuizmo::Manipulate(glm::value_ptr(cameraData.View),
+			                         glm::value_ptr(proj),
+			                         _gizmoOp,
+			                         _gizmoMode,
+			                         glm::value_ptr(matrix),
+			                         glm::value_ptr(delta),
+			                         nullptr,
+			                         nullptr,
+			                         nullptr)) {
+				glm::vec3 scale;
+				glm::quat rotation;
+				glm::vec3 translation;
+				glm::vec3 skew;
+				glm::vec4 perspective;
+				glm::decompose(delta, scale, rotation, translation, skew, perspective);
+				if (_gizmoOp == ImGuizmo::TRANSLATE) {
+					if (registry.valid(transform.Parent)) {
+						const auto& parentTransform = registry.get<TransformComponent>(transform.Parent);
+						const glm::mat4 invParent   = glm::inverse(parentTransform.CachedGlobalTransform);
+						transform.Position += glm::vec3(invParent * glm::vec4(translation, 0.0f));
+					} else {
+						transform.Position += translation;
+					}
+				}
+				if (_gizmoOp == ImGuizmo::ROTATE) {
+					selected.RotateAround(transform.Position, -rotation, TransformSpace::World);
+				}
+				if (_gizmoOp == ImGuizmo::SCALE) { transform.Scale *= scale; }
+				transform.UpdateGlobalTransform(registry);
+			}
+		}
+
+		DrawRenderSettings();
+		_onUiRender();
 	}
 
 	{
