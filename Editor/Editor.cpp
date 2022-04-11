@@ -11,6 +11,8 @@ class EditorApp : public App {
 	virtual void Start() override {
 		Log::Info("Starting Editor app.");
 
+		Window::Get()->Maximize();
+
 		Filesystem::Get()->AddSearchPath("Assets");
 
 		Timers::Get()->Every(Time::Seconds(1), []() {
@@ -33,7 +35,7 @@ class EditorApp : public App {
 
 		auto& scene = Graphics::Get()->GetScene();
 		scene.LoadEnvironment("Environments/TokyoBigSight.hdr");
-		scene.LoadModel("Models/Sponza/Sponza.gltf", scene.GetRoot());
+		scene.LoadModel("Models/TestScene2.glb", scene.GetRoot());
 	}
 
 	virtual void Update() override {}
