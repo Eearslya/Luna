@@ -445,7 +445,16 @@ void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const
 		std::string gltfWarning;
 
 		ElapsedTime gltfLoadTime;
-		const bool loaded = loader.LoadASCIIFromFile(&context->Model, &gltfError, &gltfWarning, gltfFile);
+		bool loaded;
+		const auto gltfExt = gltfPath.extension().string();
+		if (gltfExt.compare(".gltf") == 0) {
+			loaded = loader.LoadASCIIFromFile(&context->Model, &gltfError, &gltfWarning, gltfFile);
+		} else if (gltfExt.compare(".glb") == 0) {
+			loaded = loader.LoadBinaryFromFile(&context->Model, &gltfError, &gltfWarning, gltfFile);
+		} else {
+			Log::Error("[AssetManager] glTF file {} is not recognized!", gltfFileName);
+			return;
+		}
 		gltfLoadTime.Update();
 
 		if (!gltfError.empty()) {
@@ -508,11 +517,11 @@ void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const
 
 			if (gltfNode.mesh >= 0) {
 				auto& meshRenderer = registry.emplace<MeshRenderer>(entity);
-				meshRenderer.Mesh  = StaticMeshHandle(context->Meshes[gltfNode.mesh]);
+				meshRenderer.Mesh  = context->Meshes[gltfNode.mesh];
 
 				const auto& gltfMesh = gltfModel.meshes[gltfNode.mesh];
 				for (const auto& gltfPrimitive : gltfMesh.primitives) {
-					meshRenderer.Materials.push_back(MaterialHandle(context->Materials[gltfPrimitive.material]));
+					meshRenderer.Materials.push_back(context->Materials[gltfPrimitive.material]);
 				}
 			}
 
@@ -569,7 +578,7 @@ void AssetManager::LoadMaterialsTask(ModelLoadContext* context) const {
 
 	for (size_t materialIndex = 0; materialIndex < gltfModel.materials.size(); ++materialIndex) {
 		const auto& gltfMaterial = gltfModel.materials[materialIndex];
-		Material* material       = context->Materials[materialIndex];
+		MaterialHandle material       = context->Materials[materialIndex];
 
 		material->DualSided = gltfMaterial.doubleSided;
 		if (gltfMaterial.pbrMetallicRoughness.baseColorFactor.size() == 4) {
@@ -584,14 +593,14 @@ void AssetManager::LoadMaterialsTask(ModelLoadContext* context) const {
 		material->Data.Roughness   = gltfMaterial.pbrMetallicRoughness.roughnessFactor;
 
 		if (gltfMaterial.pbrMetallicRoughness.baseColorTexture.index >= 0) {
-			material->Albedo = TextureHandle(context->Textures[gltfMaterial.pbrMetallicRoughness.baseColorTexture.index]);
+			material->Albedo = context->Textures[gltfMaterial.pbrMetallicRoughness.baseColorTexture.index];
 		}
 		if (gltfMaterial.normalTexture.index >= 0) {
-			material->Normal = TextureHandle(context->Textures[gltfMaterial.normalTexture.index]);
+			material->Normal = context->Textures[gltfMaterial.normalTexture.index];
 		}
 		if (gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
 			material->PBR =
-				TextureHandle(context->Textures[gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index]);
+				context->Textures[gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index];
 		}
 
 		material->Update();
@@ -605,7 +614,7 @@ void AssetManager::LoadMeshTask(ModelLoadContext* context, size_t meshIndex) con
 
 	const auto& gltfModel = context->Model;
 	const auto& gltfMesh  = gltfModel.meshes[meshIndex];
-	StaticMesh* mesh      = context->Meshes[meshIndex];
+	StaticMeshHandle mesh      = context->Meshes[meshIndex];
 
 	struct PrimitiveContext {
 		uint64_t VertexCount       = 0;
@@ -771,25 +780,52 @@ void AssetManager::LoadTextureTask(ModelLoadContext* context, size_t textureInde
 	auto& device            = graphics->GetDevice();
 	const auto& gltfModel   = context->Model;
 	const auto& gltfTexture = gltfModel.textures[textureIndex];
-	Texture* texture        = context->Textures[textureIndex];
+	TextureHandle texture        = context->Textures[textureIndex];
 	if (gltfTexture.source < 0) {
 		Log::Error("[AssetManager] {} texture {} does not specify a source image!", context->FileName, textureIndex);
 		return;
 	}
 
 	const auto& gltfImage                     = gltfModel.images[gltfTexture.source];
-	const auto uri                            = gltfImage.uri;
-	const std::filesystem::path imagePath     = std::filesystem::path(context->FilePath) / uri;
+	bool loaded                               = false;
 	std::optional<std::vector<uint8_t>> bytes = std::nullopt;
-	{
+
+	const auto uri = gltfImage.uri;
+	if (!uri.empty()) {
 		ZoneScopedN("Filesystem Load");
-		const std::string imagePathStr = imagePath.string();
-		const char* imagePathC         = imagePathStr.c_str();
+
+		const std::filesystem::path imagePath = std::filesystem::path(context->FilePath) / uri;
+		const std::string imagePathStr        = imagePath.string();
+		const char* imagePathC                = imagePathStr.c_str();
 		ZoneText(imagePathC, strlen(imagePathC));
 		bytes = filesystem->ReadBytes(imagePath);
+
+		if (!bytes.has_value()) {
+			Log::Error("[AssetManager] Failed to load texture for {}: {}", context->FileName, uri);
+			return;
+		}
+
+		loaded = true;
 	}
-	if (!bytes.has_value()) {
-		Log::Error("[AssetManager] Failed to load texture for {}: {}", context->FileName, uri);
+
+	const int bufferView = gltfImage.bufferView;
+	if (bufferView >= 0) {
+		ZoneScopedN("BufferView Load");
+
+		const tinygltf::BufferView& gltfBufferView = gltfModel.bufferViews[bufferView];
+		const tinygltf::Buffer& gltfBuffer         = gltfModel.buffers[gltfBufferView.buffer];
+		const uint8_t* data                        = gltfBuffer.data.data() + gltfBufferView.byteOffset;
+		const size_t dataSize                      = gltfBufferView.byteLength;
+		bytes                                      = std::vector<uint8_t>();
+		bytes.value().resize(dataSize);
+		memcpy(bytes.value().data(), data, dataSize);
+
+		loaded = true;
+	}
+
+	if (!loaded) {
+		Log::Error(
+			"[AssetManager] Failed to find data source for texture for {}, image '{}'!", context->FileName, gltfImage.name);
 		return;
 	}
 

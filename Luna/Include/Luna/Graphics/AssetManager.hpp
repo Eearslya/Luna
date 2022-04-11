@@ -19,9 +19,9 @@ struct ModelLoadContext {
 	std::string FileName;
 	std::string FilePath;
 	tinygltf::Model Model;
-	std::vector<Texture*> Textures;
-	std::vector<Material*> Materials;
-	std::vector<StaticMesh*> Meshes;
+	std::vector<TextureHandle> Textures;
+	std::vector<MaterialHandle> Materials;
+	std::vector<StaticMeshHandle> Meshes;
 };
 
 class AssetManager {
