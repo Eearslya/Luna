@@ -267,6 +267,7 @@ void Graphics::Update() {
 					SetTexture(1, 1, material->Albedo);
 					SetTexture(1, 2, material->Normal);
 					SetTexture(1, 3, material->PBR);
+					SetTexture(1, 4, material->Emissive);
 					cmd->SetUniformBuffer(1, 0, *material->DataBuffer);
 
 					if (submesh.IndexCount > 0) {

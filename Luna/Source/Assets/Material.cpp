@@ -22,10 +22,17 @@ void Material::Update() {
 	auto graphics = Graphics::Get();
 	auto& device  = graphics->GetDevice();
 
-	Data.HasAlbedo = bool(Albedo) && Albedo->Ready;
-	Data.HasNormal = bool(Normal) && Normal->Ready;
-	Data.HasPBR    = bool(PBR) && PBR->Ready;
-	Data.DebugView = DebugView;
+	Data.BaseColorFactor = BaseColorFactor;
+	Data.EmissiveFactor  = glm::vec4(EmissiveFactor, 0.0f);
+	Data.HasAlbedo       = bool(Albedo) && Albedo->Ready;
+	Data.HasNormal       = bool(Normal) && Normal->Ready;
+	Data.HasPBR          = bool(PBR) && PBR->Ready;
+	Data.HasEmissive     = bool(Emissive) && Emissive->Ready;
+	Data.AlphaMask       = BlendMode == AlphaBlendMode::Mask ? 1.0f : 0.0f;
+	Data.AlphaCutoff     = AlphaCutoff;
+	Data.Metallic        = MetallicFactor;
+	Data.Roughness       = RoughnessFactor;
+	Data.DebugView       = DebugView;
 
 	const auto dataHash = Hasher(Data).Get();
 	if (dataHash != CurrentDataHash) {

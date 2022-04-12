@@ -183,6 +183,9 @@ class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>,
 	vk::Image GetImage() const {
 		return _image;
 	}
+	vk::DeviceSize GetImageSize() const {
+		return _imageSize;
+	}
 	ImageLayoutType GetLayoutType() const {
 		return _layoutType;
 	}
@@ -222,6 +225,7 @@ class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>,
 	ImageCreateInfo _createInfo;
 	vk::Image _image;
 	VmaAllocation _allocation;
+	vk::DeviceSize _imageSize   = 0;
 	ImageLayoutType _layoutType = ImageLayoutType::Optimal;
 	vk::AccessFlags _accessFlags;
 	vk::PipelineStageFlags _stageFlags;

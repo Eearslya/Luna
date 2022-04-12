@@ -23,11 +23,13 @@ struct StaticMesh : public IntrusivePtrEnabled<StaticMesh, StaticMeshDeleter, Mu
 
 	std::vector<SubMesh> SubMeshes;
 	Vulkan::BufferHandle Buffer;
-	vk::DeviceSize PositionOffset  = 0;
-	vk::DeviceSize NormalOffset    = 0;
-	vk::DeviceSize Texcoord0Offset = 0;
-	vk::DeviceSize IndexOffset     = 0;
-	std::atomic_bool Ready         = false;
+	vk::DeviceSize PositionOffset   = 0;
+	vk::DeviceSize NormalOffset     = 0;
+	vk::DeviceSize Texcoord0Offset  = 0;
+	vk::DeviceSize IndexOffset      = 0;
+	vk::DeviceSize TotalVertexCount = 0;
+	vk::DeviceSize TotalIndexCount  = 0;
+	std::atomic_bool Ready          = false;
 };
 
 using StaticMeshHandle = IntrusivePtr<StaticMesh>;

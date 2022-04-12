@@ -64,7 +64,7 @@ entt::entity Scene::LoadModel(const std::string& filePath, entt::entity parent) 
 
 void Scene::DrawSceneGraph() {
 	if (ImGui::Begin("Scene")) {
-		if (ImGui::BeginTable("SceneGraph", 2, ImGuiTableFlags_BordersInnerV)) {
+		if (ImGui::BeginTable("SceneGraph", 2, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable)) {
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
 			ImGui::BeginGroup();

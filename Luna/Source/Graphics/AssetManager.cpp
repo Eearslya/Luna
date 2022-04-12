@@ -581,17 +581,25 @@ void AssetManager::LoadMaterialsTask(ModelLoadContext* context) const {
 		const auto& gltfMaterial = gltfModel.materials[materialIndex];
 		MaterialHandle material  = context->Materials[materialIndex];
 
+		if (gltfMaterial.name.length() > 0) { material->Name = gltfMaterial.name; }
+
 		material->DualSided = gltfMaterial.doubleSided;
 		if (gltfMaterial.pbrMetallicRoughness.baseColorFactor.size() == 4) {
-			material->Data.BaseColorFactor = glm::make_vec4(gltfMaterial.pbrMetallicRoughness.baseColorFactor.data());
+			material->BaseColorFactor = glm::make_vec4(gltfMaterial.pbrMetallicRoughness.baseColorFactor.data());
 		}
-		if (gltfMaterial.emissiveFactor.size() == 4) {
-			material->Data.EmissiveFactor = glm::make_vec4(gltfMaterial.emissiveFactor.data());
+		if (gltfMaterial.emissiveFactor.size() == 3) {
+			material->EmissiveFactor = glm::make_vec3(gltfMaterial.emissiveFactor.data());
 		}
-		material->Data.AlphaMask   = gltfMaterial.alphaMode.compare("MASK") == 0 ? 1.0f : 0.0f;
-		material->Data.AlphaCutoff = gltfMaterial.alphaCutoff;
-		material->Data.Metallic    = gltfMaterial.pbrMetallicRoughness.metallicFactor;
-		material->Data.Roughness   = gltfMaterial.pbrMetallicRoughness.roughnessFactor;
+		if (gltfMaterial.alphaMode.compare("OPAQUE") == 0) {
+			material->BlendMode = AlphaBlendMode::Opaque;
+		} else if (gltfMaterial.alphaMode.compare("MASK") == 0) {
+			material->BlendMode = AlphaBlendMode::Mask;
+		} else if (gltfMaterial.alphaMode.compare("BLEND") == 0) {
+			material->BlendMode = AlphaBlendMode::Blend;
+		}
+		material->AlphaCutoff     = gltfMaterial.alphaCutoff;
+		material->MetallicFactor  = gltfMaterial.pbrMetallicRoughness.metallicFactor;
+		material->RoughnessFactor = gltfMaterial.pbrMetallicRoughness.roughnessFactor;
 
 		if (gltfMaterial.pbrMetallicRoughness.baseColorTexture.index >= 0) {
 			material->Albedo = context->Textures[gltfMaterial.pbrMetallicRoughness.baseColorTexture.index];
@@ -601,6 +609,9 @@ void AssetManager::LoadMaterialsTask(ModelLoadContext* context) const {
 		}
 		if (gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
 			material->PBR = context->Textures[gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index];
+		}
+		if (gltfMaterial.emissiveTexture.index >= 0) {
+			material->Emissive = context->Textures[gltfMaterial.emissiveTexture.index];
 		}
 
 		material->Update();
@@ -688,10 +699,12 @@ void AssetManager::LoadMeshTask(ModelLoadContext* context, size_t meshIndex) con
 	const vk::DeviceSize totalIndexSize     = ((totalIndexCount * sizeof(uint32_t)) + 16llu) & ~16llu;
 	const vk::DeviceSize bufferSize         = totalPositionSize + totalNormalSize + totalTexcoord0Size + totalIndexSize;
 
-	mesh->PositionOffset  = 0;
-	mesh->NormalOffset    = totalPositionSize;
-	mesh->Texcoord0Offset = totalPositionSize + totalNormalSize;
-	mesh->IndexOffset     = totalPositionSize + totalNormalSize + totalTexcoord0Size;
+	mesh->PositionOffset   = 0;
+	mesh->NormalOffset     = totalPositionSize;
+	mesh->Texcoord0Offset  = totalPositionSize + totalNormalSize;
+	mesh->IndexOffset      = totalPositionSize + totalNormalSize + totalTexcoord0Size;
+	mesh->TotalVertexCount = totalVertexCount;
+	mesh->TotalIndexCount  = totalIndexCount;
 
 	std::unique_ptr<uint8_t[]> bufferData;
 	{

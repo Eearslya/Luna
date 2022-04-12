@@ -71,6 +71,7 @@ Image::Image(Device& device, const ImageCreateInfo& createInfo)
 	_image       = image;
 	_accessFlags = ImageUsageToAccess(imageCI.usage);
 	_stageFlags  = ImageUsageToStages(imageCI.usage);
+	_imageSize   = allocationInfo.size;
 }
 
 Image::Image(Device& device, const ImageCreateInfo& createInfo, vk::Image image)

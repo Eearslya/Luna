@@ -11,6 +11,8 @@
 #include <glm/gtc/type_ptr.hpp>
 
 namespace Luna {
+enum class AlphaBlendMode { Opaque, Mask, Blend };
+
 struct MaterialData {
 	glm::vec4 BaseColorFactor = glm::vec4(1, 1, 1, 1);
 	glm::vec4 EmissiveFactor  = glm::vec4(0, 0, 0, 0);
@@ -37,13 +39,22 @@ struct Material : public IntrusivePtrEnabled<Material, MaterialDeleter, MultiThr
 
 	void Update();
 
-	bool DualSided = false;
+	std::string Name = "Material";
+	bool DualSided   = false;
 	MaterialData Data;
 	Vulkan::BufferHandle DataBuffer;
+	float DebugView = 0.0f;
+
+	glm::vec4 BaseColorFactor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+	glm::vec3 EmissiveFactor  = glm::vec3(0.0f, 0.0f, 0.0f);
 	TextureHandle Albedo;
 	TextureHandle Normal;
 	TextureHandle PBR;
-	float DebugView = 0.0f;
+	TextureHandle Emissive;
+	AlphaBlendMode BlendMode = AlphaBlendMode::Opaque;
+	float AlphaCutoff        = 0.5f;
+	float MetallicFactor     = 0.0f;
+	float RoughnessFactor    = 1.0f;
 
 	Hash CurrentDataHash = {};
 };
