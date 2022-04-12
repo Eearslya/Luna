@@ -6,7 +6,7 @@ namespace Luna {
 namespace Vulkan {
 class CommandPool : NonCopyable {
  public:
-	CommandPool(Device& device, uint32_t familyIndex);
+	CommandPool(Device& device, uint32_t familyIndex, bool resettable = false);
 	~CommandPool() noexcept;
 
 	vk::CommandBuffer RequestCommandBuffer();

@@ -1,11 +1,16 @@
 #pragma once
 
 #include <Luna/Vulkan/Common.hpp>
+#include <TracyVulkan.hpp>
 
 #undef MemoryBarrier
 
+namespace tracy {}
+
 namespace Luna {
 namespace Vulkan {
+struct CommandTracingState {};
+
 struct IndexState {
 	vk::Buffer Buffer;
 	vk::DeviceSize Offset   = 0;
@@ -157,6 +162,9 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	uint32_t GetThreadIndex() const {
 		return _threadIndex;
 	}
+	TracyVkCtx GetTracing() const {
+		return _tracing;
+	}
 	CommandBufferType GetType() const {
 		return _commandBufferType;
 	}
@@ -242,6 +250,10 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	                      vk::DeviceSize stride,
 	                      vk::VertexInputRate inputRate);
 
+	void BeginZone(const std::string& name, const glm::vec3& color = glm::vec3(0.0f, 0.0f, 0.0f));
+	void EndZone();
+	void Mark(const std::string& name, const glm::vec3& color = glm::vec3(0.0f, 0.0f, 0.0f));
+
  private:
 	CommandBuffer(Device& device, vk::CommandBuffer commandBuffer, CommandBufferType type, uint32_t threadIndex);
 
@@ -257,6 +269,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	vk::CommandBuffer _commandBuffer;
 	CommandBufferType _commandBufferType;
 	uint32_t _threadIndex;
+	TracyVkCtx _tracing = nullptr;
 
 	uint32_t _activeVertexBuffers             = 0;
 	const RenderPass* _actualRenderPass       = nullptr;
@@ -274,6 +287,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	vk::PipelineStageFlags _swapchainStages = {};
 	VertexBindingState _vertexBindings      = {};
 	vk::Viewport _viewport                  = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+	size_t _zoneDepth                       = 0;
 
 	PipelineCompileInfo _pipelineCompileInfo;
 };
@@ -289,3 +303,14 @@ struct std::hash<Luna::Vulkan::PipelineCompileInfo> {
 		return static_cast<size_t>(info.GetHash());
 	}
 };
+
+static inline uint32_t TracyColor(const glm::vec3& color) {
+	uint32_t uColor = 0x000000;
+	uColor |= (static_cast<unsigned int>(color.b * 255.0f) & 0xff) << 0;
+	uColor |= (static_cast<unsigned int>(color.g * 255.0f) & 0xff) << 8;
+	uColor |= (static_cast<unsigned int>(color.r * 255.0f) & 0xff) << 16;
+	return uColor;
+}
+
+#define CbZone(cmd, name)         TracyVkZone(cmd->GetTracing(), cmd->GetCommandBuffer(), name)
+#define CbZoneC(cmd, name, color) TracyVkZone(cmd->GetTracing(), cmd->GetCommandBuffer(), name, color)

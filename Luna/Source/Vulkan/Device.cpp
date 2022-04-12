@@ -17,6 +17,30 @@
 #include <Luna/Vulkan/Swapchain.hpp>
 #include <Tracy.hpp>
 
+#define vkGetPhysicalDeviceProperties VULKAN_HPP_DEFAULT_DISPATCHER.vkGetPhysicalDeviceProperties
+#define vkBeginCommandBuffer          VULKAN_HPP_DEFAULT_DISPATCHER.vkBeginCommandBuffer
+#define vkCreateQueryPool             VULKAN_HPP_DEFAULT_DISPATCHER.vkCreateQueryPool
+#define vkCmdResetQueryPool           VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdResetQueryPool
+#define vkEndCommandBuffer            VULKAN_HPP_DEFAULT_DISPATCHER.vkEndCommandBuffer
+#define vkQueueSubmit                 VULKAN_HPP_DEFAULT_DISPATCHER.vkQueueSubmit
+#define vkQueueWaitIdle               VULKAN_HPP_DEFAULT_DISPATCHER.vkQueueWaitIdle
+#define vkCmdWriteTimestamp           VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdWriteTimestamp
+#define vkEndCommandBuffer            VULKAN_HPP_DEFAULT_DISPATCHER.vkEndCommandBuffer
+#define vkGetQueryPoolResults         VULKAN_HPP_DEFAULT_DISPATCHER.vkGetQueryPoolResults
+#define vkDestroyQueryPool            VULKAN_HPP_DEFAULT_DISPATCHER.vkDestroyQueryPool
+#include <TracyVulkan.hpp>
+#undef vkGetPhysicalDeviceProperties
+#undef vkBeginCommandBuffer
+#undef vkCreateQueryPool
+#undef vkCmdResetQueryPool
+#undef vkEndCommandBuffer
+#undef vkQueueSubmit
+#undef vkQueueWaitIdle
+#undef vkCmdWriteTimestamp
+#undef vkEndCommandBuffer
+#undef vkGetQueryPoolResults
+#undef vkDestroyQueryPool
+
 // Helper functions for dealing with multithreading.
 #ifdef LUNA_VULKAN_MT
 static uint32_t GetThreadID() {
@@ -116,6 +140,8 @@ Device::Device(const Context& context)
 
 	// Create our frame contexts.
 	CreateFrameContexts(2);
+
+	CreateTracingContexts();
 }
 
 Device::~Device() noexcept {
@@ -138,6 +164,10 @@ Device::~Device() noexcept {
 
 	// Clean up our VMA allocator.
 	vmaDestroyAllocator(_allocator);
+
+	for (auto& queue : _queueData) {
+		if (queue.Tracing) { tracy::DestroyVkContext(queue.Tracing); }
+	}
 
 	// Destroy our timeline semaphores, if we ever made them.
 	DestroyTimelineSemaphores();
@@ -742,6 +772,13 @@ void Device::DestroyImageView(Badge<ImageViewDeleter>, ImageView* view) {
 	Frame().ImageViewsToDestroy.push_back(view);
 }
 
+TracyVkCtx Device::GetTracing(Badge<CommandBuffer>, CommandBufferType cbType) {
+	const auto queueType = GetQueueType(cbType);
+	auto& queue          = _queueData[static_cast<int>(queueType)];
+
+	return queue.Tracing;
+}
+
 void Device::RecycleFence(Badge<FenceDeleter>, Fence* fence) {
 	if (fence->GetFence()) {
 		MAYBE_LOCK(fence);
@@ -1287,6 +1324,30 @@ void Device::CreateTimelineSemaphores() {
 		queue.TimelineSemaphore = _device.createSemaphore(chain.get());
 		queue.TimelineValue     = 0;
 	}
+}
+
+void Device::CreateTracingContexts() {
+	ZoneScopedN("Device::CreateTracingContexts()");
+
+	auto threading       = Threading::Get();
+	auto group           = threading->CreateTaskGroup();
+	const bool calibrate = _extensions.CalibratedTimestamps;
+	const auto pfn1 = calibrate ? VULKAN_HPP_DEFAULT_DISPATCHER.vkGetPhysicalDeviceCalibrateableTimeDomainsEXT : nullptr;
+	const auto pfn2 = calibrate ? VULKAN_HPP_DEFAULT_DISPATCHER.vkGetCalibratedTimestampsEXT : nullptr;
+
+	const size_t queueCount = _queueData.size();
+	for (size_t q = 0; q < queueCount; ++q) {
+		group->Enqueue([&, q]() -> void {
+			ZoneScopedN("Device::CreateTracingContexts()::Task");
+			auto& queue   = _queueData[q];
+			auto vkQueue  = _queues.Queues[q];
+			auto pool     = CommandPool(*this, _queues.Families[q], true);
+			auto cmd      = pool.RequestCommandBuffer();
+			queue.Tracing = tracy::CreateVkContext(_gpu, _device, vkQueue, cmd, pfn1, pfn2);
+		});
+	}
+	group->Flush();
+	group->Wait();
 }
 
 void Device::DestroyTimelineSemaphores() {

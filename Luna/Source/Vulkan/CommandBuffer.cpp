@@ -8,6 +8,8 @@
 #include <Luna/Vulkan/RenderPass.hpp>
 #include <Luna/Vulkan/Sampler.hpp>
 #include <Luna/Vulkan/Shader.hpp>
+#include <TracyVulkan.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 namespace Luna {
 namespace Vulkan {
@@ -46,6 +48,7 @@ CommandBuffer::CommandBuffer(Device& device,
 		: _device(device), _commandBuffer(commandBuffer), _commandBufferType(type), _threadIndex(threadIndex) {
 	BeginCompute();
 	SetOpaqueState();
+	_tracing = _device.GetTracing({}, type);
 }
 
 CommandBuffer::~CommandBuffer() noexcept {}
@@ -57,6 +60,11 @@ void CommandBuffer::Begin() {
 }
 
 void CommandBuffer::End() {
+	if (_zoneDepth != 0) {
+		Log::Error("[Vulkan::CommandBuffer] Command Buffer has mismatched BeginZone()/EndZone() calls!");
+		for (size_t i = 0; i < _zoneDepth; ++i) { EndZone(); }
+	}
+	TracyVkCollect(_tracing, _commandBuffer);
 	_commandBuffer.end();
 }
 
@@ -257,6 +265,8 @@ void CommandBuffer::EndRenderPass() {
 	_framebuffer                              = nullptr;
 	_pipelineCompileInfo.CompatibleRenderPass = nullptr;
 	_actualRenderPass                         = nullptr;
+
+	TracyVkCollect(_tracing, _commandBuffer);
 }
 
 /* ==========
@@ -817,6 +827,28 @@ void CommandBuffer::SetViewportScissor(const RenderPassInfo& rpInfo) {
 	                         static_cast<float>(_scissor.extent.height),
 	                         0.0f,
 	                         1.0f};
+}
+
+void CommandBuffer::BeginZone(const std::string& name, const glm::vec3& color) {
+	if (_device.GetExtensionInfo().DebugUtils) {
+		const vk::DebugUtilsLabelEXT label(name.c_str(), {color.r, color.g, color.b, 1.0f});
+		_commandBuffer.beginDebugUtilsLabelEXT(label);
+		_zoneDepth++;
+	}
+}
+
+void CommandBuffer::EndZone() {
+	if (_device.GetExtensionInfo().DebugUtils) {
+		_commandBuffer.endDebugUtilsLabelEXT();
+		_zoneDepth--;
+	}
+}
+
+void CommandBuffer::Mark(const std::string& name, const glm::vec3& color) {
+	if (_device.GetExtensionInfo().DebugUtils) {
+		const vk::DebugUtilsLabelEXT label(name.c_str(), {color.r, color.g, color.b, 1.0f});
+		_commandBuffer.insertDebugUtilsLabelEXT(label);
+	}
 }
 }  // namespace Vulkan
 }  // namespace Luna

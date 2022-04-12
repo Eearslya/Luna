@@ -20,12 +20,29 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
-#define LUNA_VULKAN_DEBUG
+#define vkGetPhysicalDeviceProperties VULKAN_HPP_DEFAULT_DISPATCHER.vkGetPhysicalDeviceProperties
+#define vkBeginCommandBuffer          VULKAN_HPP_DEFAULT_DISPATCHER.vkBeginCommandBuffer
+#define vkCreateQueryPool             VULKAN_HPP_DEFAULT_DISPATCHER.vkCreateQueryPool
+#define vkCmdResetQueryPool           VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdResetQueryPool
+#define vkEndCommandBuffer            VULKAN_HPP_DEFAULT_DISPATCHER.vkEndCommandBuffer
+#define vkQueueSubmit                 VULKAN_HPP_DEFAULT_DISPATCHER.vkQueueSubmit
+#define vkQueueWaitIdle               VULKAN_HPP_DEFAULT_DISPATCHER.vkQueueWaitIdle
+#define vkCmdWriteTimestamp           VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdWriteTimestamp
+#define vkEndCommandBuffer            VULKAN_HPP_DEFAULT_DISPATCHER.vkEndCommandBuffer
+#define vkGetQueryPoolResults         VULKAN_HPP_DEFAULT_DISPATCHER.vkGetQueryPoolResults
+#define vkDestroyQueryPool            VULKAN_HPP_DEFAULT_DISPATCHER.vkDestroyQueryPool
+
+//#define LUNA_VULKAN_DEBUG
 #if defined(LUNA_DEBUG) && !defined(LUNA_VULKAN_DEBUG)
 #	define LUNA_VULKAN_DEBUG
 #endif
 
 #define LUNA_VULKAN_MT
+
+namespace tracy {
+struct VkCtx;
+}
+using TracyVkCtx = tracy::VkCtx*;
 
 namespace Luna {
 namespace Vulkan {
@@ -269,6 +286,7 @@ const char* VulkanEnumToString<StockSampler>(const StockSampler value) {
 
 // Structures
 struct ExtensionInfo {
+	bool CalibratedTimestamps         = false;
 	bool DebugUtils                   = false;
 	bool GetPhysicalDeviceProperties2 = false;
 	bool GetSurfaceCapabilities2      = false;

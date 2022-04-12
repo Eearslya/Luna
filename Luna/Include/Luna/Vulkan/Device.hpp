@@ -104,6 +104,7 @@ class Device final : NonCopyable {
 	void AddDrawCall(Badge<CommandBuffer>);
 	uint64_t AllocateCookie(Badge<Cookie>);
 	SemaphoreHandle ConsumeReleaseSemaphore(Badge<Swapchain>);
+	TracyVkCtx GetTracing(Badge<CommandBuffer>, CommandBufferType cbType);
 	void DestroyBuffer(Badge<BufferDeleter>, Buffer* buffer);
 	void DestroyImage(Badge<ImageDeleter>, Image* image);
 	void DestroyImageView(Badge<ImageViewDeleter>, ImageView* view);
@@ -120,7 +121,9 @@ class Device final : NonCopyable {
 	void SetObjectName(T object, const std::string& name) {
 		SetObjectNameImpl(T::objectType, *reinterpret_cast<uint64_t*>(&object), name);
 	}
-
+#else
+	template <typename T>
+	void SetObjectName(T object, const std::string& name) {}
 #endif
 
  private:
@@ -167,6 +170,7 @@ class Device final : NonCopyable {
 		bool NeedsFence = false;
 		vk::Semaphore TimelineSemaphore;
 		uint64_t TimelineValue = 0;
+		TracyVkCtx Tracing     = nullptr;
 	};
 
 	// Frame management.
@@ -190,6 +194,7 @@ class Device final : NonCopyable {
 	void CreateFrameContexts(uint32_t count);
 	void CreateStockSamplers();
 	void CreateTimelineSemaphores();
+	void CreateTracingContexts();
 	void DestroyTimelineSemaphores();
 	void ReleaseFence(vk::Fence fence);
 	void ReleaseSemaphore(vk::Semaphore semaphore);

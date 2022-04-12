@@ -4,12 +4,15 @@
 
 namespace Luna {
 namespace Vulkan {
-CommandPool::CommandPool(Device& device, uint32_t familyIndex) : _device(device) {
+CommandPool::CommandPool(Device& device, uint32_t familyIndex, bool resettable) : _device(device) {
 	Log::Trace("[Vulkan::CommandPool] Creating new command pool on queue family {}.", familyIndex);
 
 	const auto dev = _device.GetDevice();
 
-	const vk::CommandPoolCreateInfo poolCI(vk::CommandPoolCreateFlagBits::eTransient, familyIndex);
+	vk::CommandPoolCreateFlags flags = vk::CommandPoolCreateFlagBits::eTransient;
+	if (resettable) { flags |= vk::CommandPoolCreateFlagBits::eResetCommandBuffer; }
+
+	const vk::CommandPoolCreateInfo poolCI(flags, familyIndex);
 	_pool = dev.createCommandPool(poolCI);
 }
 

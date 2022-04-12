@@ -201,6 +201,8 @@ void Graphics::Update() {
 
 	{
 		ZoneScopedN("Main Render Pass");
+		CbZone(cmd, "Main Render Pass");
+		cmd->BeginZone("Main Render Pass");
 
 		{
 			ZoneScopedN("Begin");
@@ -213,7 +215,9 @@ void Graphics::Update() {
 
 		// Render meshes
 		{
-			ZoneScopedN("Meshes");
+			ZoneScopedN("Opaque Meshes");
+			CbZone(cmd, "Opaque Meshes");
+			cmd->BeginZone("Opaque Meshes");
 
 			cmd->SetOpaqueState();
 			cmd->SetProgram(_program);
@@ -241,6 +245,8 @@ void Graphics::Update() {
 				if (!transform.IsEnabled(registry) || !mesh.Mesh->Ready) { continue; }
 
 				ZoneScopedN("Mesh");
+				ZoneText(transform.Name.c_str(), transform.Name.length());
+				CbZone(cmd, "Mesh");
 
 				cmd->SetVertexBinding(
 					0, *mesh.Mesh->Buffer, mesh.Mesh->PositionOffset, sizeof(glm::vec3), vk::VertexInputRate::eVertex);
@@ -259,6 +265,7 @@ void Graphics::Update() {
 					if (submesh.VertexCount == 0) { continue; }
 
 					ZoneScopedN("Submesh");
+					CbZone(cmd, "Submesh");
 
 					material->DebugView = _pbrDebug;
 					material->Update();
@@ -279,11 +286,16 @@ void Graphics::Update() {
 					}
 				}
 			}
+
+			cmd->EndZone();
 		}
 
 		// Render environment
 		if (_drawSkybox && environmentReady) {
 			ZoneScopedN("Environment");
+			CbZone(cmd, "Environment");
+			cmd->BeginZone("Environment");
+
 			struct SkyboxPC {
 				float DebugView = 0.0f;
 			};
@@ -299,14 +311,18 @@ void Graphics::Update() {
 			cmd->SetTexture(1, 2, *worldData->Environment->Prefiltered->GetView(), Vulkan::StockSampler::LinearClamp);
 			cmd->PushConstants(&pc, 0, sizeof(pc));
 			cmd->Draw(36);
+
+			cmd->EndZone();
 		}
 
 		cmd->EndRenderPass();
+		cmd->EndZone();
 	}
 
 	// Draw our UI.
 	{
 		ZoneScopedN("UI Update");
+
 		ImGui::ShowDemoWindow(nullptr);
 
 		_scene.DrawSceneGraph();
@@ -357,8 +373,13 @@ void Graphics::Update() {
 
 	{
 		ZoneScopedN("ImGUI Render");
+		CbZone(cmd, "ImGUI Render");
+		cmd->BeginZone("ImGUI Render");
+
 		_imgui->EndFrame();
 		_imgui->Render(cmd);
+
+		cmd->EndZone();
 	}
 
 	_device->Submit(cmd);

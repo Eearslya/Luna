@@ -339,9 +339,10 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 		TryExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
 #endif
 
-		_extensions.Maintenance1      = TryExtension(VK_KHR_MAINTENANCE1_EXTENSION_NAME);
-		_extensions.Synchronization2  = TryExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
-		_extensions.TimelineSemaphore = TryExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+		_extensions.CalibratedTimestamps = TryExtension(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
+		_extensions.Maintenance1         = TryExtension(VK_KHR_MAINTENANCE1_EXTENSION_NAME);
+		_extensions.Synchronization2     = TryExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+		_extensions.TimelineSemaphore    = TryExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
 	}
 
 	// Find and assign all of our queues.
