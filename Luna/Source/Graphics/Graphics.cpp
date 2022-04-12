@@ -400,6 +400,17 @@ void Graphics::DrawRenderSettings() {
 		ImGui::DragFloat("Gamma", &_gamma, 0.01f, 0.0f, 10.0f);
 		ImGui::DragFloat("IBL Contribution", &_iblContribution, 0.01f, 0.0f, 1.0f);
 
+		if (ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
+			const auto& stats = _device->GetStatistics();
+			ImGui::Text("Draw Calls: %llu", stats.DrawCalls.load());
+			ImGui::Text(
+				"Buffers: %llu (%s)", stats.BufferCount.load(), Vulkan::FormatSize(stats.BufferMemory.load()).c_str());
+			ImGui::Text("Images: %llu (%s)", stats.ImageCount.load(), Vulkan::FormatSize(stats.ImageMemory.load()).c_str());
+			ImGui::Text("Render Passes: %llu", stats.RenderPassCount.load());
+			ImGui::Text("Shaders: %llu", stats.ShaderCount.load());
+			ImGui::Text("Programs: %llu", stats.ProgramCount.load());
+		}
+
 		if (ImGui::Button("Reload Shaders")) { LoadShaders(); }
 	}
 	ImGui::End();

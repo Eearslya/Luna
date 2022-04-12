@@ -164,6 +164,10 @@ class IntrusiveHashMapHolder {
 		return InsertYield(value);
 	}
 
+	size_t Size() const {
+		return _list.Size();
+	}
+
  private:
 	bool CompareKey(Hash masked, Hash hash) const {
 		return GetKeyForIndex(masked) == hash;
@@ -304,6 +308,10 @@ class IntrusiveHashMap : NonCopyable {
 		return value;
 	}
 
+	size_t Size() const {
+		return _hashMap.Size();
+	}
+
 	typename IntrusiveList<T>::Iterator begin() {
 		return _hashMap.begin();
 	}
@@ -418,6 +426,10 @@ class ThreadSafeIntrusiveHashMap {
 		return _hashMap;
 	}
 
+	size_t Size() const {
+		return _hashMap.Size();
+	}
+
 	typename IntrusiveList<T>::Iterator begin() {
 		return _hashMap.begin();
 	}
@@ -519,6 +531,10 @@ class ThreadSafeIntrusiveHashMapReadCached {
 			if (toDelete) { _pool.Free(toDelete); }
 			it = list.begin();
 		}
+	}
+
+	size_t Size() const {
+		return _readWrite.Size();
 	}
 
  private:

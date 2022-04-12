@@ -299,6 +299,9 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo, const void
 
 	auto handle = BufferHandle(_bufferPool.Allocate(*this, actualInfo));
 
+	_statistics.BufferCount++;
+	_statistics.BufferMemory += createInfo.Size;
+
 	if (createInfo.Domain == BufferDomain::Device && initialData && !handle->CanMap()) {
 		auto stagingInfo   = createInfo;
 		stagingInfo.Domain = BufferDomain::Host;
@@ -440,6 +443,9 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 		actualInfo.InitialLayout = vk::ImageLayout::eUndefined;
 
 		handle = ImageHandle(_imagePool.Allocate(*this, actualInfo));
+
+		_statistics.ImageCount++;
+		_statistics.ImageMemory += handle->GetImageSize();
 	}
 
 	// If applicable, create a default ImageView.
@@ -694,6 +700,18 @@ ImageHandle Device::RequestTransientAttachment(const vk::Extent2D& extent,
 
 // ===== Internal functions for other Vulkan classes =====
 
+const DeviceStatistics& Device::GetStatistics() const {
+	_statistics.ProgramCount    = _programs.Size();
+	_statistics.RenderPassCount = _renderPasses.Size();
+	_statistics.ShaderCount     = _shaders.Size();
+
+	return _statistics;
+}
+
+void Device::AddDrawCall(Badge<CommandBuffer>) {
+	_statistics.DrawCalls++;
+}
+
 // Allocate a "cookie" to an object, which serves as a unique identifier for that object for the lifetime of the
 // application.
 uint64_t Device::AllocateCookie(Badge<Cookie>) {
@@ -864,6 +882,8 @@ void Device::EndFrameNoLock() {
 			queueData.NeedsFence = false;
 		}
 	}
+
+	_statistics.DrawCalls = 0;
 }
 
 void Device::FlushFrameNoLock(QueueType queueType) {
@@ -1390,8 +1410,16 @@ void Device::FrameContext::Begin() {
 	// Destroy or recycle all of our other resources that are no longer in use.
 	{
 		ZoneScopedN("Destroyed Object Cleanup");
-		for (auto& buffer : BuffersToDestroy) { Parent._bufferPool.Free(buffer); }
-		for (auto& image : ImagesToDestroy) { Parent._imagePool.Free(image); }
+		for (auto& buffer : BuffersToDestroy) {
+			Parent._statistics.BufferCount--;
+			Parent._statistics.BufferMemory -= buffer->GetCreateInfo().Size;
+			Parent._bufferPool.Free(buffer);
+		}
+		for (auto& image : ImagesToDestroy) {
+			Parent._statistics.ImageCount--;
+			Parent._statistics.ImageMemory -= image->GetImageSize();
+			Parent._imagePool.Free(image);
+		}
 		for (auto& view : ImageViewsToDestroy) { Parent._imageViewPool.Free(view); }
 		for (auto& semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
 		for (auto& semaphore : SemaphoresToRecycle) { Parent.ReleaseSemaphore(semaphore); }

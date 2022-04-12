@@ -9,6 +9,17 @@ namespace Luna {
 namespace Vulkan {
 class Context;
 
+struct DeviceStatistics {
+	std::atomic_size_t BufferCount     = 0;
+	std::atomic_size_t BufferMemory    = 0;
+	std::atomic_size_t ImageCount      = 0;
+	std::atomic_size_t ImageMemory     = 0;
+	std::atomic_size_t DrawCalls       = 0;
+	std::atomic_size_t ProgramCount    = 0;
+	std::atomic_size_t RenderPassCount = 0;
+	std::atomic_size_t ShaderCount     = 0;
+};
+
 struct InitialImageData {
 	const void* Data     = nullptr;
 	uint32_t RowLength   = 0;
@@ -42,6 +53,7 @@ class Device final : NonCopyable {
 	const QueueInfo& GetQueueInfo() const {
 		return _queues;
 	}
+	const DeviceStatistics& GetStatistics() const;
 	const vk::SurfaceKHR& GetSurface() const {
 		return _surface;
 	}
@@ -89,6 +101,7 @@ class Device final : NonCopyable {
 	                                       uint32_t layers                 = 1) const;
 
 	// Internal functions for other Vulkan classes.
+	void AddDrawCall(Badge<CommandBuffer>);
 	uint64_t AllocateCookie(Badge<Cookie>);
 	SemaphoreHandle ConsumeReleaseSemaphore(Badge<Swapchain>);
 	void DestroyBuffer(Badge<BufferDeleter>, Buffer* buffer);
@@ -242,6 +255,7 @@ class Device final : NonCopyable {
 	std::unique_ptr<ShaderCompiler> _shaderCompiler;
 	std::array<Sampler*, StockSamplerCount> _stockSamplers;
 	std::unique_ptr<TransientAttachmentAllocator> _transientAttachmentAllocator;
+	mutable DeviceStatistics _statistics = {};
 
 	// Frame contexts.
 	uint32_t _currentFrameContext = 0;

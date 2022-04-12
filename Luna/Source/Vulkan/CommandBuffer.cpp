@@ -342,13 +342,17 @@ void CommandBuffer::SetScissor(const vk::Rect2D& scissor) {
 #undef SetStaticState
 
 void CommandBuffer::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
-	if (FlushRenderState(true)) { _commandBuffer.draw(vertexCount, instanceCount, firstVertex, firstInstance); }
+	if (FlushRenderState(true)) {
+		_commandBuffer.draw(vertexCount, instanceCount, firstVertex, firstInstance);
+		_device.AddDrawCall({});
+	}
 }
 
 void CommandBuffer::DrawIndexed(
 	uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
 	if (FlushRenderState(true)) {
 		_commandBuffer.drawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+		_device.AddDrawCall({});
 	}
 }
 

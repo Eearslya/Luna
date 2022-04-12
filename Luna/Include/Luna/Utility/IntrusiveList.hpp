@@ -82,6 +82,7 @@ class IntrusiveList {
 	void Clear() {
 		_head = nullptr;
 		_tail = nullptr;
+		_size = 0;
 	}
 	bool Empty() const {
 		return _head == nullptr;
@@ -103,6 +104,8 @@ class IntrusiveList {
 			_tail = prev;
 		}
 
+		--_size;
+
 		return next;
 	}
 
@@ -118,6 +121,7 @@ class IntrusiveList {
 		node->_listNext = _head;
 		node->_listPrev = nullptr;
 		_head           = node;
+		++_size;
 	}
 	void InsertBack(Iterator it) {
 		auto* node = it.Get();
@@ -131,6 +135,7 @@ class IntrusiveList {
 		node->_listNext = nullptr;
 		node->_listPrev = _tail;
 		_tail           = node;
+		++_size;
 	}
 
 	void MoveToFront(IntrusiveList<T>& other, Iterator it) {
@@ -142,8 +147,13 @@ class IntrusiveList {
 		InsertBack(it);
 	}
 
+	size_t Size() const {
+		return _size;
+	}
+
  private:
 	IntrusiveListEnabled<T>* _head = nullptr;
 	IntrusiveListEnabled<T>* _tail = nullptr;
+	size_t _size                   = 0;
 };
 }  // namespace Luna
