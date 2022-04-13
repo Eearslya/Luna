@@ -40,7 +40,7 @@ class EditorApp : public App {
 
 		auto& scene = Graphics::Get()->GetScene();
 		scene.LoadEnvironment("Environments/TokyoBigSight.hdr");
-		scene.LoadModel("Models/Deccer/SM_Deccer_Cubes_Textured.gltf", scene.GetRoot());
+		scene.LoadModel("Models/TestScene/TestScene.gltf", scene.GetRoot());
 	}
 
 	virtual void Update() override {}
