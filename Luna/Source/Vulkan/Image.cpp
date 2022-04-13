@@ -65,7 +65,7 @@ Image::Image(Device& device, const ImageCreateInfo& createInfo)
 	if (createResult != vk::Result::eSuccess) {
 		Log::Error("[Vulkan::Error] Error creating image: {}", vk::to_string(createResult));
 		// Use vulkan.hpp's ResultValue to throw the proper exception.
-		vk::createResultValue(createResult, "vmaCreateImage");
+		// vk::createResultValue(createResult, "vmaCreateImage");
 	}
 
 	_image       = image;

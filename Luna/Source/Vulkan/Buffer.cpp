@@ -41,7 +41,7 @@ Buffer::Buffer(Device& device, const BufferCreateInfo& createInfo)
 	                                          &allocationInfo));
 	if (createResult != vk::Result::eSuccess) {
 		// Use vulkan.hpp's ResultValue to throw the proper exception.
-		vk::createResultValue(createResult, "vmaCreateBuffer");
+		// vk::createResultValue(createResult, "vmaCreateBuffer");
 	}
 
 	_buffer           = buffer;

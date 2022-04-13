@@ -46,6 +46,7 @@ Graphics::Graphics() {
 	_swapchain    = std::make_unique<Vulkan::Swapchain>(*_device);
 	_assetManager = std::make_unique<AssetManager>();
 	_imgui        = std::make_unique<ImGuiManager>(*_device);
+	_sceneImages.resize(_swapchain->GetImages().size());
 
 	// Create placeholder texture.
 	{
@@ -97,9 +98,7 @@ Graphics::Graphics() {
 		return false;
 	};
 	mouse->OnMoved() += [this](Vec2d pos) -> bool {
-		auto engine             = Engine::Get();
-		const auto deltaTime    = engine->GetFrameDelta().Seconds();
-		const float sensitivity = 5.0f * deltaTime;
+		const float sensitivity = 0.1f;
 		if (_mouseControl) {
 			_camera.Rotate(pos.y * sensitivity, -pos.x * sensitivity);
 			return true;
@@ -137,8 +136,9 @@ void Graphics::Update() {
 	SceneData sceneData         = {};
 
 	// Scene Drawing
-	vk::Extent2D sceneExtent = _swapchain->GetExtent();
-	bool sceneWindow         = false;
+	vk::Extent2D sceneExtent        = _swapchain->GetExtent();
+	bool sceneWindow                = false;
+	Vulkan::ImageHandle& sceneImage = _sceneImages[_swapchain->GetAcquiredIndex()];
 
 	if (_editorLayout) {
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -147,9 +147,9 @@ void Graphics::Update() {
 			ImGui::Begin("Scene",
 		               nullptr,
 		               ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse);
+		if (sceneWindow) { ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList()); }
 
 		const ImVec2 windowSize = ImGui::GetWindowContentRegionMax();
-		sceneExtent             = vk::Extent2D{static_cast<uint32_t>(windowSize.x), static_cast<uint32_t>(windowSize.y)};
 		const ImVec2 windowPos  = ImGui::GetWindowPos();
 		ImVec2 windowMin        = ImGui::GetWindowContentRegionMin();
 		windowMin.x += windowPos.x;
@@ -157,29 +157,36 @@ void Graphics::Update() {
 		ImVec2 windowMax = ImGui::GetWindowContentRegionMax();
 		windowMax.x += windowPos.x;
 		windowMax.y += windowPos.y;
+		sceneExtent =
+			vk::Extent2D{static_cast<uint32_t>(windowMax.x - windowMin.x), static_cast<uint32_t>(windowMax.y - windowMin.y)};
 		if (_mouseControl) {
 			if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
 				_mouseControl = false;
 				mouse->SetCursorHidden(false);
 			}
 		} else {
-			if (ImGui::IsMouseHoveringRect(windowMin, windowMax) && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+			if (ImGui::IsMouseHoveringRect(windowMin, windowMax) && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+			    ImGui::IsWindowHovered() && !ImGuizmo::IsOver()) {
 				_mouseControl = true;
 				mouse->SetCursorHidden(true);
 			}
 		}
 
-		bool needNewSceneImage = !_sceneImage;
-		if (_sceneImage) {
-			const auto& imageCI = _sceneImage->GetCreateInfo();
+		bool needNewSceneImage = !sceneImage;
+		if (sceneImage) {
+			const auto& imageCI = sceneImage->GetCreateInfo();
 			if (imageCI.Extent.width != windowSize.x || imageCI.Extent.height != windowSize.y) { needNewSceneImage = true; }
 		}
 		if (needNewSceneImage) {
 			Vulkan::ImageCreateInfo imageCI =
 				Vulkan::ImageCreateInfo::RenderTarget(_swapchain->GetFormat(), vk::Extent2D(windowSize.x, windowSize.y));
 			imageCI.Usage |= vk::ImageUsageFlagBits::eSampled;
-			_sceneImage = _device->CreateImage(imageCI);
+			sceneImage = _device->CreateImage(imageCI);
 		}
+
+		ImGuizmo::SetRect(windowMin.x, windowMin.y, windowMax.x - windowMin.x, windowMax.y - windowMin.y);
+	} else {
+		ImGuizmo::SetRect(0.0f, 0.0f, sceneExtent.width, sceneExtent.height);
 	}
 
 	// Update Camera movement.
@@ -248,20 +255,34 @@ void Graphics::Update() {
 		cmd->SetTexture(set, binding, view, sampler);
 	};
 
+	// Main Render Pass
 	{
 		ZoneScopedN("Main Render Pass");
 		CbZone(cmd, "Main Render Pass");
 		cmd->BeginZone("Main Render Pass");
+
+		if (_editorLayout) {
+			ZoneScopedN("Attachment Transition");
+			CbZone(cmd, "Attachment Transition");
+
+			const vk::ImageMemoryBarrier barrierIn({},
+			                                       vk::AccessFlagBits::eColorAttachmentWrite,
+			                                       vk::ImageLayout::eUndefined,
+			                                       vk::ImageLayout::eColorAttachmentOptimal,
+			                                       VK_QUEUE_FAMILY_IGNORED,
+			                                       VK_QUEUE_FAMILY_IGNORED,
+			                                       sceneImage->GetImage(),
+			                                       vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+			cmd->Barrier(
+				vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, {}, barrierIn);
+		}
 
 		// Begin
 		{
 			ZoneScopedN("Begin");
 
 			auto rpInfo = _device->GetStockRenderPass(Vulkan::StockRenderPass::Depth);
-			if (_editorLayout) {
-				rpInfo.ColorAttachments[0]  = _sceneImage->GetView().Get();
-				rpInfo.ColorFinalLayouts[0] = vk::ImageLayout::eShaderReadOnlyOptimal;
-			}
+			if (_editorLayout) { rpInfo.ColorAttachments[0] = sceneImage->GetView().Get(); }
 			rpInfo.ClearColors[0].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
 			rpInfo.ClearDepthStencil.setDepth(1.0f);
 			cmd->BeginRenderPass(rpInfo);
@@ -370,12 +391,32 @@ void Graphics::Update() {
 		}
 
 		cmd->EndRenderPass();
+
+		if (_editorLayout) {
+			ZoneScopedN("Shader Transition");
+			CbZone(cmd, "Shader Transition");
+
+			const vk::ImageMemoryBarrier barrierOut(vk::AccessFlagBits::eColorAttachmentWrite,
+			                                        vk::AccessFlagBits::eShaderRead,
+			                                        vk::ImageLayout::eColorAttachmentOptimal,
+			                                        vk::ImageLayout::eShaderReadOnlyOptimal,
+			                                        VK_QUEUE_FAMILY_IGNORED,
+			                                        VK_QUEUE_FAMILY_IGNORED,
+			                                        sceneImage->GetImage(),
+			                                        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+			cmd->Barrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+			             vk::PipelineStageFlagBits::eFragmentShader,
+			             {},
+			             {},
+			             barrierOut);
+		}
+
 		cmd->EndZone();
 	}
 
 	if (_editorLayout) {
 		if (sceneWindow) {
-			ImGui::Image(reinterpret_cast<ImTextureID>(const_cast<Vulkan::ImageView*>(_sceneImage->GetView().Get())),
+			ImGui::Image(reinterpret_cast<ImTextureID>(const_cast<Vulkan::ImageView*>(sceneImage->GetView().Get())),
 			             ImGui::GetWindowContentRegionMax());
 		}
 		ImGui::End();
@@ -493,6 +534,10 @@ void Graphics::DrawRenderSettings() {
 			ImGui::Text("Render Passes: %llu", stats.RenderPassCount.load());
 			ImGui::Text("Shaders: %llu", stats.ShaderCount.load());
 			ImGui::Text("Programs: %llu", stats.ProgramCount.load());
+		}
+
+		if (ImGui::CollapsingHeader("Performance Queries")) {
+			ImGui::Checkbox("Enable Performance Queries", &_performanceQueries);
 		}
 
 		if (ImGui::Button("Reload Shaders")) { LoadShaders(); }

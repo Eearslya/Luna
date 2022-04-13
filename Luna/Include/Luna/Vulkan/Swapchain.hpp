@@ -9,6 +9,9 @@ class Swapchain {
 	Swapchain(Device& device);
 	~Swapchain() noexcept;
 
+	uint32_t GetAcquiredIndex() const {
+		return _acquiredImage;
+	}
 	const vk::Extent2D& GetExtent() const {
 		return _extent;
 	}

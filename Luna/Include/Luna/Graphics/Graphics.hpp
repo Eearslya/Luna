@@ -78,8 +78,9 @@ class Graphics : public Module::Registrar<Graphics> {
 
 	Camera _camera;
 	Scene _scene;
-	bool _editorLayout = false;
-	Vulkan::ImageHandle _sceneImage;
+	bool _editorLayout       = false;
+	bool _performanceQueries = false;
+	std::vector<Vulkan::ImageHandle> _sceneImages;
 	Vulkan::Program* _program       = nullptr;
 	Vulkan::Program* _programSkybox = nullptr;
 	Vulkan::BufferHandle _cameraBuffer;
