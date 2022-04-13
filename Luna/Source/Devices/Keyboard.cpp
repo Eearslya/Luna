@@ -6,7 +6,13 @@
 
 namespace Luna {
 void Keyboard::CallbackKey(GLFWwindow* window, int32_t key, int32_t scancode, int32_t action, int32_t mods) {
-	Keyboard::Get()->_onKey(static_cast<Key>(key), static_cast<InputAction>(action), MakeBitmask<InputModBits>(mods));
+	bool uiCapture = false;
+	if (ImGui::GetCurrentContext()) {
+		ImGuiIO& io = ImGui::GetIO();
+		uiCapture   = io.WantCaptureKeyboard;
+	}
+	Keyboard::Get()->_onKey(
+		static_cast<Key>(key), static_cast<InputAction>(action), MakeBitmask<InputModBits>(mods), uiCapture);
 }
 
 void Keyboard::CallbackChar(GLFWwindow* window, uint32_t codepoint) {
@@ -25,8 +31,8 @@ void Keyboard::Update() {
 	ZoneScopedN("Keyboard::Update()");
 }
 
-InputAction Keyboard::GetKey(Key key) const {
-	if (ImGui::GetCurrentContext()) {
+InputAction Keyboard::GetKey(Key key, bool allowGuiOverride) const {
+	if (allowGuiOverride && ImGui::GetCurrentContext()) {
 		ImGuiIO& io = ImGui::GetIO();
 		if (io.WantCaptureKeyboard) { return InputAction::Release; }
 	}

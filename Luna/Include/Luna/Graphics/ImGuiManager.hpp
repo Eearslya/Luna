@@ -16,6 +16,7 @@ class ImGuiManager {
 	void BeginFrame();
 	void EndFrame();
 	void Render(Vulkan::CommandBufferHandle& cmd);
+	void SetDockspace(bool dockspace);
 
  private:
 	void SetRenderState(Vulkan::CommandBufferHandle& cmd, ImDrawData* drawData) const;
@@ -28,5 +29,6 @@ class ImGuiManager {
 	Vulkan::Sampler* _fontSampler = nullptr;
 	Vulkan::BufferHandle _vertexBuffer;
 	Vulkan::BufferHandle _indexBuffer;
+	bool _dockspace = false;
 };
 }  // namespace Luna

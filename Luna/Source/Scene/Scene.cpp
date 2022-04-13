@@ -63,40 +63,34 @@ entt::entity Scene::LoadModel(const std::string& filePath, entt::entity parent) 
 }
 
 void Scene::DrawSceneGraph() {
-	if (ImGui::Begin("Scene")) {
-		if (ImGui::BeginTable("SceneGraph", 2, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable)) {
-			ImGui::TableNextRow();
-			ImGui::TableNextColumn();
-			ImGui::BeginGroup();
-			std::function<void(const entt::entity)> DisplayEntity = [&](const entt::entity entity) -> void {
-				const auto& transform       = _registry.get<TransformComponent>(entity);
-				const bool hasChildren      = transform.Children.size() > 0;
-				ImGuiTreeNodeFlags addFlags = entity == _selected ? ImGuiTreeNodeFlags_Selected : 0;
-				if (hasChildren) {
-					bool open = ImGui::TreeNodeEx(transform.Name.c_str(), ImGuiTreeNodeFlags_OpenOnArrow | addFlags);
-					if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) { _selected = entity; }
-					if (open) {
-						for (const auto child : transform.Children) { DisplayEntity(child); }
-						ImGui::TreePop();
-					}
-				} else {
-					ImGui::TreeNodeEx(
-						transform.Name.c_str(),
-						ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_Bullet | ImGuiTreeNodeFlags_NoTreePushOnOpen | addFlags);
-					if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) { _selected = entity; }
+	if (ImGui::Begin("Heirarchy")) {
+		std::function<void(const entt::entity)> DisplayEntity = [&](const entt::entity entity) -> void {
+			const auto& transform       = _registry.get<TransformComponent>(entity);
+			const bool hasChildren      = transform.Children.size() > 0;
+			ImGuiTreeNodeFlags addFlags = entity == _selected ? ImGuiTreeNodeFlags_Selected : 0;
+			if (hasChildren) {
+				bool open = ImGui::TreeNodeEx(transform.Name.c_str(), ImGuiTreeNodeFlags_OpenOnArrow | addFlags);
+				if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) { _selected = entity; }
+				if (open) {
+					for (const auto child : transform.Children) { DisplayEntity(child); }
+					ImGui::TreePop();
 				}
-			};
-			DisplayEntity(_root);
-			ImGui::EndGroup();
-
-			ImGui::TableNextColumn();
-			if (_registry.valid(_selected)) {
-				if (auto* comp = _registry.try_get<TransformComponent>(_selected)) { comp->DrawComponent(_registry); }
-				if (auto* comp = _registry.try_get<WorldData>(_selected)) { comp->DrawComponent(_registry); }
-				if (auto* comp = _registry.try_get<MeshRenderer>(_selected)) { comp->DrawComponent(_registry); }
+			} else {
+				ImGui::TreeNodeEx(
+					transform.Name.c_str(),
+					ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_Bullet | ImGuiTreeNodeFlags_NoTreePushOnOpen | addFlags);
+				if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) { _selected = entity; }
 			}
+		};
+		DisplayEntity(_root);
+	}
+	ImGui::End();
 
-			ImGui::EndTable();
+	if (ImGui::Begin("Inspector")) {
+		if (_registry.valid(_selected)) {
+			if (auto* comp = _registry.try_get<TransformComponent>(_selected)) { comp->DrawComponent(_registry); }
+			if (auto* comp = _registry.try_get<WorldData>(_selected)) { comp->DrawComponent(_registry); }
+			if (auto* comp = _registry.try_get<MeshRenderer>(_selected)) { comp->DrawComponent(_registry); }
 		}
 	}
 	ImGui::End();

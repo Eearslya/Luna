@@ -144,6 +144,7 @@ RenderPass::RenderPass(Hash hash, Device& device, const RenderPassInfo& info)
 				implicitTransitions |= 1u << i;
 			} else {
 				attachment.initialLayout = image.GetLayout(vk::ImageLayout::eColorAttachmentOptimal);
+				attachment.finalLayout   = image.GetLayout(_renderPassInfo.ColorFinalLayouts[i]);
 			}
 		}
 	}

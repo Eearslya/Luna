@@ -26,8 +26,9 @@ struct RenderPassInfo {
 	};
 
 	std::array<const ImageView*, MaxColorAttachments> ColorAttachments;
-	uint32_t ColorAttachmentCount           = 0;
-	const ImageView* DepthStencilAttachment = nullptr;
+	uint32_t ColorAttachmentCount                                      = 0;
+	std::array<vk::ImageLayout, MaxColorAttachments> ColorFinalLayouts = {vk::ImageLayout::eUndefined};
+	const ImageView* DepthStencilAttachment                            = nullptr;
 	std::array<vk::ClearColorValue, MaxColorAttachments> ClearColors;
 	vk::ClearDepthStencilValue ClearDepthStencil = {1.0f, 0};
 	DepthStencilOps DSOps;

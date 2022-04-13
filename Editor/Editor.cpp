@@ -15,6 +15,8 @@ class EditorApp : public App {
 
 		Filesystem::Get()->AddSearchPath("Assets");
 
+		Graphics::Get()->SetEditorLayout(true);
+
 		Timers::Get()->Every(Time::Seconds(1), []() {
 			const auto fps          = Engine::Get()->GetFPS();
 			const auto ups          = Engine::Get()->GetUPS();
@@ -23,7 +25,10 @@ class EditorApp : public App {
 		});
 
 		Keyboard::Get()->OnKey().Add(
-			[](Key key, InputAction action, InputMods mods) -> bool {
+			[](Key key, InputAction action, InputMods mods, bool uiCapture) -> bool {
+				if (key == Key::F1 && action == InputAction::Press) {
+					Graphics::Get()->SetEditorLayout(!Graphics::Get()->IsEditorLayout());
+				}
 				if (key == Key::Escape && action == InputAction::Press) {
 					Engine::Get()->Shutdown();
 					return true;
@@ -35,7 +40,7 @@ class EditorApp : public App {
 
 		auto& scene = Graphics::Get()->GetScene();
 		scene.LoadEnvironment("Environments/TokyoBigSight.hdr");
-		scene.LoadModel("Models/TestScene.glb", scene.GetRoot());
+		scene.LoadModel("Models/Deccer/SM_Deccer_Cubes_Textured.gltf", scene.GetRoot());
 	}
 
 	virtual void Update() override {}

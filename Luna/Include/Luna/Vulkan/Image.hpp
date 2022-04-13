@@ -107,7 +107,7 @@ struct ImageCreateInfo {
 		        .Format        = format,
 		        .Type          = vk::ImageType::e2D,
 		        .Usage         = (FormatHasDepthOrStencil(format) ? vk::ImageUsageFlagBits::eDepthStencilAttachment
-		                                                          : vk::ImageUsageFlags()),
+		                                                          : vk::ImageUsageFlagBits::eColorAttachment),
 		        .Extent        = vk::Extent3D(extent.width, extent.height, 1),
 		        .ArrayLayers   = 1,
 		        .MipLevels     = 1,

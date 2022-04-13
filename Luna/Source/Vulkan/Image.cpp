@@ -96,16 +96,16 @@ ImageView::ImageView(Device& device, const ImageViewCreateInfo& createInfo)
 
 	const auto& imageCI = _createInfo.Image->GetCreateInfo();
 
-	const vk::ImageViewCreateInfo viewCI({},
-	                                     _createInfo.Image->GetImage(),
-	                                     _createInfo.Type,
-	                                     _createInfo.Format,
-	                                     vk::ComponentMapping(),
-	                                     vk::ImageSubresourceRange(FormatToAspect(_createInfo.Format),
-	                                                               _createInfo.BaseMipLevel,
-	                                                               _createInfo.MipLevels,
-	                                                               _createInfo.BaseArrayLayer,
-	                                                               _createInfo.ArrayLayers));
+	vk::ImageViewCreateInfo viewCI({},
+	                               _createInfo.Image->GetImage(),
+	                               _createInfo.Type,
+	                               _createInfo.Format,
+	                               vk::ComponentMapping(),
+	                               vk::ImageSubresourceRange(FormatToAspect(_createInfo.Format),
+	                                                         _createInfo.BaseMipLevel,
+	                                                         _createInfo.MipLevels,
+	                                                         _createInfo.BaseArrayLayer,
+	                                                         _createInfo.ArrayLayers));
 
 	// Create our main, "default" view.
 	_imageView = _device.GetDevice().createImageView(viewCI);
@@ -132,7 +132,8 @@ ImageView::ImageView(Device& device, const ImageViewCreateInfo& createInfo)
 		if (viewCI.viewType != vk::ImageViewType::e3D &&
 		    (imageCI.Usage &
 		     (vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eDepthStencilAttachment)) &&
-		    ((viewCI.subresourceRange.levelCount > 1) || (viewCI.subresourceRange.layerCount > 1))) {
+		    ((viewCI.subresourceRange.levelCount > 1 && viewCI.subresourceRange.levelCount != VK_REMAINING_MIP_LEVELS) ||
+		     (viewCI.subresourceRange.layerCount > 1 && viewCI.subresourceRange.layerCount != VK_REMAINING_ARRAY_LAYERS))) {
 			Log::Trace("[Vulkan::ImageView] - Creating Render Target views.");
 			_renderTargetViews.reserve(viewCI.subresourceRange.layerCount);
 

@@ -8,6 +8,7 @@
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Device.hpp>
+#include <Luna/Vulkan/Format.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
 #include <Luna/Vulkan/Sampler.hpp>
@@ -30,6 +31,14 @@ struct ImGuiWindowData {
 	bool MouseJustPressed[ImGuiMouseButton_COUNT]    = {false};
 	GLFWcursor* MouseCursors[ImGuiMouseCursor_COUNT] = {nullptr};
 	GLFWwindow* KeyOwnerWindows[512]                 = {nullptr};
+};
+
+struct PushConstant {
+	float ScaleX;
+	float ScaleY;
+	float TranslateX;
+	float TranslateY;
+	float ColorCorrect;
 };
 
 ImGuiManager::ImGuiManager(Vulkan::Device& device) : _device(device) {
@@ -135,7 +144,7 @@ ImGuiManager::ImGuiManager(Vulkan::Device& device) : _device(device) {
 layout(location = 0) in vec2 inPosition;
 layout(location = 1) in vec2 inUV0;
 layout(location = 2) in vec4 inColor;
-layout(push_constant) uniform PushConstant { vec2 Scale; vec2 Translate; } PC;
+layout(push_constant) uniform PushConstant { vec2 Scale; vec2 Translate; float ColorCorrect; } PC;
 layout(location = 0) out struct { vec4 Color; vec2 UV; } Out;
 void main() {
     Out.Color = inColor;
@@ -147,10 +156,11 @@ void main() {
 #version 450 core
 layout(location = 0) in struct { vec4 Color; vec2 UV; } In;
 layout(set=0, binding=0) uniform sampler2D Texture;
+layout(push_constant) uniform PushConstant { vec2 Scale; vec2 Translate; float ColorCorrect; } PC;
 layout(location = 0) out vec4 outColor;
 void main() {
     outColor = In.Color * texture(Texture, In.UV.st);
-    outColor = pow(outColor, vec4(2.2));
+    if (PC.ColorCorrect == 1.0f) { outColor = pow(outColor, vec4(2.2)); }
 }
 )GLSL";
 
@@ -191,7 +201,7 @@ void main() {
 
 			return io.WantCaptureKeyboard;
 		};
-		keyboard->OnKey() += [this](Key key, InputAction action, InputMods mods) -> bool {
+		keyboard->OnKey() += [this](Key key, InputAction action, InputMods mods, bool uiCapture) -> bool {
 			ImGuiIO& io = ImGui::GetIO();
 
 			constexpr static const int maxKey = sizeof(io.KeysDown) / sizeof(io.KeysDown[0]);
@@ -203,10 +213,11 @@ void main() {
 			io.KeyShift = mods & InputModBits::Shift;
 			io.KeyAlt   = mods & InputModBits::Alt;
 
-			return io.WantCaptureKeyboard;
+			return false;
 		};
-		mouse->OnButton() += [this](MouseButton button, InputAction action, InputMods mods) -> bool {
+		mouse->OnButton() += [this, mouse](MouseButton button, InputAction action, InputMods mods) -> bool {
 			ImGuiIO& io = ImGui::GetIO();
+			if (mouse->IsCursorHidden()) { return false; }
 
 			constexpr static const int buttonMax =
 				sizeof(_windowData->MouseJustPressed) / sizeof(_windowData->MouseJustPressed[0]);
@@ -217,8 +228,9 @@ void main() {
 
 			return io.WantCaptureMouse;
 		};
-		mouse->OnScroll() += [this](const Vec2d& scroll) -> bool {
+		mouse->OnScroll() += [this, mouse](const Vec2d& scroll) -> bool {
 			ImGuiIO& io = ImGui::GetIO();
+			if (mouse->IsCursorHidden()) { return false; }
 
 			io.MouseWheelH += scroll.x;
 			io.MouseWheel += scroll.y;
@@ -257,21 +269,46 @@ void ImGuiManager::BeginFrame() {
 		}
 
 		// Update position and buttons.
-		const ImVec2 prevPos             = io.MousePos;
-		io.MousePos                      = ImVec2(std::numeric_limits<float>::min(), std::numeric_limits<float>::min());
-		constexpr static int buttonCount = sizeof(io.MouseDown) / sizeof(io.MouseDown[0]);
-		for (int i = 0; i < buttonCount; ++i) {
-			io.MouseDown[i] =
-				_windowData->MouseJustPressed[i] || mouse->GetButton(static_cast<MouseButton>(i)) == InputAction::Press;
-			_windowData->MouseJustPressed[i] = false;
+		if (!mouse->IsCursorHidden()) {
+			const ImVec2 prevPos             = io.MousePos;
+			io.MousePos                      = ImVec2(std::numeric_limits<float>::min(), std::numeric_limits<float>::min());
+			constexpr static int buttonCount = sizeof(io.MouseDown) / sizeof(io.MouseDown[0]);
+			for (int i = 0; i < buttonCount; ++i) {
+				io.MouseDown[i] =
+					_windowData->MouseJustPressed[i] || mouse->GetButton(static_cast<MouseButton>(i)) == InputAction::Press;
+				_windowData->MouseJustPressed[i] = false;
+			}
+			const auto pos = mouse->GetPosition();
+			io.MousePos    = ImVec2(pos.x, pos.y);
 		}
-		const auto pos = mouse->GetPosition();
-		io.MousePos    = ImVec2(pos.x, pos.y);
 	}
 
 	ImGui::NewFrame();
 	ImGuizmo::BeginFrame();
-	ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+
+	if (_dockspace) {
+		ImGuiViewport* viewport = ImGui::GetMainViewport();
+		ImGui::SetNextWindowPos(viewport->Pos);
+		ImGui::SetNextWindowSize(viewport->Size);
+		ImGui::SetNextWindowViewport(viewport->ID);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+
+		ImGui::Begin("##Dockspace",
+		             nullptr,
+		             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
+		               ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_MenuBar |
+		               ImGuiWindowFlags_NoDocking);
+		ImGuiID dockspaceID = ImGui::GetID("LunaDockspace");
+		ImGui::DockSpace(dockspaceID, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+		ImGui::SetWindowPos(ImVec2(0.0f, 0.0f));
+		ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+		ImGui::SetWindowSize(ImVec2(displaySize.x, displaySize.y));
+		ImGui::End();
+
+		ImGui::PopStyleVar(3);
+	}
 }
 
 void ImGuiManager::EndFrame() {
@@ -359,12 +396,23 @@ void ImGuiManager::Render(Vulkan::CommandBufferHandle& cmd) {
 						{static_cast<uint32_t>(clipMax.x - clipMin.x), static_cast<uint32_t>(clipMax.y - clipMin.y)});
 					cmd->SetScissor(scissor);
 
+					bool colorCorrect = true;
 					if (drawCmd.TextureId == 0) {
 						cmd->SetTexture(0, 0, *_fontTexture->GetView(), _fontSampler);
 					} else {
 						Vulkan::ImageView* view = reinterpret_cast<Vulkan::ImageView*>(drawCmd.TextureId);
 						cmd->SetTexture(0, 0, *view, Vulkan::StockSampler::LinearClamp);
+						if (Vulkan::FormatIsSrgb(view->GetCreateInfo().Format)) { colorCorrect = false; }
 					}
+
+					const float scaleX    = 2.0f / drawData->DisplaySize.x;
+					const float scaleY    = 2.0f / drawData->DisplaySize.y;
+					const PushConstant pc = {.ScaleX       = scaleX,
+					                         .ScaleY       = scaleY,
+					                         .TranslateX   = -1.0f - drawData->DisplayPos.x * scaleX,
+					                         .TranslateY   = -1.0f - drawData->DisplayPos.y * scaleY,
+					                         .ColorCorrect = colorCorrect ? 1.0f : 0.0f};
+					cmd->PushConstants(&pc, 0, sizeof(pc));
 
 					cmd->DrawIndexed(
 						drawCmd.ElemCount, 1, drawCmd.IdxOffset + globalIdxOffset, drawCmd.VtxOffset + globalVtxOffset, 0);
@@ -379,6 +427,10 @@ void ImGuiManager::Render(Vulkan::CommandBufferHandle& cmd) {
 	cmd->EndRenderPass();
 }
 
+void ImGuiManager::SetDockspace(bool dockspace) {
+	_dockspace = dockspace;
+}
+
 void ImGuiManager::SetRenderState(Vulkan::CommandBufferHandle& cmd, ImDrawData* drawData) const {
 	if (drawData->TotalVtxCount == 0) { return; }
 
@@ -389,19 +441,5 @@ void ImGuiManager::SetRenderState(Vulkan::CommandBufferHandle& cmd, ImDrawData* 
 	cmd->SetVertexAttribute(2, 0, vk::Format::eR8G8B8A8Unorm, offsetof(ImDrawVert, col));
 	cmd->SetVertexBinding(0, *_vertexBuffer, 0, sizeof(ImDrawVert), vk::VertexInputRate::eVertex);
 	cmd->SetIndexBuffer(*_indexBuffer, 0, sizeof(ImDrawIdx) == 2 ? vk::IndexType::eUint16 : vk::IndexType::eUint32);
-
-	struct PushConstant {
-		float ScaleX;
-		float ScaleY;
-		float TranslateX;
-		float TranslateY;
-	};
-	const float scaleX    = 2.0f / drawData->DisplaySize.x;
-	const float scaleY    = 2.0f / drawData->DisplaySize.y;
-	const PushConstant pc = {.ScaleX     = scaleX,
-	                         .ScaleY     = scaleY,
-	                         .TranslateX = -1.0f - drawData->DisplayPos.x * scaleX,
-	                         .TranslateY = -1.0f - drawData->DisplayPos.y * scaleY};
-	cmd->PushConstants(&pc, 0, sizeof(pc));
 }
 }  // namespace Luna

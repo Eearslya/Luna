@@ -62,7 +62,7 @@ Graphics::Graphics() {
 		Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, sizeof(SceneData), vk::BufferUsageFlagBits::eUniformBuffer));
 
 	LoadShaders();
-	keyboard->OnKey() += [&](Key key, InputAction action, InputMods mods) -> bool {
+	keyboard->OnKey() += [&](Key key, InputAction action, InputMods mods, bool uiCapture) -> bool {
 		if (key == Key::F2 && action == InputAction::Press) {
 			LoadShaders();
 			return true;
@@ -115,28 +115,87 @@ Graphics::Graphics() {
 
 Graphics::~Graphics() noexcept {}
 
+void Graphics::SetEditorLayout(bool enabled) {
+	_editorLayout = enabled;
+	_imgui->SetDockspace(_editorLayout);
+}
+
 void Graphics::Update() {
 	ZoneScopedN("Graphics::Update");
 
 	if (!BeginFrame()) { return; }
 
 	_imgui->BeginFrame();
-	auto keyboard = Keyboard::Get();
+	auto keyboard               = Keyboard::Get();
+	auto mouse                  = Mouse::Get();
+	auto cmd                    = _device->RequestCommandBuffer();
+	auto& registry              = _scene.GetRegistry();
+	const auto rootNode         = _scene.GetRoot();
+	WorldData* worldData        = registry.try_get<WorldData>(rootNode);
+	const bool environmentReady = worldData && worldData->Environment && worldData->Environment->Ready;
+	CameraData cameraData       = {};
+	SceneData sceneData         = {};
+
+	// Scene Drawing
+	vk::Extent2D sceneExtent = _swapchain->GetExtent();
+	bool sceneWindow         = false;
+
+	if (_editorLayout) {
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+		sceneWindow =
+			ImGui::Begin("Scene",
+		               nullptr,
+		               ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse);
+
+		const ImVec2 windowSize = ImGui::GetWindowContentRegionMax();
+		sceneExtent             = vk::Extent2D{static_cast<uint32_t>(windowSize.x), static_cast<uint32_t>(windowSize.y)};
+		const ImVec2 windowPos  = ImGui::GetWindowPos();
+		ImVec2 windowMin        = ImGui::GetWindowContentRegionMin();
+		windowMin.x += windowPos.x;
+		windowMin.y += windowPos.y;
+		ImVec2 windowMax = ImGui::GetWindowContentRegionMax();
+		windowMax.x += windowPos.x;
+		windowMax.y += windowPos.y;
+		if (_mouseControl) {
+			if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+				_mouseControl = false;
+				mouse->SetCursorHidden(false);
+			}
+		} else {
+			if (ImGui::IsMouseHoveringRect(windowMin, windowMax) && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+				_mouseControl = true;
+				mouse->SetCursorHidden(true);
+			}
+		}
+
+		bool needNewSceneImage = !_sceneImage;
+		if (_sceneImage) {
+			const auto& imageCI = _sceneImage->GetCreateInfo();
+			if (imageCI.Extent.width != windowSize.x || imageCI.Extent.height != windowSize.y) { needNewSceneImage = true; }
+		}
+		if (needNewSceneImage) {
+			Vulkan::ImageCreateInfo imageCI =
+				Vulkan::ImageCreateInfo::RenderTarget(_swapchain->GetFormat(), vk::Extent2D(windowSize.x, windowSize.y));
+			imageCI.Usage |= vk::ImageUsageFlagBits::eSampled;
+			_sceneImage = _device->CreateImage(imageCI);
+		}
+	}
 
 	// Update Camera movement.
-	{
+	if (_mouseControl) {
 		ZoneScopedN("Camera Update");
 		auto engine          = Engine::Get();
 		const auto deltaTime = engine->GetFrameDelta().Seconds();
 		_camera.Update(deltaTime);
 		float moveSpeed = 5.0f * deltaTime;
-		if (keyboard->GetKey(Key::ShiftLeft) == InputAction::Press) { moveSpeed *= 2.0f; }
-		if (keyboard->GetKey(Key::W) == InputAction::Press) { _camera.Move(_camera.GetForward() * moveSpeed); }
-		if (keyboard->GetKey(Key::S) == InputAction::Press) { _camera.Move(-_camera.GetForward() * moveSpeed); }
-		if (keyboard->GetKey(Key::A) == InputAction::Press) { _camera.Move(-_camera.GetRight() * moveSpeed); }
-		if (keyboard->GetKey(Key::D) == InputAction::Press) { _camera.Move(_camera.GetRight() * moveSpeed); }
-		if (keyboard->GetKey(Key::R) == InputAction::Press) { _camera.Move(_camera.GetUp() * moveSpeed); }
-		if (keyboard->GetKey(Key::F) == InputAction::Press) { _camera.Move(-_camera.GetUp() * moveSpeed); }
+		if (keyboard->GetKey(Key::ShiftLeft, false) == InputAction::Press) { moveSpeed *= 2.0f; }
+		if (keyboard->GetKey(Key::W, false) == InputAction::Press) { _camera.Move(_camera.GetForward() * moveSpeed); }
+		if (keyboard->GetKey(Key::S, false) == InputAction::Press) { _camera.Move(-_camera.GetForward() * moveSpeed); }
+		if (keyboard->GetKey(Key::A, false) == InputAction::Press) { _camera.Move(-_camera.GetRight() * moveSpeed); }
+		if (keyboard->GetKey(Key::D, false) == InputAction::Press) { _camera.Move(_camera.GetRight() * moveSpeed); }
+		if (keyboard->GetKey(Key::R, false) == InputAction::Press) { _camera.Move(_camera.GetUp() * moveSpeed); }
+		if (keyboard->GetKey(Key::F, false) == InputAction::Press) { _camera.Move(-_camera.GetUp() * moveSpeed); }
 	}
 
 	const auto now           = Time::Now().Seconds() * 0.025f;
@@ -147,11 +206,9 @@ void Graphics::Update() {
 	_sunDirection            = glm::normalize(-_sunPosition);
 
 	// Update Camera buffer.
-	CameraData cameraData = {};
 	{
 		ZoneScopedN("Camera Uniform Update");
-		const auto swapchainExtent = _swapchain->GetExtent();
-		const float aspectRatio    = float(swapchainExtent.width) / float(swapchainExtent.height);
+		const float aspectRatio = float(sceneExtent.width) / float(sceneExtent.height);
 		_camera.SetAspectRatio(aspectRatio);
 
 		cameraData.Projection  = _camera.GetProjection();
@@ -163,13 +220,7 @@ void Graphics::Update() {
 		_cameraBuffer->Unmap();
 	}
 
-	auto& registry              = _scene.GetRegistry();
-	const auto rootNode         = _scene.GetRoot();
-	WorldData* worldData        = registry.try_get<WorldData>(rootNode);
-	const bool environmentReady = worldData && worldData->Environment && worldData->Environment->Ready;
-
 	// Update Scene buffer.
-	SceneData sceneData = {};
 	{
 		ZoneScopedN("Scene Uniform Update");
 		sceneData.SunDirection = glm::vec4(_sunDirection, 0.0f);
@@ -187,8 +238,6 @@ void Graphics::Update() {
 		glm::mat4 Model;
 	};
 
-	auto cmd = _device->RequestCommandBuffer();
-
 	const auto SetTexture = [&](uint32_t set, uint32_t binding, const TextureHandle& texture) -> void {
 		const bool ready      = bool(texture) && texture->Ready;
 		const bool hasTexture = ready && texture->Image;
@@ -204,10 +253,15 @@ void Graphics::Update() {
 		CbZone(cmd, "Main Render Pass");
 		cmd->BeginZone("Main Render Pass");
 
+		// Begin
 		{
 			ZoneScopedN("Begin");
 
 			auto rpInfo = _device->GetStockRenderPass(Vulkan::StockRenderPass::Depth);
+			if (_editorLayout) {
+				rpInfo.ColorAttachments[0]  = _sceneImage->GetView().Get();
+				rpInfo.ColorFinalLayouts[0] = vk::ImageLayout::eShaderReadOnlyOptimal;
+			}
 			rpInfo.ClearColors[0].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
 			rpInfo.ClearDepthStencil.setDepth(1.0f);
 			cmd->BeginRenderPass(rpInfo);
@@ -317,6 +371,15 @@ void Graphics::Update() {
 
 		cmd->EndRenderPass();
 		cmd->EndZone();
+	}
+
+	if (_editorLayout) {
+		if (sceneWindow) {
+			ImGui::Image(reinterpret_cast<ImTextureID>(const_cast<Vulkan::ImageView*>(_sceneImage->GetView().Get())),
+			             ImGui::GetWindowContentRegionMax());
+		}
+		ImGui::End();
+		ImGui::PopStyleVar(2);
 	}
 
 	// Draw our UI.

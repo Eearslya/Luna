@@ -37,10 +37,14 @@ class Graphics : public Module::Registrar<Graphics> {
 	Scene& GetScene() {
 		return _scene;
 	}
+	bool IsEditorLayout() const {
+		return _editorLayout;
+	}
 	Delegate<void()>& OnUiRender() {
 		return _onUiRender;
 	}
 
+	void SetEditorLayout(bool enabled);
 	virtual void Update() override;
 
  private:
@@ -74,6 +78,8 @@ class Graphics : public Module::Registrar<Graphics> {
 
 	Camera _camera;
 	Scene _scene;
+	bool _editorLayout = false;
+	Vulkan::ImageHandle _sceneImage;
 	Vulkan::Program* _program       = nullptr;
 	Vulkan::Program* _programSkybox = nullptr;
 	Vulkan::BufferHandle _cameraBuffer;

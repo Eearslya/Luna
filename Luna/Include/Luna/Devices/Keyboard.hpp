@@ -136,9 +136,9 @@ class Keyboard : public Module::Registrar<Keyboard> {
 
 	virtual void Update() override;
 
-	InputAction GetKey(Key key) const;
+	InputAction GetKey(Key key, bool allowGuiOverride = true) const;
 
-	CancellableDelegate<Key, InputAction, InputMods>& OnKey() {
+	CancellableDelegate<Key, InputAction, InputMods, bool>& OnKey() {
 		return _onKey;
 	}
 	CancellableDelegate<char>& OnChar() {
@@ -149,7 +149,7 @@ class Keyboard : public Module::Registrar<Keyboard> {
 	static void CallbackKey(GLFWwindow* window, int32_t key, int32_t scancode, int32_t action, int32_t mods);
 	static void CallbackChar(GLFWwindow* window, uint32_t codepoint);
 
-	CancellableDelegate<Key, InputAction, InputMods> _onKey;
+	CancellableDelegate<Key, InputAction, InputMods, bool> _onKey;
 	CancellableDelegate<char> _onChar;
 };
 }  // namespace Luna
