@@ -364,7 +364,7 @@ void ImGuiManager::Render(Vulkan::CommandBufferHandle& cmd) {
 	{
 		Vulkan::RenderPassInfo rp = _device.GetStockRenderPass(Vulkan::StockRenderPass::ColorOnly);
 		rp.ClearAttachments       = 0;
-		rp.LoadAttachments        = 1 << 0;
+		if (!_dockspace) { rp.LoadAttachments = 1 << 0; }
 		cmd->BeginRenderPass(rp);
 		SetRenderState(cmd, drawData);
 	}
