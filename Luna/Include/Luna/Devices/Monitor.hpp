@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Luna/Math/Vec2.hpp>
+#include <glm/glm.hpp>
 #include <string>
 #include <vector>
 
@@ -33,13 +33,13 @@ class Monitor {
 		return _monitor;
 	}
 
-	Vec2f GetContentScale() const;
+	glm::vec2 GetContentScale() const;
 	GammaRamp GetGammaRamp() const;
 	std::string GetName() const;
-	Vec2ui GetPosition() const;
-	Vec2ui GetSize() const;
-	Vec2ui GetWorkareaPosition() const;
-	Vec2ui GetWorkareaSize() const;
+	glm::uvec2 GetPosition() const;
+	glm::uvec2 GetSize() const;
+	glm::uvec2 GetWorkareaPosition() const;
+	glm::uvec2 GetWorkareaSize() const;
 	VideoMode GetVideoMode() const;
 	std::vector<VideoMode> GetVideoModes() const;
 	bool IsPrimary() const;

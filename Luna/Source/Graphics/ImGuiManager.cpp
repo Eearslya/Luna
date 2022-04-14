@@ -228,7 +228,7 @@ void main() {
 
 			return io.WantCaptureMouse;
 		};
-		mouse->OnScroll() += [this, mouse](const Vec2d& scroll) -> bool {
+		mouse->OnScroll() += [this, mouse](const glm::dvec2& scroll) -> bool {
 			ImGuiIO& io = ImGui::GetIO();
 			if (mouse->IsCursorHidden()) { return false; }
 

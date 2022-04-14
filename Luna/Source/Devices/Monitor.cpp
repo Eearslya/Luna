@@ -5,7 +5,7 @@
 namespace Luna {
 Monitor::Monitor(GLFWmonitor* monitor) : _monitor(monitor) {}
 
-Vec2f Monitor::GetContentScale() const {
+glm::vec2 Monitor::GetContentScale() const {
 	float x, y;
 	glfwGetMonitorContentScale(_monitor, &x, &y);
 	return {x, y};
@@ -21,25 +21,25 @@ std::string Monitor::GetName() const {
 	return glfwGetMonitorName(_monitor);
 }
 
-Vec2ui Monitor::GetPosition() const {
+glm::uvec2 Monitor::GetPosition() const {
 	int32_t x, y;
 	glfwGetMonitorPos(_monitor, &x, &y);
 	return {x, y};
 }
 
-Vec2ui Monitor::GetSize() const {
+glm::uvec2 Monitor::GetSize() const {
 	int32_t w, h;
 	glfwGetMonitorPhysicalSize(_monitor, &w, &h);
 	return {w, h};
 }
 
-Vec2ui Monitor::GetWorkareaPosition() const {
+glm::uvec2 Monitor::GetWorkareaPosition() const {
 	int32_t x, y;
 	glfwGetMonitorWorkarea(_monitor, &x, &y, nullptr, nullptr);
 	return {x, y};
 }
 
-Vec2ui Monitor::GetWorkareaSize() const {
+glm::uvec2 Monitor::GetWorkareaSize() const {
 	int32_t w, h;
 	glfwGetMonitorWorkarea(_monitor, nullptr, nullptr, &w, &h);
 	return {w, h};

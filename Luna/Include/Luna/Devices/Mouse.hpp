@@ -3,7 +3,7 @@
 #include <Luna/Core/Module.hpp>
 #include <Luna/Devices/Window.hpp>
 #include <Luna/Input/Common.hpp>
-#include <Luna/Math/Vec2.hpp>
+#include <glm/glm.hpp>
 
 struct GLFWcursor;
 
@@ -44,16 +44,16 @@ class Mouse : public Module::Registrar<Mouse> {
 
 	virtual void Update() override;
 
-	const Vec2d& GetPosition() const {
+	const glm::dvec2& GetPosition() const {
 		return _position;
 	}
-	const Vec2d& GetPositionDelta() const {
+	const glm::dvec2& GetPositionDelta() const {
 		return _positionDelta;
 	}
-	const Vec2d& GetScroll() const {
+	const glm::dvec2& GetScroll() const {
 		return _scroll;
 	}
-	const Vec2d& GetScrollDelta() const {
+	const glm::dvec2& GetScrollDelta() const {
 		return _scrollDelta;
 	}
 	bool IsWindowSelected() const {
@@ -66,7 +66,7 @@ class Mouse : public Module::Registrar<Mouse> {
 	InputAction GetButton(MouseButton button) const;
 
 	void SetCursorHidden(bool hidden);
-	void SetPosition(const Vec2d& position);
+	void SetPosition(const glm::dvec2& position);
 
 	CancellableDelegate<MouseButton, InputAction, InputMods>& OnButton() {
 		return _onButton;
@@ -74,10 +74,10 @@ class Mouse : public Module::Registrar<Mouse> {
 	CancellableDelegate<bool>& OnEnter() {
 		return _onEnter;
 	}
-	CancellableDelegate<Vec2d>& OnMoved() {
+	CancellableDelegate<glm::dvec2>& OnMoved() {
 		return _onMoved;
 	};
-	CancellableDelegate<Vec2d>& OnScroll() {
+	CancellableDelegate<glm::dvec2>& OnScroll() {
 		return _onScroll;
 	}
 
@@ -87,19 +87,19 @@ class Mouse : public Module::Registrar<Mouse> {
 	static void CallbackEnter(GLFWwindow* window, int32_t entered);
 	static void CallbackScroll(GLFWwindow* window, double xOffset, double yOffset);
 
-	Vec2d _lastPosition;
-	Vec2d _lastScroll;
-	Vec2d _position;
-	Vec2d _positionDelta;
-	Vec2d _savedPosition;
-	Vec2d _scroll;
-	Vec2d _scrollDelta;
+	glm::dvec2 _lastPosition;
+	glm::dvec2 _lastScroll;
+	glm::dvec2 _position;
+	glm::dvec2 _positionDelta;
+	glm::dvec2 _savedPosition;
+	glm::dvec2 _scroll;
+	glm::dvec2 _scrollDelta;
 	bool _windowSelected = false;
 	bool _cursorHidden   = false;
 
 	CancellableDelegate<MouseButton, InputAction, InputMods> _onButton;
 	CancellableDelegate<bool> _onEnter;
-	CancellableDelegate<Vec2d> _onMoved;
-	CancellableDelegate<Vec2d> _onScroll;
+	CancellableDelegate<glm::dvec2> _onMoved;
+	CancellableDelegate<glm::dvec2> _onScroll;
 };
 }  // namespace Luna

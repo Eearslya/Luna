@@ -2,9 +2,9 @@
 
 #include <Luna/Core/Engine.hpp>
 #include <Luna/Devices/Monitor.hpp>
-#include <Luna/Math/Vec2.hpp>
 #include <Luna/Utility/Delegate.hpp>
 #include <Luna/Vulkan/Common.hpp>
+#include <glm/glm.hpp>
 #include <memory>
 #include <string>
 #include <vector>
@@ -31,10 +31,10 @@ class Window : public Module::Registrar<Window> {
 	const std::vector<std::unique_ptr<Monitor>>& GetMonitors() const {
 		return _monitors;
 	}
-	const Vec2ui& GetPosition() const {
+	const glm::uvec2& GetPosition() const {
 		return _position;
 	}
-	const Vec2ui& GetSize(bool checkFullscreen = true) const {
+	const glm::uvec2& GetSize(bool checkFullscreen = true) const {
 		return (_fullscreen && checkFullscreen) ? _sizeFullscreen : _size;
 	}
 	const std::string& GetTitle() const {
@@ -69,9 +69,9 @@ class Window : public Module::Registrar<Window> {
 	void SetFloating(bool floating);
 	void SetFullscreen(bool fullscreen, const Monitor* monitor = nullptr);
 	void SetIconified(bool iconified);
-	void SetPosition(const Vec2ui& position);
+	void SetPosition(const glm::uvec2& position);
 	void SetResizable(bool resizable);
-	void SetSize(const Vec2ui& size);
+	void SetSize(const glm::uvec2& size);
 	void SetTitle(const std::string& title);
 
 	Delegate<void(bool)>& OnBorderlessChanged() {
@@ -95,13 +95,13 @@ class Window : public Module::Registrar<Window> {
 	Delegate<void(Monitor*, bool)>& OnMonitorChanged() {
 		return _onMonitorChanged;
 	}
-	Delegate<void(Vec2ui)>& OnMoved() {
+	Delegate<void(glm::uvec2)>& OnMoved() {
 		return _onMoved;
 	}
 	Delegate<void(bool)>& OnResizableChanged() {
 		return _onResizableChanged;
 	}
-	Delegate<void(Vec2ui)>& OnResized() {
+	Delegate<void(glm::uvec2)>& OnResized() {
 		return _onResized;
 	}
 	Delegate<void(std::string)>& OnTitleChanged() {
@@ -127,9 +127,9 @@ class Window : public Module::Registrar<Window> {
 	bool _iconified  = false;
 	bool _resizable  = true;
 
-	Vec2ui _position;
-	Vec2ui _sizeFullscreen;
-	Vec2ui _size;
+	glm::uvec2 _position;
+	glm::uvec2 _sizeFullscreen;
+	glm::uvec2 _size;
 	std::string _title;
 
 	std::vector<std::unique_ptr<Monitor>> _monitors;
@@ -143,9 +143,9 @@ class Window : public Module::Registrar<Window> {
 	Delegate<void(bool)> _onFullscreenChanged;
 	Delegate<void(bool)> _onIconifiedChanged;
 	Delegate<void(Monitor*, bool)> _onMonitorChanged;
-	Delegate<void(Vec2ui)> _onMoved;
+	Delegate<void(glm::uvec2)> _onMoved;
 	Delegate<void(bool)> _onResizableChanged;
-	Delegate<void(Vec2ui)> _onResized;
+	Delegate<void(glm::uvec2)> _onResized;
 	Delegate<void(std::string)> _onTitleChanged;
 };
 }  // namespace Luna

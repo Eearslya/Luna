@@ -136,7 +136,8 @@ void Window::Update() {
 }
 
 const Monitor* Window::GetCurrentMonitor() const {
-	const auto OverlappingArea = [](const Vec2i& l1, const Vec2i& r1, const Vec2i& l2, const Vec2i& r2) -> int32_t {
+	const auto OverlappingArea =
+		[](const glm::ivec2& l1, const glm::ivec2& r1, const glm::ivec2& l2, const glm::ivec2& r2) -> int32_t {
 		const int area1 = std::abs(l1.x - r1.x) * std::abs(l1.y - r1.y);
 		const int area2 = std::abs(l2.x - r2.x) * std::abs(l2.y - r2.y);
 		const int areaI = (std::min(r1.x, r2.x) - std::max(l1.x, l2.x)) * (std::min(r1.y, r2.y) - std::max(l1.y, l2.y));
@@ -215,7 +216,8 @@ void Window::SetFullscreen(bool fullscreen, const Monitor* monitor) {
 		_sizeFullscreen = {videoMode.Width, videoMode.Height};
 		glfwSetWindowMonitor(_window, selected->GetMonitor(), 0, 0, _sizeFullscreen.x, _sizeFullscreen.y, GLFW_DONT_CARE);
 	} else {
-		_position = ((Vec2i(videoMode.Width, videoMode.Height) - _size) / 2) + selected->GetPosition();
+		_position =
+			glm::uvec2((glm::ivec2(videoMode.Width, videoMode.Height) - glm::ivec2(_size)) / 2) + selected->GetPosition();
 		glfwSetWindowMonitor(_window, nullptr, _position.x, _position.y, _size.x, _size.y, GLFW_DONT_CARE);
 	}
 
@@ -232,7 +234,7 @@ void Window::SetIconified(bool iconified) {
 	}
 }
 
-void Window::SetPosition(const Vec2ui& position) {
+void Window::SetPosition(const glm::uvec2& position) {
 	if (position.x >= 0) { _position.x = position.x; }
 	if (position.y >= 0) { _position.y = position.y; }
 	glfwSetWindowPos(_window, _position.x, _position.y);
@@ -245,7 +247,7 @@ void Window::SetResizable(bool resizable) {
 	_onResizableChanged(_resizable);
 }
 
-void Window::SetSize(const Vec2ui& size) {
+void Window::SetSize(const glm::uvec2& size) {
 	if (size.x >= 0) { _size.x = size.x; }
 	if (size.y >= 0) { _size.y = size.y; }
 	glfwSetWindowSize(_window, _size.x, _size.y);

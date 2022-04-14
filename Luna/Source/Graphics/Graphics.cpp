@@ -97,7 +97,7 @@ Graphics::Graphics() {
 
 		return false;
 	};
-	mouse->OnMoved() += [this](Vec2d pos) -> bool {
+	mouse->OnMoved() += [this](glm::dvec2 pos) -> bool {
 		const float sensitivity = 0.1f;
 		if (_mouseControl) {
 			_camera.Rotate(pos.y * sensitivity, -pos.x * sensitivity);

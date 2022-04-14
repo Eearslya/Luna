@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Luna/Math/Vec2.hpp>
 #include <Luna/Vulkan/Common.hpp>
 
 namespace Luna {

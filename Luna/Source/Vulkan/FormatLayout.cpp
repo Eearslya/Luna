@@ -38,7 +38,7 @@ std::vector<vk::BufferImageCopy> FormatLayout::BuildBufferImageCopies() const {
 	return copies;
 }
 
-Vec2ui FormatLayout::FormatBlockDims() const {
+glm::uvec2 FormatLayout::FormatBlockDims() const {
 #define Format(fmt, w, h) \
 	case vk::Format::fmt:   \
 		return {              \

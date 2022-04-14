@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Luna/Math/Vec2.hpp>
 #include <Luna/Vulkan/Common.hpp>
 #include <Luna/Vulkan/Format.hpp>
+#include <glm/glm.hpp>
 
 namespace Luna {
 namespace Vulkan {
@@ -24,7 +24,7 @@ class FormatLayout final {
 	FormatLayout(vk::Format format, const vk::Extent3D& extent, uint32_t mipLevels = 1);
 
 	std::vector<vk::BufferImageCopy> BuildBufferImageCopies() const;
-	Vec2ui FormatBlockDims() const;
+	glm::uvec2 FormatBlockDims() const;
 	uint32_t FormatBlockSize(vk::ImageAspectFlags aspect) const;
 	size_t LayerByteStride(uint32_t imageHeight, size_t rowByteStride) const;
 	size_t RowByteStride(uint32_t rowLength) const;
@@ -32,7 +32,7 @@ class FormatLayout final {
 	uint32_t GetArrayLayers() const {
 		return _arrayLayers;
 	}
-	Vec2ui GetBlockDims() const {
+	glm::uvec2 GetBlockDims() const {
 		return _blockDims;
 	}
 	uint32_t GetBlockStride() const {
@@ -121,7 +121,7 @@ class FormatLayout final {
 	size_t _requiredSize     = 0;
 
 	uint32_t _arrayLayers = 1;
-	Vec2ui _blockDims;
+	glm::uvec2 _blockDims;
 	uint32_t _blockStride = 1;
 	uint32_t _mipLevels   = 1;
 

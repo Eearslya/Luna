@@ -48,7 +48,7 @@ Mouse::~Mouse() noexcept {}
 void Mouse::Update() {
 	ZoneScopedN("Mouse::Update()");
 
-	auto delta = Engine::Get()->GetUpdateDelta().Seconds();
+	auto delta = Engine::Get()->GetUpdateDelta().Seconds<double>();
 
 	_positionDelta = delta * (_lastPosition - _position);
 	if (!_cursorHidden) { _lastPosition = _position; }
@@ -78,7 +78,7 @@ void Mouse::SetCursorHidden(bool hidden) {
 	_cursorHidden = hidden;
 }
 
-void Mouse::SetPosition(const Vec2d& position) {
+void Mouse::SetPosition(const glm::dvec2& position) {
 	_lastPosition = position;
 	_position     = position;
 	glfwSetCursorPos(Window::Get()->GetWindow(), _position.x, _position.y);
