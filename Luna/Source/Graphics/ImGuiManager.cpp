@@ -252,11 +252,15 @@ void ImGuiManager::BeginFrame() {
 	// Update display size and platform data.
 	{
 		const auto windowSize      = Window::Get()->GetSize();
+		const auto framebufferSize = Window::Get()->GetFramebufferSize();
 		io.DisplaySize             = ImVec2(windowSize.x, windowSize.y);
-		io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
-		const auto now             = glfwGetTime();
-		io.DeltaTime               = _windowData->Time > 0.0 ? (float) (now - _windowData->Time) : 1.0f / 60.0f;
-		_windowData->Time          = now;
+		if (windowSize.x > 0 && windowSize.y > 0) {
+			io.DisplayFramebufferScale =
+				ImVec2(float(framebufferSize.x) / float(windowSize.x), float(framebufferSize.y) / float(windowSize.y));
+		}
+		const auto now    = glfwGetTime();
+		io.DeltaTime      = _windowData->Time > 0.0 ? (float) (now - _windowData->Time) : 1.0f / 60.0f;
+		_windowData->Time = now;
 	}
 
 	// Update mouse.
