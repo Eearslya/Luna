@@ -127,11 +127,22 @@ void Swapchain::RecreateSwapchain() {
 	Log::Trace("[Vulkan::Swapchain] Recreating Swapchain.");
 
 	auto windowSize = Window::Get()->GetFramebufferSize();
-	_extent         = vk::Extent2D(
-    std::clamp(
-      static_cast<uint32_t>(windowSize.x), capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
-    std::clamp(
-      static_cast<uint32_t>(windowSize.y), capabilities.minImageExtent.height, capabilities.maxImageExtent.height));
+	Log::Trace("[Vulkan::Swapchain]   Desired size:   {} x {}", windowSize.x, windowSize.y);
+	Log::Trace("[Vulkan::Swapchain]   Min Extent:     {} x {}",
+	           capabilities.minImageExtent.width,
+	           capabilities.minImageExtent.height);
+	Log::Trace("[Vulkan::Swapchain]   Max Extent:     {} x {}",
+	           capabilities.maxImageExtent.width,
+	           capabilities.maxImageExtent.height);
+	Log::Trace("[Vulkan::Swapchain]   Current Extent: {} x {}",
+	           capabilities.currentExtent.width,
+	           capabilities.currentExtent.height);
+	_extent = vk::Extent2D(
+		std::clamp(
+			static_cast<uint32_t>(windowSize.x), capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
+		std::clamp(
+			static_cast<uint32_t>(windowSize.y), capabilities.minImageExtent.height, capabilities.maxImageExtent.height));
+	Log::Trace("[Vulkan::Swapchain]   Final Size:     {} x {}", _extent.width, _extent.height);
 	_imageCount = std::clamp(3u, capabilities.minImageCount, capabilities.maxImageCount);
 
 	const vk::SwapchainCreateInfoKHR swapchainCI({},
