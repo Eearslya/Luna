@@ -472,7 +472,7 @@ void Graphics::Update() {
 		}
 
 		DrawRenderSettings();
-		_onUiRender();
+		OnUiRender();
 	}
 
 	{

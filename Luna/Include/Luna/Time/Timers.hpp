@@ -32,15 +32,12 @@ class Timer {
 		_destroyed = true;
 	}
 
-	Delegate<void()>& OnTick() {
-		return _onTick;
-	}
+	Delegate<void()> OnTick;
 
  private:
 	std::atomic_bool _destroyed = false;
 	Time _interval;
 	Time _next;
-	Delegate<void()> _onTick;
 	std::optional<uint32_t> _repeat;
 };
 
@@ -58,7 +55,7 @@ class Timers : public Module::Registrar<Timers> {
 		std::lock_guard<std::mutex> lock(_timerMutex);
 
 		Timer* timer = _timerPool.Allocate(delay, 1);
-		timer->OnTick().Add(std::move(function), args...);
+		timer->OnTick.Add(std::move(function), args...);
 		_activeTimers.push_back(timer);
 		_timersDirty = true;
 		_timerCondition.notify_all();
@@ -71,7 +68,7 @@ class Timers : public Module::Registrar<Timers> {
 		std::lock_guard<std::mutex> lock(_timerMutex);
 
 		Timer* timer = _timerPool.Allocate(interval);
-		timer->OnTick().Add(std::move(function), args...);
+		timer->OnTick.Add(std::move(function), args...);
 		_activeTimers.push_back(timer);
 		_timersDirty = true;
 		_timerCondition.notify_all();
@@ -84,7 +81,7 @@ class Timers : public Module::Registrar<Timers> {
 		std::lock_guard<std::mutex> lock(_timerMutex);
 
 		Timer* timer = _timerPool.Allocate(interval, repeat);
-		timer->OnTick().Add(std::move(function), args...);
+		timer->OnTick.Add(std::move(function), args...);
 		_activeTimers.push_back(timer);
 		_timersDirty = true;
 		_timerCondition.notify_all();

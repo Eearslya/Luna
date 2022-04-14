@@ -40,12 +40,11 @@ class Graphics : public Module::Registrar<Graphics> {
 	bool IsEditorLayout() const {
 		return _editorLayout;
 	}
-	Delegate<void()>& OnUiRender() {
-		return _onUiRender;
-	}
 
 	void SetEditorLayout(bool enabled);
 	virtual void Update() override;
+
+	Delegate<void()> OnUiRender;
 
  private:
 	bool BeginFrame();
@@ -73,7 +72,6 @@ class Graphics : public Module::Registrar<Graphics> {
 	std::unique_ptr<Vulkan::Swapchain> _swapchain;
 	std::unique_ptr<AssetManager> _assetManager;
 	std::unique_ptr<ImGuiManager> _imgui;
-	Delegate<void()> _onUiRender;
 	Vulkan::ImageHandle _whiteImage;
 
 	Camera _camera;

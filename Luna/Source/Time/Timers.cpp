@@ -20,9 +20,7 @@ Timers::~Timers() noexcept {
 	}
 
 	_workerThread.join();
-	for (auto& timer : _activeTimers) {
-		_timerPool.Free(timer);
-	}
+	for (auto& timer : _activeTimers) { _timerPool.Free(timer); }
 }
 
 void Timers::TimerThread() {
@@ -46,7 +44,7 @@ void Timers::TimerThread() {
 
 			if (now >= timer->_next) {
 				lock.unlock();
-				timer->_onTick();
+				timer->OnTick();
 				lock.lock();
 
 				timer->_next += timer->_interval;
