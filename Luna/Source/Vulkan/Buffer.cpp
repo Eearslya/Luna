@@ -13,18 +13,10 @@ Buffer::Buffer(Device& device, const BufferCreateInfo& createInfo)
 	auto dev = _device.GetDevice();
 
 	const vk::BufferCreateInfo bufferCI({}, _createInfo.Size, _createInfo.Usage, vk::SharingMode::eExclusive, nullptr);
-	// VMA_ALLOCATION_CREATE_MAPPED_BIT is safe to use even on non-mappable buffers, as VMA will simply ignore it.
-	VmaAllocationCreateInfo bufferAI = {.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT};
-	switch (_createInfo.Domain) {
-		case BufferDomain::Device:
-			bufferAI.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-			break;
-
-		case BufferDomain::Host:
-		default:
-			bufferAI.usage          = VMA_MEMORY_USAGE_CPU_TO_GPU;
-			bufferAI.preferredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-			break;
+	VmaAllocationCreateInfo bufferAI = {.usage = VMA_MEMORY_USAGE_AUTO};
+	if (_createInfo.Domain == BufferDomain::Host) {
+		bufferAI.flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+		bufferAI.preferredFlags |= VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	}
 
 	Log::Trace("[Vulkan::Buffer] Creating new Buffer.");

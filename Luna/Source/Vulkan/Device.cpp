@@ -117,7 +117,6 @@ Device::Device(const Context& context)
 #undef FN
 		const VmaAllocatorCreateInfo allocatorCI = {.physicalDevice   = _gpu,
 		                                            .device           = _device,
-		                                            .frameInUseCount  = 1,
 		                                            .pVulkanFunctions = &vmaFunctions,
 		                                            .instance         = _instance,
 		                                            .vulkanApiVersion = VK_API_VERSION_1_0};

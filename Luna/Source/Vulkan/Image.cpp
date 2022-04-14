@@ -48,7 +48,7 @@ Image::Image(Device& device, const ImageCreateInfo& createInfo)
 	                                  vk::SharingMode::eExclusive,
 	                                  nullptr,
 	                                  vk::ImageLayout::eUndefined);
-	VmaAllocationCreateInfo imageAI{.usage = VMA_MEMORY_USAGE_GPU_ONLY};
+	VmaAllocationCreateInfo imageAI{.usage = VMA_MEMORY_USAGE_AUTO};
 	if (createInfo.Usage & vk::ImageUsageFlagBits::eTransientAttachment) {
 		imageAI.preferredFlags |= VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
 	}
