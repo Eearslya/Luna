@@ -126,7 +126,7 @@ void Swapchain::RecreateSwapchain() {
 
 	Log::Trace("[Vulkan::Swapchain] Recreating Swapchain.");
 
-	auto windowSize = Window::Get()->GetSize();
+	auto windowSize = Window::Get()->GetFramebufferSize();
 	_extent         = vk::Extent2D(
     std::clamp(
       static_cast<uint32_t>(windowSize.x), capabilities.minImageExtent.width, capabilities.maxImageExtent.width),

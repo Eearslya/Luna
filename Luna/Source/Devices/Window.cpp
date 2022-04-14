@@ -15,10 +15,10 @@ void Window::CallbackMonitor(GLFWmonitor* monitor, int32_t event) {
 
 	if (event == GLFW_CONNECTED) {
 		auto& it = monitors.emplace_back(std::make_unique<Monitor>(monitor));
-		window->_onMonitorChanged(it.get(), true);
+		window->OnMonitorChanged(it.get(), true);
 	} else {
 		for (auto& m : monitors) {
-			if (m->GetMonitor() == monitor) { window->_onMonitorChanged(m.get(), false); }
+			if (m->GetMonitor() == monitor) { window->OnMonitorChanged(m.get(), false); }
 		}
 
 		monitors.erase(std::remove_if(
@@ -27,36 +27,32 @@ void Window::CallbackMonitor(GLFWmonitor* monitor, int32_t event) {
 }
 
 void Window::CallbackWindowClose(GLFWwindow* window) {
-	Window::Get()->_onClosed();
+	Window::Get()->OnClosed();
 	Engine::Get()->Shutdown();
 }
 
 void Window::CallbackWindowFocus(GLFWwindow* window, int32_t focused) {
 	auto me      = Window::Get();
 	me->_focused = focused == GLFW_TRUE;
-	me->_onFocusChanged(me->_focused);
+	me->OnFocusChanged(me->_focused);
 }
 
 void Window::CallbackFramebufferSize(GLFWwindow* window, int32_t w, int32_t h) {
-	auto me = Window::Get();
-	if (me->_fullscreen) {
-		me->_sizeFullscreen = {w, h};
-	} else {
-		me->_size = {w, h};
-	}
+	auto me              = Window::Get();
+	me->_framebufferSize = {w, h};
 }
 
 void Window::CallbackWindowIconify(GLFWwindow* window, int32_t iconified) {
 	auto me        = Window::Get();
 	me->_iconified = iconified == GLFW_TRUE;
-	me->_onIconifiedChanged(me->_iconified);
+	me->OnIconifiedChanged(me->_iconified);
 }
 
 void Window::CallbackWindowPosition(GLFWwindow* window, int32_t x, int32_t y) {
 	auto me = Window::Get();
 	if (me->_fullscreen) { return; }
 	me->_position = {x, y};
-	me->_onMoved(me->_position);
+	me->OnMoved(me->_position);
 }
 
 void Window::CallbackWindowSize(GLFWwindow* window, int32_t w, int32_t h) {
@@ -65,10 +61,10 @@ void Window::CallbackWindowSize(GLFWwindow* window, int32_t w, int32_t h) {
 	auto me = Window::Get();
 	if (me->_fullscreen) {
 		me->_sizeFullscreen = {w, h};
-		me->_onResized(me->_sizeFullscreen);
+		me->OnResized(me->_sizeFullscreen);
 	} else {
 		me->_size = {w, h};
-		me->_onResized(me->_size);
+		me->OnResized(me->_size);
 	}
 }
 
@@ -117,6 +113,12 @@ Window::Window() : _size(1280, 720), _title("Luna") {
 	glfwSetWindowIconifyCallback(_window, CallbackWindowIconify);
 	glfwSetWindowPosCallback(_window, CallbackWindowPosition);
 	glfwSetWindowSizeCallback(_window, CallbackWindowSize);
+
+	int w, h;
+	glfwGetWindowSize(_window, &w, &h);
+	_size = {w, h};
+	glfwGetFramebufferSize(_window, &w, &h);
+	_framebufferSize = {w, h};
 }
 
 Window::~Window() noexcept {
@@ -195,14 +197,14 @@ void Window::SetBorderless(bool borderless) {
 	if (borderless == _borderless) { return; }
 	_borderless = borderless;
 	glfwSetWindowAttrib(_window, GLFW_DECORATED, !_borderless);
-	_onBorderlessChanged(_borderless);
+	OnBorderlessChanged(_borderless);
 }
 
 void Window::SetFloating(bool floating) {
 	if (floating == _floating) { return; }
 	_floating = floating;
 	glfwSetWindowAttrib(_window, GLFW_FLOATING, !_floating);
-	_onFloatingChanged(_floating);
+	OnFloatingChanged(_floating);
 }
 
 void Window::SetFullscreen(bool fullscreen, const Monitor* monitor) {
@@ -221,7 +223,7 @@ void Window::SetFullscreen(bool fullscreen, const Monitor* monitor) {
 		glfwSetWindowMonitor(_window, nullptr, _position.x, _position.y, _size.x, _size.y, GLFW_DONT_CARE);
 	}
 
-	_onFullscreenChanged(_fullscreen);
+	OnFullscreenChanged(_fullscreen);
 }
 
 void Window::SetIconified(bool iconified) {
@@ -244,7 +246,7 @@ void Window::SetResizable(bool resizable) {
 	if (resizable == _resizable) { return; }
 	_resizable = resizable;
 	glfwSetWindowAttrib(_window, GLFW_RESIZABLE, !_resizable);
-	_onResizableChanged(_resizable);
+	OnResizableChanged(_resizable);
 }
 
 void Window::SetSize(const glm::uvec2& size) {
@@ -256,6 +258,6 @@ void Window::SetSize(const glm::uvec2& size) {
 void Window::SetTitle(const std::string& title) {
 	_title      = title;
 	_titleDirty = true;
-	_onTitleChanged(_title);
+	OnTitleChanged(_title);
 }
 }  // namespace Luna
