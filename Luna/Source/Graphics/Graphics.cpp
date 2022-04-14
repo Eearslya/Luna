@@ -48,13 +48,56 @@ Graphics::Graphics() {
 	_imgui        = std::make_unique<ImGuiManager>(*_device);
 	_sceneImages.resize(_swapchain->GetImages().size());
 
-	// Create placeholder texture.
+	// Create placeholder textures.
 	{
-		uint32_t pixels[16];
-		std::fill(pixels, pixels + 16, 0xffffffff);
-		const Vulkan::InitialImageData initialImage{.Data = &pixels};
-		_whiteImage = _device->CreateImage(
-			Vulkan::ImageCreateInfo::Immutable2D(vk::Format::eR8G8B8A8Srgb, vk::Extent2D(4, 4), false), &initialImage);
+		constexpr uint32_t width    = 4;
+		constexpr uint32_t height   = 4;
+		constexpr size_t pixelCount = width * height;
+		uint32_t pixels[pixelCount];
+
+		const Vulkan::ImageCreateInfo imageCI2D = {
+			.Domain        = Vulkan::ImageDomain::Physical,
+			.Format        = vk::Format::eR8G8B8A8Unorm,
+			.Type          = vk::ImageType::e2D,
+			.Usage         = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eInputAttachment,
+			.Extent        = vk::Extent3D(width, height, 1),
+			.ArrayLayers   = 1,
+			.MipLevels     = 1,
+			.Samples       = vk::SampleCountFlagBits::e1,
+			.InitialLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
+		const Vulkan::ImageCreateInfo imageCICube = {
+			.Domain        = Vulkan::ImageDomain::Physical,
+			.Format        = vk::Format::eR8G8B8A8Unorm,
+			.Type          = vk::ImageType::e2D,
+			.Usage         = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eInputAttachment,
+			.Extent        = vk::Extent3D(width, height, 1),
+			.ArrayLayers   = 6,
+			.MipLevels     = 1,
+			.Samples       = vk::SampleCountFlagBits::e1,
+			.InitialLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+			.Flags         = Vulkan::ImageCreateFlagBits::CreateCubeCompatible};
+
+		Vulkan::InitialImageData initialImages[6];
+		for (int i = 0; i < 6; ++i) { initialImages[i] = Vulkan::InitialImageData{.Data = &pixels}; }
+
+		// Black images
+		std::fill(pixels, pixels + pixelCount, 0x000000ff);
+		_defaultImages.Black2D   = _device->CreateImage(imageCI2D, initialImages);
+		_defaultImages.BlackCube = _device->CreateImage(imageCICube, initialImages);
+
+		// Gray images
+		std::fill(pixels, pixels + pixelCount, 0x808080ff);
+		_defaultImages.Gray2D   = _device->CreateImage(imageCI2D, initialImages);
+		_defaultImages.GrayCube = _device->CreateImage(imageCICube, initialImages);
+
+		// Normal images
+		std::fill(pixels, pixels + pixelCount, 0x8080ffff);
+		_defaultImages.Normal2D = _device->CreateImage(imageCI2D, initialImages);
+
+		// White images
+		std::fill(pixels, pixels + pixelCount, 0xffffffff);
+		_defaultImages.White2D   = _device->CreateImage(imageCI2D, initialImages);
+		_defaultImages.WhiteCube = _device->CreateImage(imageCICube, initialImages);
 	}
 
 	_cameraBuffer = _device->CreateBuffer(
@@ -246,11 +289,14 @@ void Graphics::Update() {
 		glm::mat4 Model;
 	};
 
-	const auto SetTexture = [&](uint32_t set, uint32_t binding, const TextureHandle& texture) -> void {
-		const bool ready      = bool(texture) && texture->Ready;
-		const bool hasTexture = ready && texture->Image;
-		const bool hasSampler = ready && texture->Sampler;
-		const auto& view      = hasTexture ? *texture->Image->GetView() : *_whiteImage->GetView();
+	const auto SetTexture =
+		[&](
+			uint32_t set, uint32_t binding, const TextureHandle& texture, const Vulkan::ImageHandle& fallback = {}) -> void {
+		const auto& fallbackView = fallback ? fallback : _defaultImages.White2D;
+		const bool ready         = bool(texture) && texture->Ready;
+		const bool hasTexture    = ready && texture->Image;
+		const bool hasSampler    = ready && texture->Sampler;
+		const auto& view         = hasTexture ? *texture->Image->GetView() : *fallbackView->GetView();
 		const auto sampler =
 			hasSampler ? texture->Sampler : _device->RequestSampler(Vulkan::StockSampler::DefaultGeometryFilterWrap);
 		cmd->SetTexture(set, binding, view, sampler);
@@ -308,9 +354,9 @@ void Graphics::Update() {
 				cmd->SetTexture(0, 3, *worldData->Environment->Prefiltered->GetView(), Vulkan::StockSampler::LinearClamp);
 				cmd->SetTexture(0, 4, *worldData->Environment->BrdfLut->GetView(), Vulkan::StockSampler::LinearClamp);
 			} else {
-				cmd->SetTexture(0, 2, *_whiteImage->GetView(), Vulkan::StockSampler::LinearClamp);
-				cmd->SetTexture(0, 3, *_whiteImage->GetView(), Vulkan::StockSampler::LinearClamp);
-				cmd->SetTexture(0, 4, *_whiteImage->GetView(), Vulkan::StockSampler::LinearClamp);
+				cmd->SetTexture(0, 2, *_defaultImages.BlackCube->GetView(), Vulkan::StockSampler::LinearClamp);
+				cmd->SetTexture(0, 3, *_defaultImages.BlackCube->GetView(), Vulkan::StockSampler::LinearClamp);
+				cmd->SetTexture(0, 4, *_defaultImages.Black2D->GetView(), Vulkan::StockSampler::LinearClamp);
 			}
 
 			const auto view = registry.view<MeshRenderer>();
@@ -347,10 +393,10 @@ void Graphics::Update() {
 					material->Update();
 
 					cmd->SetCullMode(material->DualSided ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack);
-					SetTexture(1, 1, material->Albedo);
-					SetTexture(1, 2, material->Normal);
-					SetTexture(1, 3, material->PBR);
-					SetTexture(1, 4, material->Emissive);
+					SetTexture(1, 1, material->Albedo, _defaultImages.White2D);
+					SetTexture(1, 2, material->Normal, _defaultImages.Normal2D);
+					SetTexture(1, 3, material->PBR, _defaultImages.White2D);
+					SetTexture(1, 4, material->Emissive, _defaultImages.Black2D);
 					cmd->SetUniformBuffer(1, 0, *material->DataBuffer);
 
 					if (submesh.IndexCount > 0) {

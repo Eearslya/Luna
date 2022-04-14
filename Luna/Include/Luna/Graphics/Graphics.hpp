@@ -53,6 +53,16 @@ class Graphics : public Module::Registrar<Graphics> {
 	void DrawRenderSettings();
 	void LoadShaders();
 
+	struct DefaultImages {
+		Vulkan::ImageHandle Black2D;
+		Vulkan::ImageHandle Gray2D;
+		Vulkan::ImageHandle Normal2D;
+		Vulkan::ImageHandle White2D;
+		Vulkan::ImageHandle BlackCube;
+		Vulkan::ImageHandle GrayCube;
+		Vulkan::ImageHandle WhiteCube;
+	};
+
 	struct CameraData {
 		glm::mat4 Projection;
 		glm::mat4 View;
@@ -72,7 +82,7 @@ class Graphics : public Module::Registrar<Graphics> {
 	std::unique_ptr<Vulkan::Swapchain> _swapchain;
 	std::unique_ptr<AssetManager> _assetManager;
 	std::unique_ptr<ImGuiManager> _imgui;
-	Vulkan::ImageHandle _whiteImage;
+	DefaultImages _defaultImages;
 
 	Camera _camera;
 	Scene _scene;
