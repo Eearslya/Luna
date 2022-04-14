@@ -338,7 +338,10 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo, const void
 		auto stagingBuffer = CreateBuffer(stagingInfo, initialData);
 
 		auto transferCmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
-		transferCmd->CopyBuffer(*handle, *stagingBuffer);
+		{
+			CbZone(transferCmd, "Buffer Transfer");
+			transferCmd->CopyBuffer(*handle, *stagingBuffer);
+		}
 
 		{
 			LOCK();
@@ -519,6 +522,9 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 			bool needInitialBarrier                = true;
 
 			auto graphicsCmd = RequestCommandBuffer(CommandBufferType::Generic);
+			CbZone(graphicsCmd, "Image Upload");
+			graphicsCmd->BeginZone("Image Upload");
+
 			CommandBufferHandle transferCmd;
 			if (!_queues.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
 				transferCmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
@@ -526,15 +532,24 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 				transferCmd = graphicsCmd;
 			}
 
-			transferCmd->ImageBarrier(*handle,
-			                          vk::ImageLayout::eUndefined,
-			                          vk::ImageLayout::eTransferDstOptimal,
-			                          vk::PipelineStageFlagBits::eTopOfPipe,
-			                          {},
-			                          vk::PipelineStageFlagBits::eTransfer,
-			                          vk::AccessFlagBits::eTransferWrite);
-			transferCmd->CopyBufferToImage(*handle, *initialBuffer.Buffer, initialBuffer.ImageCopies);
+			// Image Copy
+			{
+				CbZone(transferCmd, "Image Transfer");
+				transferCmd->BeginZone("Image Transfer");
 
+				transferCmd->ImageBarrier(*handle,
+				                          vk::ImageLayout::eUndefined,
+				                          vk::ImageLayout::eTransferDstOptimal,
+				                          vk::PipelineStageFlagBits::eTopOfPipe,
+				                          {},
+				                          vk::PipelineStageFlagBits::eTransfer,
+				                          vk::AccessFlagBits::eTransferWrite);
+				transferCmd->CopyBufferToImage(*handle, *initialBuffer.Buffer, initialBuffer.ImageCopies);
+
+				transferCmd->EndZone();
+			}
+
+			// Submit Image Copy, with necessary ownership transfers
 			if (!_queues.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
 				vk::PipelineStageFlags dstStages =
 					generateMips ? vk::PipelineStageFlagBits::eTransfer : handle->GetStageFlags();
@@ -573,14 +588,21 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 			}
 
 			if (generateMips) {
+				CbZone(graphicsCmd, "Generate Mipmaps");
+				graphicsCmd->BeginZone("Generate Mipmaps");
+
 				graphicsCmd->GenerateMipmaps(*handle,
 				                             vk::ImageLayout::eTransferDstOptimal,
 				                             vk::PipelineStageFlagBits::eTransfer,
 				                             prepareSrcAccess,
 				                             needMipmapBarrier);
+
+				graphicsCmd->EndZone();
 			}
 
 			if (needInitialBarrier) {
+				CbZone(graphicsCmd, "Transition to Initial");
+
 				graphicsCmd->ImageBarrier(
 					*handle,
 					generateMips ? vk::ImageLayout::eTransferSrcOptimal : vk::ImageLayout::eTransferDstOptimal,
@@ -591,9 +613,13 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 					handle->GetAccessFlags() & ImageLayoutToPossibleAccess(createInfo.InitialLayout));
 			}
 
+			graphicsCmd->EndZone();
+
 			transitionCmd = std::move(graphicsCmd);
 		} else if (createInfo.InitialLayout != vk::ImageLayout::eUndefined) {
 			auto cmd = RequestCommandBuffer(CommandBufferType::Generic);
+			CbZone(cmd, "Transition to Initial");
+
 			cmd->ImageBarrier(*handle,
 			                  actualInfo.InitialLayout,
 			                  createInfo.InitialLayout,

@@ -339,8 +339,12 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 	// Convert our equirectangular map into a cubemap.
 	{
 		ZoneScopedN("Render Cubemap");
+		CbZone(cmdBuf, "Equirectangular Conversion");
+		cmdBuf->BeginZone("Environment Cubemap Conversion");
 
 		ProcessCubeMap(cubeMapProgram, baseHdr, skybox);
+
+		cmdBuf->EndZone();
 	}
 
 	// Free the base HDR image, as all future calculations will be based off of the cubemap instead.
@@ -349,15 +353,23 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 	// Convolute the cubemap into an irradiance map.
 	{
 		ZoneScopedN("Render Irradiance");
+		CbZone(cmdBuf, "Environment Irradiance");
+		cmdBuf->BeginZone("Environment Irradiance");
 
 		ProcessCubeMap(irradianceProgram, skybox, irradiance);
+
+		cmdBuf->EndZone();
 	}
 
 	// Prefilter the cubemap
 	{
 		ZoneScopedN("Render Prefiltered");
+		CbZone(cmdBuf, "Environment Prefilter");
+		cmdBuf->BeginZone("Environment Prefilter");
 
 		ProcessCubeMap(prefilterProgram, skybox, prefilter);
+
+		cmdBuf->EndZone();
 	}
 
 	renderTarget.Reset();
@@ -375,6 +387,8 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 	// Render our BRDF LUT.
 	{
 		ZoneScopedN("Render BRDF LUT");
+		CbZone(cmdBuf, "Environment BRDFLUT");
+		cmdBuf->BeginZone("Environment BRDFLUT");
 
 		auto rpInfo                 = Vulkan::RenderPassInfo{};
 		rpInfo.ColorAttachmentCount = 1;
@@ -400,12 +414,17 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 		                nullptr,
 		                nullptr,
 		                barrier);
+
+		cmdBuf->EndZone();
 	}
 
-	// Vulkan::FenceHandle waitFence;
-	// device.Submit(cmdBuf, &waitFence);
-	// if (waitFence) { waitFence->Wait(); }
-	device.Submit(cmdBuf);
+	Vulkan::FenceHandle waitFence;
+	device.Submit(cmdBuf, &waitFence);
+	if (waitFence) {
+		ZoneScopedN("Await Completion");
+		waitFence->Wait();
+	}
+	// device.Submit(cmdBuf);
 
 	env->Skybox      = std::move(skybox);
 	env->Irradiance  = std::move(irradiance);
