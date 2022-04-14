@@ -147,6 +147,7 @@ void Graphics::Update() {
 			ImGui::Begin("Scene",
 		               nullptr,
 		               ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse);
+		ImGui::PopStyleVar(2);
 		if (sceneWindow) { ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList()); }
 
 		const ImVec2 windowSize = ImGui::GetWindowContentRegionMax();
@@ -414,13 +415,9 @@ void Graphics::Update() {
 		cmd->EndZone();
 	}
 
-	if (_editorLayout) {
-		if (sceneWindow) {
-			ImGui::Image(reinterpret_cast<ImTextureID>(const_cast<Vulkan::ImageView*>(sceneImage->GetView().Get())),
-			             ImGui::GetWindowContentRegionMax());
-		}
-		ImGui::End();
-		ImGui::PopStyleVar(2);
+	if (_editorLayout && sceneWindow) {
+		ImGui::Image(reinterpret_cast<ImTextureID>(const_cast<Vulkan::ImageView*>(sceneImage->GetView().Get())),
+		             ImGui::GetWindowContentRegionMax());
 	}
 
 	// Draw our UI.
@@ -470,6 +467,8 @@ void Graphics::Update() {
 				transform.UpdateGlobalTransform(registry);
 			}
 		}
+
+		if (_editorLayout) { ImGui::End(); }
 
 		DrawRenderSettings();
 		OnUiRender();
