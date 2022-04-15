@@ -25,6 +25,9 @@ Swapchain::Swapchain(Device& device) : _device(device) {
 	if (_format.format == vk::Format::eUndefined) { _format = formats[0]; }
 
 	_presentMode = vk::PresentModeKHR::eFifo;
+	for (auto& presentMode : presentModes) {
+		if (presentMode == vk::PresentModeKHR::eMailbox) { _presentMode = presentMode; }
+	}
 
 	Log::Trace(
 		"[Vulkan::Swapchain] Swapchain Format: {}, {}", vk::to_string(_format.format), vk::to_string(_format.colorSpace));

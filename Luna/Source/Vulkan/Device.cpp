@@ -138,7 +138,7 @@ Device::Device(const Context& context)
 	_transientAttachmentAllocator = std::make_unique<TransientAttachmentAllocator>(*this);
 
 	// Create our frame contexts.
-	CreateFrameContexts(2);
+	CreateFrameContexts(3);
 
 	CreateTracingContexts();
 }
@@ -1006,9 +1006,10 @@ void Device::SubmitQueue(QueueType queueType, InternalFence* submitFence, std::v
 
 	if (queueType != QueueType::Transfer) { FlushFrameNoLock(QueueType::Transfer); }
 
-	vk::Queue queue                 = _queues.Queue(queueType);
-	vk::Semaphore timelineSemaphore = queueData.TimelineSemaphore;
-	uint64_t timelineValue          = ++queueData.TimelineValue;
+	vk::Queue queue                                     = _queues.Queue(queueType);
+	vk::Semaphore timelineSemaphore                     = queueData.TimelineSemaphore;
+	uint64_t timelineValue                              = ++queueData.TimelineValue;
+	Frame().TimelineValues[static_cast<int>(queueType)] = timelineValue;
 
 	// Batch all of our command buffers into as few submissions as possible. Increment batch whenever we need to use a
 	// signal semaphore.
@@ -1420,7 +1421,8 @@ Device::FrameContext::FrameContext(Device& device, uint32_t frameIndex) : Parent
 	// Have a set of objects for each worker thread, plus 1 for main thread.
 	const auto threadCount = Threading::Get()->GetThreadCount() + 1;
 	for (uint32_t type = 0; type < QueueTypeCount; ++type) {
-		const auto family = Parent._queues.Families[type];
+		TimelineValues[type] = 0;
+		const auto family    = Parent._queues.Families[type];
 		for (uint32_t thread = 0; thread < threadCount; ++thread) {
 			CommandPools[type].emplace_back(std::make_unique<CommandPool>(Parent, family));
 		}
@@ -1434,6 +1436,7 @@ Device::FrameContext::~FrameContext() noexcept {
 // Start our frame of work. Here, we perform cleanup of everything we know is no longer in use.
 void Device::FrameContext::Begin() {
 	ZoneScopedN("Vulkan::Device::FrameContext::Begin");
+	ZoneValue(FrameIndex);
 
 	vk::Device device = Parent.GetDevice();
 
@@ -1453,9 +1456,9 @@ void Device::FrameContext::Begin() {
 			std::array<vk::Semaphore, QueueTypeCount> semaphores;
 			std::array<uint64_t, QueueTypeCount> values;
 			for (size_t i = 0; i < QueueTypeCount; ++i) {
-				if (Parent._queueData[i].TimelineValue) {
+				if (TimelineValues[i]) {
 					semaphores[semaphoreCount] = Parent._queueData[i].TimelineSemaphore;
-					values[semaphoreCount]     = Parent._queueData[i].TimelineValue;
+					values[semaphoreCount]     = TimelineValues[i];
 					++semaphoreCount;
 				}
 			}

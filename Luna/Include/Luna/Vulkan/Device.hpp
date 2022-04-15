@@ -140,6 +140,7 @@ class Device final : NonCopyable {
 
 		std::array<std::vector<std::unique_ptr<CommandPool>>, QueueTypeCount> CommandPools;
 		std::array<std::vector<CommandBufferHandle>, QueueTypeCount> Submissions;
+		std::array<uint64_t, QueueTypeCount> TimelineValues;
 
 		std::vector<Buffer*> BuffersToDestroy;
 		std::vector<vk::Fence> FencesToAwait;
