@@ -353,6 +353,10 @@ void CommandBuffer::SetDepthCompareOp(vk::CompareOp op) {
 	SetStaticState(DepthCompare, op);
 }
 
+void CommandBuffer::SetDepthWrite(bool write) {
+	SetStaticState(DepthWrite, write);
+}
+
 void CommandBuffer::SetFrontFace(vk::FrontFace front) {
 	SetStaticState(FrontFace, front);
 }

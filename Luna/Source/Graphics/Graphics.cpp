@@ -336,10 +336,15 @@ void Graphics::Update() {
 			Vulkan::RenderPassInfo::SubpassInfo gBufferPass  = {};
 			Vulkan::RenderPassInfo::SubpassInfo lightingPass = {};
 			gBufferPass.DSUsage                              = Vulkan::DepthStencilUsage::ReadWrite;
+			lightingPass.DSUsage                             = Vulkan::DepthStencilUsage::ReadOnly;
 
 			Vulkan::RenderPassInfo info = {};
 
 			info.ColorAttachments[info.ColorAttachmentCount] = sceneImage->GetView().Get();
+			if (!_drawSkybox) {
+				info.ClearAttachments |= 1 << info.ColorAttachmentCount;
+				info.ClearColors[info.ColorAttachmentCount].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
+			}
 			info.StoreAttachments |= 1 << info.ColorAttachmentCount;
 			lightingPass.ColorAttachments[lightingPass.ColorAttachmentCount] = info.ColorAttachmentCount;
 			lightingPass.ColorAttachmentCount++;
@@ -491,12 +496,40 @@ void Graphics::Update() {
 			cmd->BeginZone("Lighting Pass", glm::vec3(0.3f, 0.3f, 0.8f));
 
 			cmd->SetOpaqueState();
-			cmd->SetCullMode(vk::CullModeFlagBits::eNone);
+			cmd->SetCullMode(vk::CullModeFlagBits::eFront);
+			cmd->SetDepthWrite(false);
 			cmd->SetProgram(_programDeferred);
 			cmd->SetInputAttachments(1, 0);
 			cmd->Draw(3);
 
 			cmd->EndZone();
+		}
+
+		// Render Skybox
+		{
+			if (_drawSkybox && environmentReady) {
+				ZoneScopedN("Skybox");
+				CbZone(cmd, "Skybox");
+				cmd->BeginZone("Skybox", glm::vec3(0.0f, 1.0f, 1.0f));
+				struct SkyboxPC {
+					float DebugView = 0.0f;
+				};
+				SkyboxPC pc = {.DebugView = static_cast<float>(_skyDebug)};
+
+				cmd->SetOpaqueState();
+				cmd->SetProgram(_programSkybox);
+				cmd->SetDepthCompareOp(vk::CompareOp::eEqual);
+				cmd->SetDepthWrite(false);
+				cmd->SetCullMode(vk::CullModeFlagBits::eFront);
+				cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
+				cmd->SetTexture(1, 0, *worldData->Environment->Skybox->GetView(), Vulkan::StockSampler::LinearClamp);
+				cmd->SetTexture(1, 1, *worldData->Environment->Irradiance->GetView(), Vulkan::StockSampler::LinearClamp);
+				cmd->SetTexture(1, 2, *worldData->Environment->Prefiltered->GetView(), Vulkan::StockSampler::LinearClamp);
+				cmd->PushConstants(&pc, 0, sizeof(pc));
+				cmd->Draw(36);
+
+				cmd->EndZone();
+			}
 		}
 
 		cmd->EndRenderPass();

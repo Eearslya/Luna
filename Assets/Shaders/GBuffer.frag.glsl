@@ -83,6 +83,6 @@ void main() {
 	outPosition = vec4(inWorldPos, 0.0f);
 	outNormal = vec4(Material.HasNormal == 1 ? GetNormal() : normalize(inNormal), 1.0f);
 	outAlbedo = baseColor;
-	outPBR = vec4(0.0f, metallic, roughness, 0.0f);
+	outPBR = vec4(0.0f, roughness, metallic, 0.0f);
 	outEmissive = vec4(emissive, 0.0f);
 }

@@ -226,6 +226,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void SetCullMode(vk::CullModeFlagBits mode);
 	void SetDepthClamp(bool clamp);
 	void SetDepthCompareOp(vk::CompareOp op);
+	void SetDepthWrite(bool write);
 	void SetFrontFace(vk::FrontFace front);
 	void SetScissor(const vk::Rect2D& scissor);
 

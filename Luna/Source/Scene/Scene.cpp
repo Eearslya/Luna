@@ -63,7 +63,7 @@ entt::entity Scene::LoadModel(const std::string& filePath, entt::entity parent) 
 }
 
 void Scene::DrawSceneGraph() {
-	if (ImGui::Begin("Heirarchy")) {
+	if (ImGui::Begin("Hierarchy")) {
 		std::function<void(const entt::entity)> DisplayEntity = [&](const entt::entity entity) -> void {
 			const auto& transform       = _registry.get<TransformComponent>(entity);
 			const bool hasChildren      = transform.Children.size() > 0;
