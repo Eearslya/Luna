@@ -229,7 +229,7 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 	}
 
 // Dump shader resources to console.
-#if 0
+#if 1
 	{
 		Log::Trace("[Vulkan::Shader] - Shader Resources:");
 
@@ -370,10 +370,10 @@ void Program::Bake() {
 			_layout.SetLayouts[set].UniformBufferMask |= shaderLayout.SetLayouts[set].UniformBufferMask;
 
 			const uint32_t activeBinds =
-				shaderLayout.SetLayouts[set].SampledBufferMask | shaderLayout.SetLayouts[set].SampledImageMask |
-				shaderLayout.SetLayouts[set].SamplerMask | shaderLayout.SetLayouts[set].SeparateImageMask |
-				shaderLayout.SetLayouts[set].StorageBufferMask | shaderLayout.SetLayouts[set].StorageImageMask |
-				shaderLayout.SetLayouts[set].UniformBufferMask;
+				shaderLayout.SetLayouts[set].InputAttachmentMask | shaderLayout.SetLayouts[set].SampledBufferMask |
+				shaderLayout.SetLayouts[set].SampledImageMask | shaderLayout.SetLayouts[set].SamplerMask |
+				shaderLayout.SetLayouts[set].SeparateImageMask | shaderLayout.SetLayouts[set].StorageBufferMask |
+				shaderLayout.SetLayouts[set].StorageImageMask | shaderLayout.SetLayouts[set].UniformBufferMask;
 			if (activeBinds) { _layout.StagesForSets[set] |= stageMask; }
 
 			ForEachBit(activeBinds, [&](uint32_t bit) {
@@ -423,7 +423,7 @@ void Program::Bake() {
 	_pipelineLayout = _device.RequestPipelineLayout(_layout);
 
 // Dump program resources to console.
-#if 0
+#if 1
 	{
 		Log::Trace("[Vulkan::Program] - Program Resources:");
 

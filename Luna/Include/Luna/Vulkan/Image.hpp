@@ -113,7 +113,8 @@ struct ImageCreateInfo {
 		        .MipLevels     = 1,
 		        .Samples       = vk::SampleCountFlagBits::e1,
 		        .InitialLayout = FormatHasDepthOrStencil(format) ? vk::ImageLayout::eDepthStencilAttachmentOptimal
-		                                                         : vk::ImageLayout::eColorAttachmentOptimal};
+		                                                         : vk::ImageLayout::eColorAttachmentOptimal,
+		        .Flags         = {}};
 	}
 
 	static ImageCreateInfo TransientRenderTarget(vk::Format format, const vk::Extent2D& extent) {
@@ -121,7 +122,7 @@ struct ImageCreateInfo {
 		        .Format = format,
 		        .Type   = vk::ImageType::e2D,
 		        .Usage  = (FormatHasDepthOrStencil(format) ? vk::ImageUsageFlagBits::eDepthStencilAttachment
-		                                                   : vk::ImageUsageFlags()) |
+		                                                   : vk::ImageUsageFlagBits::eColorAttachment) |
 		                 vk::ImageUsageFlagBits::eInputAttachment,
 		        .Extent        = vk::Extent3D(extent.width, extent.height, 1),
 		        .ArrayLayers   = 1,

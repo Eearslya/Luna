@@ -47,6 +47,7 @@ Graphics::Graphics() {
 	_assetManager = std::make_unique<AssetManager>();
 	_imgui        = std::make_unique<ImGuiManager>(*_device);
 	_sceneImages.resize(_swapchain->GetImages().size());
+	_gBuffers.resize(_swapchain->GetImages().size());
 
 	// Create placeholder textures.
 	{
@@ -233,6 +234,13 @@ void Graphics::Update() {
 		ImGuizmo::SetRect(0.0f, 0.0f, sceneExtent.width, sceneExtent.height);
 	}
 
+	// GBuffer Update
+	GBuffer& gBuffer = _gBuffers[_swapchain->GetAcquiredIndex()];
+	{
+		const bool needGBuffer = !gBuffer.Position || gBuffer.Extent != sceneExtent;
+		if (needGBuffer) { ZoneScopedN("Create GBuffer"); }
+	}
+
 	// Update Camera movement.
 	if (_mouseControl) {
 		ZoneScopedN("Camera Update");
@@ -302,12 +310,8 @@ void Graphics::Update() {
 		cmd->SetTexture(set, binding, view, sampler);
 	};
 
-	// Main Render Pass
+	// GBuffer Pass
 	{
-		ZoneScopedN("Main Render Pass");
-		CbZone(cmd, "Main Render Pass");
-		cmd->BeginZone("Main Render Pass");
-
 		if (_editorLayout) {
 			ZoneScopedN("Attachment Transition");
 			CbZone(cmd, "Attachment Transition");
@@ -328,27 +332,92 @@ void Graphics::Update() {
 		{
 			ZoneScopedN("Begin");
 
-			auto rpInfo = _device->GetStockRenderPass(Vulkan::StockRenderPass::Depth);
-			if (_editorLayout) { rpInfo.ColorAttachments[0] = sceneImage->GetView().Get(); }
-			rpInfo.ClearColors[0].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
-			rpInfo.ClearDepthStencil.setDepth(1.0f);
-			cmd->BeginRenderPass(rpInfo);
+			Vulkan::RenderPassInfo::SubpassInfo gBufferPass  = {};
+			Vulkan::RenderPassInfo::SubpassInfo lightingPass = {};
+			gBufferPass.DSUsage                              = Vulkan::DepthStencilUsage::ReadWrite;
+
+			Vulkan::RenderPassInfo info = {};
+
+			info.ColorAttachments[info.ColorAttachmentCount] = sceneImage->GetView().Get();
+			info.StoreAttachments |= 1 << info.ColorAttachmentCount;
+			lightingPass.ColorAttachments[lightingPass.ColorAttachmentCount] = info.ColorAttachmentCount;
+			lightingPass.ColorAttachmentCount++;
+			info.ColorAttachmentCount++;
+
+			auto position = _device->RequestTransientAttachment(sceneExtent, vk::Format::eR32G32B32A32Sfloat, 0);
+			info.ColorAttachments[info.ColorAttachmentCount] = &(*position->GetView());
+			info.ClearAttachments |= 1 << info.ColorAttachmentCount;
+			info.ClearColors[info.ColorAttachmentCount].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
+			gBufferPass.ColorAttachments[gBufferPass.ColorAttachmentCount] = info.ColorAttachmentCount;
+			gBufferPass.ColorAttachmentCount++;
+			lightingPass.InputAttachments[lightingPass.InputAttachmentCount] = info.ColorAttachmentCount;
+			lightingPass.InputAttachmentCount++;
+			info.ColorAttachmentCount++;
+
+			auto normal = _device->RequestTransientAttachment(sceneExtent, vk::Format::eR32G32B32A32Sfloat, 1);
+			info.ColorAttachments[info.ColorAttachmentCount] = &(*normal->GetView());
+			info.ClearAttachments |= 1 << info.ColorAttachmentCount;
+			info.ClearColors[info.ColorAttachmentCount].setFloat32({0.5f, 0.5f, 1.0f, 1.0f});
+			gBufferPass.ColorAttachments[gBufferPass.ColorAttachmentCount] = info.ColorAttachmentCount;
+			gBufferPass.ColorAttachmentCount++;
+			lightingPass.InputAttachments[lightingPass.InputAttachmentCount] = info.ColorAttachmentCount;
+			lightingPass.InputAttachmentCount++;
+			info.ColorAttachmentCount++;
+
+			auto albedo = _device->RequestTransientAttachment(sceneExtent, vk::Format::eR8G8B8A8Srgb, 2);
+			info.ColorAttachments[info.ColorAttachmentCount] = &(*albedo->GetView());
+			info.ClearAttachments |= 1 << info.ColorAttachmentCount;
+			info.ClearColors[info.ColorAttachmentCount].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
+			gBufferPass.ColorAttachments[gBufferPass.ColorAttachmentCount] = info.ColorAttachmentCount;
+			gBufferPass.ColorAttachmentCount++;
+			lightingPass.InputAttachments[lightingPass.InputAttachmentCount] = info.ColorAttachmentCount;
+			lightingPass.InputAttachmentCount++;
+			info.ColorAttachmentCount++;
+
+			auto pbr = _device->RequestTransientAttachment(sceneExtent, vk::Format::eR32G32B32A32Sfloat, 3);
+			info.ColorAttachments[info.ColorAttachmentCount] = &(*pbr->GetView());
+			info.ClearAttachments |= 1 << info.ColorAttachmentCount;
+			info.ClearColors[info.ColorAttachmentCount].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
+			gBufferPass.ColorAttachments[gBufferPass.ColorAttachmentCount] = info.ColorAttachmentCount;
+			gBufferPass.ColorAttachmentCount++;
+			lightingPass.InputAttachments[lightingPass.InputAttachmentCount] = info.ColorAttachmentCount;
+			lightingPass.InputAttachmentCount++;
+			info.ColorAttachmentCount++;
+
+			auto emissive = _device->RequestTransientAttachment(sceneExtent, vk::Format::eR8G8B8A8Srgb, 4);
+			info.ColorAttachments[info.ColorAttachmentCount] = &(*emissive->GetView());
+			info.ClearAttachments |= 1 << info.ColorAttachmentCount;
+			info.ClearColors[info.ColorAttachmentCount].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
+			gBufferPass.ColorAttachments[gBufferPass.ColorAttachmentCount] = info.ColorAttachmentCount;
+			gBufferPass.ColorAttachmentCount++;
+			lightingPass.InputAttachments[lightingPass.InputAttachmentCount] = info.ColorAttachmentCount;
+			lightingPass.InputAttachmentCount++;
+			info.ColorAttachmentCount++;
+
+			auto depth = _device->RequestTransientAttachment(sceneExtent, _device->GetDefaultDepthFormat(), 5);
+			info.DSOps |= Vulkan::DepthStencilOpBits::ClearDepthStencil;
+			info.DepthStencilAttachment = &(*depth->GetView());
+			info.ClearDepthStencil.setDepth(1.0f);
+
+			info.Subpasses.push_back(gBufferPass);
+			info.Subpasses.push_back(lightingPass);
+
+			cmd->BeginRenderPass(info);
 		}
 
 		// Render meshes
 		{
-			ZoneScopedN("Opaque Meshes");
-			CbZone(cmd, "Opaque Meshes");
-			cmd->BeginZone("Opaque Meshes");
+			ZoneScopedN("GBuffer Render Pass");
+			CbZone(cmd, "GBuffer Render Pass");
+			cmd->BeginZone("GBuffer Render Pass", glm::vec3(0.8f, 0.3f, 0.3f));
 
 			cmd->SetOpaqueState();
-			cmd->SetProgram(_program);
+			cmd->SetProgram(_programGBuffer);
 			cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
 			cmd->SetVertexAttribute(1, 1, vk::Format::eR32G32B32Sfloat, 0);
 			cmd->SetVertexAttribute(2, 2, vk::Format::eR32G32Sfloat, 0);
 			cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
 			cmd->SetUniformBuffer(0, 1, *_sceneBuffer);
-
 			if (worldData->Environment && worldData->Environment->Ready) {
 				cmd->SetTexture(0, 2, *worldData->Environment->Irradiance->GetView(), Vulkan::StockSampler::LinearClamp);
 				cmd->SetTexture(0, 3, *worldData->Environment->Prefiltered->GetView(), Vulkan::StockSampler::LinearClamp);
@@ -412,27 +481,19 @@ void Graphics::Update() {
 			cmd->EndZone();
 		}
 
-		// Render environment
-		if (_drawSkybox && environmentReady) {
-			ZoneScopedN("Environment");
-			CbZone(cmd, "Environment");
-			cmd->BeginZone("Environment");
+		cmd->NextSubpass();
 
-			struct SkyboxPC {
-				float DebugView = 0.0f;
-			};
-			SkyboxPC pc = {.DebugView = static_cast<float>(_skyDebug)};
+		// Render lighting
+		{
+			ZoneScopedN("Lighting Pass");
+			CbZone(cmd, "Lighting Pass");
+			cmd->BeginZone("Lighting Pass", glm::vec3(0.3f, 0.3f, 0.8f));
 
 			cmd->SetOpaqueState();
-			cmd->SetProgram(_programSkybox);
-			cmd->SetDepthCompareOp(vk::CompareOp::eEqual);
-			cmd->SetCullMode(vk::CullModeFlagBits::eFront);
-			cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
-			cmd->SetTexture(1, 0, *worldData->Environment->Skybox->GetView(), Vulkan::StockSampler::LinearClamp);
-			cmd->SetTexture(1, 1, *worldData->Environment->Irradiance->GetView(), Vulkan::StockSampler::LinearClamp);
-			cmd->SetTexture(1, 2, *worldData->Environment->Prefiltered->GetView(), Vulkan::StockSampler::LinearClamp);
-			cmd->PushConstants(&pc, 0, sizeof(pc));
-			cmd->Draw(36);
+			cmd->SetCullMode(vk::CullModeFlagBits::eNone);
+			cmd->SetProgram(_programDeferred);
+			cmd->SetInputAttachments(1, 0);
+			cmd->Draw(3);
 
 			cmd->EndZone();
 		}
@@ -457,8 +518,6 @@ void Graphics::Update() {
 			             {},
 			             barrierOut);
 		}
-
-		cmd->EndZone();
 	}
 
 	if (_editorLayout && sceneWindow) {
@@ -600,6 +659,26 @@ void Graphics::LoadShaders() {
 		if (vert.has_value() && frag.has_value()) {
 			auto program = _device->RequestProgram(*vert, *frag);
 			if (program) { _program = program; }
+		}
+	}
+
+	// GBuffer
+	{
+		auto vert = filesystem->Read("Shaders/GBuffer.vert.glsl");
+		auto frag = filesystem->Read("Shaders/GBuffer.frag.glsl");
+		if (vert.has_value() && frag.has_value()) {
+			auto program = _device->RequestProgram(*vert, *frag);
+			if (program) { _programGBuffer = program; }
+		}
+	}
+
+	// Deferred Lighting
+	{
+		auto vert = filesystem->Read("Shaders/Deferred.vert.glsl");
+		auto frag = filesystem->Read("Shaders/Deferred.frag.glsl");
+		if (vert.has_value() && frag.has_value()) {
+			auto program = _device->RequestProgram(*vert, *frag);
+			if (program) { _programDeferred = program; }
 		}
 	}
 

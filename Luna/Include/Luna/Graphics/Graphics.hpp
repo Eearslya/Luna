@@ -63,6 +63,15 @@ class Graphics : public Module::Registrar<Graphics> {
 		Vulkan::ImageHandle WhiteCube;
 	};
 
+	struct GBuffer {
+		vk::Extent2D Extent;
+		Vulkan::ImageHandle Position;
+		Vulkan::ImageHandle Normal;
+		Vulkan::ImageHandle Albedo;
+		Vulkan::ImageHandle PBR;
+		Vulkan::ImageHandle Emissive;
+	};
+
 	struct CameraData {
 		glm::mat4 Projection;
 		glm::mat4 View;
@@ -82,6 +91,7 @@ class Graphics : public Module::Registrar<Graphics> {
 	std::unique_ptr<Vulkan::Swapchain> _swapchain;
 	std::unique_ptr<AssetManager> _assetManager;
 	std::unique_ptr<ImGuiManager> _imgui;
+	std::vector<GBuffer> _gBuffers;
 	DefaultImages _defaultImages;
 
 	Camera _camera;
@@ -89,8 +99,10 @@ class Graphics : public Module::Registrar<Graphics> {
 	bool _editorLayout       = false;
 	bool _performanceQueries = false;
 	std::vector<Vulkan::ImageHandle> _sceneImages;
-	Vulkan::Program* _program       = nullptr;
-	Vulkan::Program* _programSkybox = nullptr;
+	Vulkan::Program* _program         = nullptr;
+	Vulkan::Program* _programGBuffer  = nullptr;
+	Vulkan::Program* _programDeferred = nullptr;
+	Vulkan::Program* _programSkybox   = nullptr;
 	Vulkan::BufferHandle _cameraBuffer;
 	Vulkan::BufferHandle _sceneBuffer;
 	bool _mouseControl      = false;

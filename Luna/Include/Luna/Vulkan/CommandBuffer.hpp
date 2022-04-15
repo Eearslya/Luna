@@ -217,6 +217,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	                  vk::AccessFlags dstAccess);
 
 	void BeginRenderPass(const RenderPassInfo& info);
+	void NextSubpass();
 	void EndRenderPass();
 
 	void ClearRenderState();
@@ -236,6 +237,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	                 uint32_t firstInstance = 0);
 	void PushConstants(const void* data, vk::DeviceSize offset, vk::DeviceSize range);
 	void SetIndexBuffer(const Buffer& buffer, vk::DeviceSize offset, vk::IndexType indexType);
+	void SetInputAttachments(uint32_t set, uint32_t firstBinding);
 	void SetProgram(const Program* program);
 	void SetSampler(uint32_t set, uint32_t binding, const Sampler* sampler);
 	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view);
@@ -275,11 +277,12 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	const RenderPass* _actualRenderPass       = nullptr;
 	DescriptorBindingState _descriptorBinding = {};
 	CommandBufferDirtyFlags _dirty;
-	uint32_t _dirtyDescriptorSets   = 0;
-	uint32_t _dirtyVertexBuffers    = 0;
-	const Framebuffer* _framebuffer = nullptr;
-	IndexState _indexBuffer         = {};
-	bool _isCompute                 = false;
+	uint32_t _dirtyDescriptorSets                                                 = 0;
+	uint32_t _dirtyVertexBuffers                                                  = 0;
+	const Framebuffer* _framebuffer                                               = nullptr;
+	std::array<const ImageView*, MaxColorAttachments + 1> _framebufferAttachments = {nullptr};
+	IndexState _indexBuffer                                                       = {};
+	bool _isCompute                                                               = false;
 	vk::Pipeline _pipeline;
 	vk::PipelineLayout _pipelineLayout;
 	PipelineLayout* _programLayout          = nullptr;

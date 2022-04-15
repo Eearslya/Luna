@@ -363,8 +363,12 @@ void ImGuiManager::Render(Vulkan::CommandBufferHandle& cmd) {
 	// Set up our render state.
 	{
 		Vulkan::RenderPassInfo rp = _device.GetStockRenderPass(Vulkan::StockRenderPass::ColorOnly);
-		rp.ClearAttachments       = 0;
-		if (!_dockspace) { rp.LoadAttachments = 1 << 0; }
+		if (_dockspace) {
+			rp.ClearAttachments = 0;
+			rp.ClearColors[0].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
+		} else {
+			rp.LoadAttachments = 1 << 0;
+		}
 		cmd->BeginRenderPass(rp);
 		SetRenderState(cmd, drawData);
 	}

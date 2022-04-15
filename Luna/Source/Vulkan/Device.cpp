@@ -441,9 +441,10 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 	}
 
 	// Verify whether this format is allowed to be used for mipmap generation.
-	bool generateMips                        = createInfo.Flags & ImageCreateFlagBits::GenerateMipmaps;
+	bool generateMips                        = bool(createInfo.Flags & ImageCreateFlagBits::GenerateMipmaps);
 	const auto requiredMipGenerationFeatures = vk::FormatFeatureFlagBits::eBlitDst | vk::FormatFeatureFlagBits::eBlitSrc;
-	if ((formatFeatures.optimalTilingFeatures & requiredMipGenerationFeatures) != requiredMipGenerationFeatures) {
+	if (generateMips &&
+	    (formatFeatures.optimalTilingFeatures & requiredMipGenerationFeatures) != requiredMipGenerationFeatures) {
 		Log::Warning("[Vulkan::Device] Mipmap generation was requested for image, but is unavailable for format {}.",
 		             vk::to_string(createInfo.Format));
 		generateMips = false;

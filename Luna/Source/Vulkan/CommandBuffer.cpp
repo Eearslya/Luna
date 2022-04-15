@@ -232,7 +232,14 @@ void CommandBuffer::ImageBarrier(Image& image,
 void CommandBuffer::BeginRenderPass(const RenderPassInfo& info) {
 	_framebuffer                              = &_device.RequestFramebuffer({}, info);
 	_pipelineCompileInfo.CompatibleRenderPass = &_framebuffer->GetCompatibleRenderPass();
+	_pipelineCompileInfo.SubpassIndex         = 0;
 	_actualRenderPass                         = &_device.RequestRenderPass(Badge<CommandBuffer>{}, info, false);
+
+	uint32_t attachment = 0;
+	for (attachment = 0; attachment < info.ColorAttachmentCount; ++attachment) {
+		_framebufferAttachments[attachment] = info.ColorAttachments[attachment];
+	}
+	if (info.DepthStencilAttachment) { _framebufferAttachments[attachment++] = info.DepthStencilAttachment; }
 
 	uint32_t clearValueCount = 0;
 	std::array<vk::ClearValue, MaxColorAttachments + 1> clearValues;
@@ -257,6 +264,12 @@ void CommandBuffer::BeginRenderPass(const RenderPassInfo& info) {
 	_commandBuffer.beginRenderPass(rpBI, vk::SubpassContents::eInline);
 
 	BeginGraphics();
+}
+
+void CommandBuffer::NextSubpass() {
+	_commandBuffer.nextSubpass(vk::SubpassContents::eInline);
+
+	_pipelineCompileInfo.SubpassIndex++;
 }
 
 void CommandBuffer::EndRenderPass() {
@@ -382,6 +395,28 @@ void CommandBuffer::SetIndexBuffer(const Buffer& buffer, vk::DeviceSize offset, 
 	_indexBuffer.Offset    = offset;
 	_indexBuffer.IndexType = indexType;
 	_commandBuffer.bindIndexBuffer(_indexBuffer.Buffer, _indexBuffer.Offset, _indexBuffer.IndexType);
+}
+
+void CommandBuffer::SetInputAttachments(uint32_t set, uint32_t firstBinding) {
+	const uint32_t inputCount = _actualRenderPass->GetInputAttachmentCount(_pipelineCompileInfo.SubpassIndex);
+	for (uint32_t i = 0; i < inputCount; ++i) {
+		const auto& ref = _actualRenderPass->GetInputAttachment(_pipelineCompileInfo.SubpassIndex, i);
+		if (ref.attachment == VK_ATTACHMENT_UNUSED) { continue; }
+
+		const ImageView* view = _framebufferAttachments[ref.attachment];
+		if (view->GetCookie() == _descriptorBinding.Sets[set].Cookies[firstBinding + i] &&
+		    _descriptorBinding.Sets[set].Bindings[firstBinding + i].Image.Float.imageLayout == ref.layout) {
+			continue;
+		}
+
+		auto& binding                                          = _descriptorBinding.Sets[set].Bindings[firstBinding + i];
+		binding.Image.Float.imageLayout                        = ref.layout;
+		binding.Image.Integer.imageLayout                      = ref.layout;
+		binding.Image.Float.imageView                          = view->GetFloatView();
+		binding.Image.Integer.imageView                        = view->GetIntegerView();
+		_descriptorBinding.Sets[set].Cookies[firstBinding + i] = view->GetCookie();
+		_dirtyDescriptorSets |= 1u << set;
+	}
 }
 
 void CommandBuffer::SetProgram(const Program* program) {
@@ -536,13 +571,14 @@ vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 	const vk::PipelineDynamicStateCreateInfo dynamic({}, dynamicStates);
 
 	std::array<vk::PipelineColorBlendAttachmentState, MaxColorAttachments> blendAttachments = {};
-	const uint32_t colorAttachmentCount = rp->GetColorAttachmentCount(0);
+	const uint32_t colorAttachmentCount = rp->GetColorAttachmentCount(_pipelineCompileInfo.SubpassIndex);
 	const vk::PipelineColorBlendStateCreateInfo blending(
 		{}, VK_FALSE, vk::LogicOp::eCopy, colorAttachmentCount, blendAttachments.data(), {1.0f, 1.0f, 1.0f, 1.0f});
 	for (uint32_t i = 0; i < colorAttachmentCount; ++i) {
 		auto& att = blendAttachments[i];
 
-		if (_pipelineCompileInfo.CompatibleRenderPass->GetColorAttachment(0, i).attachment != VK_ATTACHMENT_UNUSED &&
+		if (_pipelineCompileInfo.CompatibleRenderPass->GetColorAttachment(_pipelineCompileInfo.SubpassIndex, i)
+		        .attachment != VK_ATTACHMENT_UNUSED &&
 		    (_pipelineCompileInfo.Program->GetPipelineLayout()->GetResourceLayout().RenderTargetMask & (1u << i))) {
 			att                = vk::PipelineColorBlendAttachmentState(state.BlendEnable,
                                                   vk::BlendFactor::eOne,
@@ -718,6 +754,13 @@ bool CommandBuffer::FlushRenderState(bool synchronous) {
 			Hasher h;
 			h(setLayout.FloatMask);
 
+			ForEachBit(setLayout.InputAttachmentMask, [&](uint32_t binding) {
+				const auto arraySize = setLayout.ArraySizes[binding];
+				for (uint32_t i = 0; i < arraySize; ++i) {
+					h(_descriptorBinding.Sets[bit].Cookies[binding + i]);
+					h(_descriptorBinding.Sets[bit].Bindings[binding + i].Image.Float.imageLayout);
+				}
+			});
 			ForEachBit(setLayout.UniformBufferMask, [&](uint32_t binding) {
 				const auto arraySize = setLayout.ArraySizes[binding];
 				for (uint32_t i = 0; i < arraySize; ++i) {
@@ -742,6 +785,23 @@ bool CommandBuffer::FlushRenderState(bool synchronous) {
 				ZoneScopedN("Descriptor Write");
 
 				std::vector<vk::WriteDescriptorSet> writes;
+
+				ForEachBit(setLayout.InputAttachmentMask, [&](uint32_t binding) {
+					const auto arraySize = setLayout.ArraySizes[binding];
+					for (uint32_t i = 0; i < arraySize; ++i) {
+						writes.push_back(
+							vk::WriteDescriptorSet(allocated.first,
+						                         binding,
+						                         i,
+						                         1,
+						                         vk::DescriptorType::eInputAttachment,
+						                         (setLayout.FloatMask & (1u << binding)
+						                            ? &_descriptorBinding.Sets[bit].Bindings[binding + i].Image.Float
+						                            : &_descriptorBinding.Sets[bit].Bindings[binding + i].Image.Integer),
+						                         nullptr,
+						                         nullptr));
+					}
+				});
 
 				ForEachBit(setLayout.UniformBufferMask, [&](uint32_t binding) {
 					const auto arraySize = setLayout.ArraySizes[binding];

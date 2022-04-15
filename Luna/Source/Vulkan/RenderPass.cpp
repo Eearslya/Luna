@@ -620,7 +620,7 @@ RenderPass::RenderPass(Hash hash, Device& device, const RenderPassInfo& info)
 	                                    static_cast<uint32_t>(subpassDependencies.size()),
 	                                    subpassDependencies.data());
 
-#if 0
+#if 1
 	// Dump pass info to console.
 	{
 		Log::Trace("[Vulkan::RenderPass] - Final create info:");
