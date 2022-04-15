@@ -220,11 +220,12 @@ void Graphics::Update() {
 		bool needNewSceneImage = !sceneImage;
 		if (sceneImage) {
 			const auto& imageCI = sceneImage->GetCreateInfo();
-			if (imageCI.Extent.width != windowSize.x || imageCI.Extent.height != windowSize.y) { needNewSceneImage = true; }
+			if (imageCI.Extent.width != sceneExtent.width || imageCI.Extent.height != sceneExtent.height) {
+				needNewSceneImage = true;
+			}
 		}
 		if (needNewSceneImage) {
-			Vulkan::ImageCreateInfo imageCI =
-				Vulkan::ImageCreateInfo::RenderTarget(_swapchain->GetFormat(), vk::Extent2D(windowSize.x, windowSize.y));
+			Vulkan::ImageCreateInfo imageCI = Vulkan::ImageCreateInfo::RenderTarget(_swapchain->GetFormat(), sceneExtent);
 			imageCI.Usage |= vk::ImageUsageFlagBits::eSampled;
 			sceneImage = _device->CreateImage(imageCI);
 		}
