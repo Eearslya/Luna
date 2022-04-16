@@ -82,17 +82,17 @@ Graphics::Graphics() {
 		for (int i = 0; i < 6; ++i) { initialImages[i] = Vulkan::InitialImageData{.Data = &pixels}; }
 
 		// Black images
-		std::fill(pixels, pixels + pixelCount, 0x000000ff);
+		std::fill(pixels, pixels + pixelCount, 0xff000000);
 		_defaultImages.Black2D   = _device->CreateImage(imageCI2D, initialImages);
 		_defaultImages.BlackCube = _device->CreateImage(imageCICube, initialImages);
 
 		// Gray images
-		std::fill(pixels, pixels + pixelCount, 0x808080ff);
+		std::fill(pixels, pixels + pixelCount, 0xff808080);
 		_defaultImages.Gray2D   = _device->CreateImage(imageCI2D, initialImages);
 		_defaultImages.GrayCube = _device->CreateImage(imageCICube, initialImages);
 
 		// Normal images
-		std::fill(pixels, pixels + pixelCount, 0x8080ffff);
+		std::fill(pixels, pixels + pixelCount, 0xffff8080);
 		_defaultImages.Normal2D = _device->CreateImage(imageCI2D, initialImages);
 
 		// White images
@@ -518,7 +518,7 @@ void Graphics::Update() {
 
 				cmd->SetOpaqueState();
 				cmd->SetProgram(_programSkybox);
-				cmd->SetDepthCompareOp(vk::CompareOp::eEqual);
+				cmd->SetDepthCompareOp(vk::CompareOp::eLessOrEqual);
 				cmd->SetDepthWrite(false);
 				cmd->SetCullMode(vk::CullModeFlagBits::eFront);
 				cmd->SetUniformBuffer(0, 0, *_cameraBuffer);

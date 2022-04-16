@@ -256,8 +256,8 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredDevic
 				properties.unlink<vk::PhysicalDeviceTimelineSemaphoreProperties>();
 			}
 
-			gpu.getFeatures2(&features.get());
-			gpu.getProperties2(&properties.get());
+			gpu.getFeatures2KHR(&features.get());
+			gpu.getProperties2KHR(&properties.get());
 
 			gpuInfo.AvailableFeatures.Features = features.get().features;
 #ifdef VK_ENABLE_BETA_EXTENSIONS
@@ -357,6 +357,7 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 		const auto AssignQueue = [&](QueueType type, vk::QueueFlags required, vk::QueueFlags ignored) -> bool {
 			for (size_t q = 0; q < familyProps.size(); ++q) {
 				auto& family = familyProps[q];
+				if ((family.queueFlags & required) != required) { continue; }
 				if (family.queueFlags & ignored || family.queueCount == 0) { continue; }
 
 				// Require presentation support for our graphics queue.

@@ -316,5 +316,10 @@ static inline uint32_t TracyColor(const glm::vec3& color) {
 	return uColor;
 }
 
-#define CbZone(cmd, name)         TracyVkZone(cmd->GetTracing(), cmd->GetCommandBuffer(), name)
-#define CbZoneC(cmd, name, color) TracyVkZone(cmd->GetTracing(), cmd->GetCommandBuffer(), name, color)
+#ifdef LUNA_VULKAN_TRACING
+#	define CbZone(cmd, name)         TracyVkZone(cmd->GetTracing(), cmd->GetCommandBuffer(), name)
+#	define CbZoneC(cmd, name, color) TracyVkZone(cmd->GetTracing(), cmd->GetCommandBuffer(), name, color)
+#else
+#	define CbZone(cmd, name)
+#	define CbZoneC(cmd, name, color)
+#endif

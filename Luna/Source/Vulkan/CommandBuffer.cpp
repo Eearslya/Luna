@@ -64,7 +64,7 @@ void CommandBuffer::End() {
 		Log::Error("[Vulkan::CommandBuffer] Command Buffer has mismatched BeginZone()/EndZone() calls!");
 		for (size_t i = 0; i < _zoneDepth; ++i) { EndZone(); }
 	}
-	TracyVkCollect(_tracing, _commandBuffer);
+	if (_tracing) { TracyVkCollect(_tracing, _commandBuffer); }
 	_commandBuffer.end();
 }
 

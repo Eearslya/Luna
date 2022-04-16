@@ -418,13 +418,13 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 		cmdBuf->EndZone();
 	}
 
-	Vulkan::FenceHandle waitFence;
-	device.Submit(cmdBuf, &waitFence);
-	if (waitFence) {
-		ZoneScopedN("Await Completion");
-		waitFence->Wait();
-	}
-	// device.Submit(cmdBuf);
+	// Vulkan::FenceHandle waitFence;
+	// device.Submit(cmdBuf, &waitFence);
+	// if (waitFence) {
+	// 	 ZoneScopedN("Await Completion");
+	// 	 waitFence->Wait();
+	// }
+	device.Submit(cmdBuf);
 
 	env->Skybox      = std::move(skybox);
 	env->Irradiance  = std::move(irradiance);
@@ -556,18 +556,20 @@ void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const
 	// Now we take all of the elements of the glTF file and load them in parallel as best we can.
 	auto threading = Threading::Get();
 
+	std::vector<TaskGroupHandle> groups;
+
 	// Load all meshes.
-	auto meshesGroup = threading->CreateTaskGroup();
+	auto meshesGroup = groups.emplace_back(threading->CreateTaskGroup());
 	for (size_t i = 0; i < gltfModel.meshes.size(); ++i) {
 		meshesGroup->Enqueue([this, context, i]() { LoadMeshTask(context, i); });
 	}
 
 	// Load all materials. These are small enough that we can use a single job for them all.
-	auto materialsGroup = threading->CreateTaskGroup();
+	auto materialsGroup = groups.emplace_back(threading->CreateTaskGroup());
 	materialsGroup->Enqueue([this, context]() { LoadMaterialsTask(context); });
 
 	// Load all textures.
-	auto texturesGroup = threading->CreateTaskGroup();
+	auto texturesGroup = groups.emplace_back(threading->CreateTaskGroup());
 	for (size_t i = 0; i < gltfModel.textures.size(); ++i) {
 		texturesGroup->Enqueue([this, context, i]() { LoadTextureTask(context, i); });
 	}
@@ -579,14 +581,10 @@ void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const
 		Log::Info("[AssetManager] {} loaded in {}ms.", context->FileName, context->LoadTime.Get().Milliseconds());
 		_contextPool.Free(context);
 	});
-	cleanupGroup->DependOn(*meshesGroup);
-	cleanupGroup->DependOn(*materialsGroup);
-	cleanupGroup->DependOn(*texturesGroup);
+	for (auto& g : groups) { cleanupGroup->DependOn(*g); }
 
 	// Flush and submit all tasks.
-	meshesGroup->Flush();
-	materialsGroup->Flush();
-	texturesGroup->Flush();
+	for (auto& g : groups) { g->Flush(); }
 	cleanupGroup->Flush();
 }
 

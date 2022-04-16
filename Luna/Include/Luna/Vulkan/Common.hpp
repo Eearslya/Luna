@@ -332,13 +332,13 @@ struct QueueInfo {
 	}
 
 	bool SameIndex(QueueType a, QueueType b) const {
-		return Indices[static_cast<int>(a)] == Indices[static_cast<int>(a)];
+		return Indices[static_cast<int>(a)] == Indices[static_cast<int>(b)];
 	}
 	bool SameFamily(QueueType a, QueueType b) const {
-		return Families[static_cast<int>(a)] == Families[static_cast<int>(a)];
+		return Families[static_cast<int>(a)] == Families[static_cast<int>(b)];
 	}
 	bool SameQueue(QueueType a, QueueType b) const {
-		return Queues[static_cast<int>(a)] == Queues[static_cast<int>(a)];
+		return Queues[static_cast<int>(a)] == Queues[static_cast<int>(b)];
 	}
 	std::vector<uint32_t> UniqueFamilies() const {
 		std::set<uint32_t> unique;

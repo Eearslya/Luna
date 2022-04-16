@@ -510,24 +510,29 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 		CommandBufferHandle transitionCmd;
 		// Now that we have the image, we copy over the initial data if we have some.
 		if (initialData) {
+			// Determine whether we can perform the transfer on a separate queue.
+			bool separateTransfer = !_queues.SameQueue(QueueType::Graphics, QueueType::Transfer);
+			separateTransfer      = false;  // TODO
+
 			vk::AccessFlags finalTransitionSrcAccess;
 			if (generateMips) {
 				finalTransitionSrcAccess = vk::AccessFlagBits::eTransferRead;
-			} else if (_queues.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
+			} else if (!separateTransfer) {
 				finalTransitionSrcAccess = vk::AccessFlagBits::eTransferWrite;
 			}
-			const vk::AccessFlags prepareSrcAccess = _queues.SameQueue(QueueType::Graphics, QueueType::Transfer)
-			                                           ? vk::AccessFlagBits::eTransferWrite
-			                                           : vk::AccessFlags();
-			bool needMipmapBarrier                 = true;
-			bool needInitialBarrier                = true;
+
+			const vk::AccessFlags prepareSrcAccess =
+				separateTransfer ? vk::AccessFlags() : vk::AccessFlagBits::eTransferWrite;
+
+			bool needMipmapBarrier  = true;
+			bool needInitialBarrier = true;
 
 			auto graphicsCmd = RequestCommandBuffer(CommandBufferType::Generic);
 			CbZone(graphicsCmd, "Image Upload");
 			graphicsCmd->BeginZone("Image Upload");
 
 			CommandBufferHandle transferCmd;
-			if (!_queues.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
+			if (separateTransfer) {
 				transferCmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
 			} else {
 				transferCmd = graphicsCmd;
@@ -551,7 +556,7 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 			}
 
 			// Submit Image Copy, with necessary ownership transfers
-			if (!_queues.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
+			if (separateTransfer) {
 				vk::PipelineStageFlags dstStages =
 					generateMips ? vk::PipelineStageFlagBits::eTransfer : handle->GetStageFlags();
 
@@ -980,10 +985,12 @@ void Device::SubmitNoLock(CommandBufferHandle cmd, FenceHandle* fence, std::vect
 		SubmitQueue(queueType, fence ? &submitFence : nullptr, semaphores);
 
 		// Assign the fence handle appropriately, whether we're using fences or timeline semaphores.
-		if (submitFence.TimelineValue != 0) {
-			*fence = FenceHandle(_fencePool.Allocate(*this, submitFence.TimelineSemaphore, submitFence.TimelineValue));
-		} else {
-			*fence = FenceHandle(_fencePool.Allocate(*this, submitFence.Fence));
+		if (fence) {
+			if (submitFence.TimelineValue != 0) {
+				*fence = FenceHandle(_fencePool.Allocate(*this, submitFence.TimelineSemaphore, submitFence.TimelineValue));
+			} else {
+				*fence = FenceHandle(_fencePool.Allocate(*this, submitFence.Fence));
+			}
 		}
 	}
 
@@ -1362,19 +1369,42 @@ void Device::CreateTracingContexts() {
 	const auto pfn1 = calibrate ? VULKAN_HPP_DEFAULT_DISPATCHER.vkGetPhysicalDeviceCalibrateableTimeDomainsEXT : nullptr;
 	const auto pfn2 = calibrate ? VULKAN_HPP_DEFAULT_DISPATCHER.vkGetCalibratedTimestampsEXT : nullptr;
 
+	const auto families     = _gpu.getQueueFamilyProperties();
 	const size_t queueCount = _queueData.size();
+	std::vector<uint32_t> queues;
+	std::unordered_map<uint32_t, TracyVkCtx> contexts;
+	std::mutex contextMutex;
 	for (size_t q = 0; q < queueCount; ++q) {
-		group->Enqueue([&, q]() -> void {
-			ZoneScopedN("Device::CreateTracingContexts()::Task");
-			auto& queue   = _queueData[q];
-			auto vkQueue  = _queues.Queues[q];
-			auto pool     = CommandPool(*this, _queues.Families[q], true);
-			auto cmd      = pool.RequestCommandBuffer();
-			queue.Tracing = tracy::CreateVkContext(_gpu, _device, vkQueue, cmd, pfn1, pfn2);
-		});
+		const auto family = _queues.Families[q];
+		// We can only create tracing contexts for queues with Graphics or Compute.
+		if (bool(families[family].queueFlags & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute)) == false) {
+			continue;
+		}
+
+		// Don't initialize the same queue family twice.
+		if (std::find(queues.begin(), queues.end(), _queues.Families[q]) == queues.end()) {
+			group->Enqueue([&, q, family]() -> void {
+				ZoneScopedN("Device::CreateTracingContexts()::Task");
+				auto& queue  = _queueData[q];
+				auto vkQueue = _queues.Queues[q];
+				auto pool    = CommandPool(*this, family, true);
+				auto cmd     = pool.RequestCommandBuffer();
+				auto context = tracy::CreateVkContext(_gpu, _device, vkQueue, cmd, pfn1, pfn2);
+
+				std::lock_guard lock(contextMutex);
+				contexts[family] = context;
+			});
+			queues.push_back(family);
+		}
 	}
 	group->Flush();
 	group->Wait();
+
+	for (size_t q = 0; q < queueCount; ++q) {
+		const auto family = _queues.Families[q];
+		auto& queue       = _queueData[q];
+		queue.Tracing     = contexts[family];
+	}
 }
 
 void Device::DestroyTimelineSemaphores() {
