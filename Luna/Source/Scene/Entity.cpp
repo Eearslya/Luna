@@ -57,4 +57,10 @@ void Entity::RotateAround(const glm::vec3& point, const glm::quat& rotation, Tra
 	// transform.Position             = transform.Rotation * oldRelativePos + parentSpacePoint;
 	transform.UpdateGlobalTransform(_registry);
 }
+
+void Entity::SetLocalPosition(const glm::vec3& pos) {
+	auto& transform    = Transform();
+	transform.Position = pos;
+	transform.UpdateGlobalTransform(_registry);
+}
 }  // namespace Luna

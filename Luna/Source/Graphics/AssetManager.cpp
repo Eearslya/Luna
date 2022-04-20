@@ -497,6 +497,8 @@ void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const
 	{
 		ZoneScopedN("Preallocation");
 		for (size_t i = 0; i < gltfModel.textures.size(); ++i) { context->Textures.emplace_back(_texturePool.Allocate()); }
+		context->TextureFormats.resize(gltfModel.images.size());
+		std::fill(context->TextureFormats.begin(), context->TextureFormats.end(), vk::Format::eUndefined);
 		for (size_t i = 0; i < gltfModel.materials.size(); ++i) {
 			context->Materials.emplace_back(_materialPool.Allocate());
 		}
@@ -573,6 +575,7 @@ void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const
 	for (size_t i = 0; i < gltfModel.textures.size(); ++i) {
 		texturesGroup->Enqueue([this, context, i]() { LoadTextureTask(context, i); });
 	}
+	texturesGroup->DependOn(*materialsGroup);
 
 	// Clean up our multithreading context.
 	auto cleanupGroup = threading->CreateTaskGroup();
@@ -593,6 +596,17 @@ void AssetManager::LoadMaterialsTask(ModelLoadContext* context) const {
 	ZoneText(context->FileName.c_str(), strlen(context->FileName.c_str()));
 
 	const auto& gltfModel = context->Model;
+
+	const auto EnsureFormat = [&](uint32_t index, vk::Format expected) -> void {
+		auto& format = context->TextureFormats[index];
+		if (format != vk::Format::eUndefined && format != expected) {
+			Log::Error(
+				"[AssetManager::LoadMaterialsTask] For asset '{}', texture index {} is used in both Srgb and Unorm contexts!",
+				context->FileName,
+				index);
+		}
+		format = expected;
+	};
 
 	for (size_t materialIndex = 0; materialIndex < gltfModel.materials.size(); ++materialIndex) {
 		const auto& gltfMaterial = gltfModel.materials[materialIndex];
@@ -620,15 +634,19 @@ void AssetManager::LoadMaterialsTask(ModelLoadContext* context) const {
 
 		if (gltfMaterial.pbrMetallicRoughness.baseColorTexture.index >= 0) {
 			material->Albedo = context->Textures[gltfMaterial.pbrMetallicRoughness.baseColorTexture.index];
+			EnsureFormat(gltfMaterial.pbrMetallicRoughness.baseColorTexture.index, vk::Format::eR8G8B8A8Srgb);
 		}
 		if (gltfMaterial.normalTexture.index >= 0) {
 			material->Normal = context->Textures[gltfMaterial.normalTexture.index];
+			EnsureFormat(gltfMaterial.normalTexture.index, vk::Format::eR8G8B8A8Unorm);
 		}
 		if (gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
 			material->PBR = context->Textures[gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index];
+			EnsureFormat(gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index, vk::Format::eR8G8B8A8Unorm);
 		}
 		if (gltfMaterial.emissiveTexture.index >= 0) {
 			material->Emissive = context->Textures[gltfMaterial.emissiveTexture.index];
+			EnsureFormat(gltfMaterial.emissiveTexture.index, vk::Format::eR8G8B8A8Srgb);
 		}
 
 		material->Update();
@@ -810,11 +828,13 @@ void AssetManager::LoadTextureTask(ModelLoadContext* context, size_t textureInde
 	auto& device            = graphics->GetDevice();
 	const auto& gltfModel   = context->Model;
 	const auto& gltfTexture = gltfModel.textures[textureIndex];
+	const auto format       = context->TextureFormats[textureIndex];
 	TextureHandle texture   = context->Textures[textureIndex];
 	if (gltfTexture.source < 0) {
 		Log::Error("[AssetManager] {} texture {} does not specify a source image!", context->FileName, textureIndex);
 		return;
 	}
+	if (format == vk::Format::eUndefined) { return; }
 
 	const auto& gltfImage                     = gltfModel.images[gltfTexture.source];
 	bool loaded                               = false;
@@ -875,9 +895,8 @@ void AssetManager::LoadTextureTask(ModelLoadContext* context, size_t textureInde
 	{
 		ZoneScopedN("Image Creation");
 		const Vulkan::InitialImageData initialData{.Data = pixels};
-		const auto imageCI =
-			Vulkan::ImageCreateInfo::Immutable2D(vk::Format::eR8G8B8A8Unorm, vk::Extent2D(width, height), true);
-		texture->Image = device.CreateImage(imageCI, &initialData);
+		const auto imageCI = Vulkan::ImageCreateInfo::Immutable2D(format, vk::Extent2D(width, height), true);
+		texture->Image     = device.CreateImage(imageCI, &initialData);
 	}
 
 	{

@@ -1,5 +1,10 @@
 #version 450 core
 
+struct LightData {
+	vec4 Position;
+	vec4 Color;
+};
+
 layout(location = 0) in vec2 inUV0;
 
 layout(set = 0, binding = 0) uniform CameraData {
@@ -17,9 +22,14 @@ layout(set = 0, binding = 1) uniform SceneData {
 	float IBLContribution;
 } Scene;
 
-layout(set = 0, binding = 2) uniform samplerCube TexIrradiance;
-layout(set = 0, binding = 3) uniform samplerCube TexPrefiltered;
-layout(set = 0, binding = 4) uniform sampler2D TexBrdfLut;
+layout(set = 0, binding = 2) uniform LightsData {
+	LightData[32] Lights;
+	int LightCount;
+} Lights;
+
+layout(set = 0, binding = 3) uniform samplerCube TexIrradiance;
+layout(set = 0, binding = 4) uniform samplerCube TexPrefiltered;
+layout(set = 0, binding = 5) uniform sampler2D TexBrdfLut;
 
 layout(input_attachment_index = 0, set = 1, binding = 0) uniform subpassInput InputPosition;
 layout(input_attachment_index = 1, set = 1, binding = 1) uniform subpassInput InputNormal;
@@ -31,141 +41,76 @@ layout(location = 0) out vec4 outColor;
 
 const float PI = 3.141592653589793f;
 
-struct PBRInfo {
-  float NdotL;
-	float NdotV;
-	float NdotH;
-	float LdotH;
-	float VdotH;
-	float PerceptualRoughness;
-	float Metalness;
-	vec3 Reflectance0;
-	vec3 Reflectance90;
-	float AlphaRoughness;
-	vec3 DiffuseColor;
-	vec3 SpecularColor;
-};
-
-vec3 TonemapUncharted2(vec3 color) {
-	const float A = 0.15;
-	const float B = 0.50;
-	const float C = 0.10;
-	const float D = 0.20;
-	const float E = 0.02;
-	const float F = 0.30;
-	const float W = 11.2;
-	return ((color * (A * color + C * B) + D * E) / (color * (A * color + B) + D * F)) - E / F;
+vec3 FresnelSchlick(float cosTheta, vec3 f0) {
+	return f0 + (1.0 - f0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-vec4 Tonemap(vec4 color) {
-  vec3 outColor = TonemapUncharted2(color.rgb * Scene.Exposure);
-	outColor = outColor * (1.0f / TonemapUncharted2(vec3(11.2f)));
-	return vec4(pow(outColor, vec3(1.0f / Scene.Gamma)), color.a);
+float DistributionGGX(vec3 N, vec3 H, float roughness) {
+	const float a = roughness * roughness;
+	const float a2 = a * a;
+	const float NdotH = max(dot(N, H), 0.0);
+	const float NdotH2 = NdotH * NdotH;
+
+	const float num = a2;
+	float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+	denom = PI * denom * denom;
+
+	return num / denom;
 }
 
-vec4 SrgbToLinear(vec4 srgb) {
-#ifdef SRGB_FAST
-	const vec3 linear = pow(srgb.rgb, vec3(2.2));
-#else
-	const vec3 bLess = step(vec3(0.04045), srgb.rgb);
-	const vec3 linear = mix(srgb.rgb / vec3(12.92), pow((srgb.rgb + vec3(0.055)) / vec3(1.055), vec3(2.4)), bLess);
-#endif
+float GeometrySchlickGGX(float NdotV, float roughness) {
+	const float r = roughness + 1.0;
+	const float k = (r * r) / 8.0;
+	const float num = NdotV;
+	const float denom = NdotV * (1.0 - k) + k;
 
-	return vec4(linear, srgb.a);
+	return num / denom;
 }
 
-vec3 Diffuse(PBRInfo pbr) {
-  return pbr.DiffuseColor / PI;
-}
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+	const float NdotV = max(dot(N, V), 0.0);
+	const float NdotL = max(dot(N, L), 0.0);
+	const float ggx2 = GeometrySchlickGGX(NdotV, roughness);
+	const float ggx1 = GeometrySchlickGGX(NdotL, roughness);
 
-vec3 SpecularReflection(PBRInfo pbr) {
-  return pbr.Reflectance0 + (pbr.Reflectance90 - pbr.Reflectance0) * pow(clamp(1.0 - pbr.VdotH, 0.0, 1.0), 5.0);
-}
-
-float GeometricOcclusion(PBRInfo pbr) {
-  const float NdotL = pbr.NdotL;
-	const float NdotV = pbr.NdotV;
-	const float r = pbr.AlphaRoughness;
-
-  const float attenuationL = 2.0 * NdotL / (NdotL + sqrt(r * r + (1.0 - r * r) * (NdotL * NdotL)));
-	const float attenuationV = 2.0 * NdotV / (NdotV + sqrt(r * r + (1.0 - r * r) * (NdotV * NdotV)));
-	return attenuationL * attenuationV;
-}
-
-float MicrofacetDistribution(PBRInfo pbr) {
-  const float roughnessSq = pbr.AlphaRoughness * pbr.AlphaRoughness;
-	const float f = (pbr.NdotH * roughnessSq - pbr.NdotH) * pbr.NdotH + 1.0;
-	return roughnessSq / (PI * f * f);
+	return ggx1 * ggx2;
 }
 
 void main() {
-	const vec3 worldPos = subpassLoad(InputPosition).xyz;
-	const vec3 n = subpassLoad(InputNormal).xyz;
-	const vec4 baseColor = subpassLoad(InputAlbedo);
-	const vec3 pbrParams = subpassLoad(InputPBR).xyz;
-	const vec3 emissive = subpassLoad(InputEmissive).xyz;
+	const vec3 WorldPos = subpassLoad(InputPosition).xyz;
+	const vec3 N = subpassLoad(InputNormal).xyz;
+	//const vec3 L = -normalize(Scene.SunDirection.xyz);
+	const vec3 V = normalize(Camera.Position - WorldPos);
+	//const float NdotL = clamp(dot(N, L), 0.001, 1.0);
+	const vec4 BaseColor = subpassLoad(InputAlbedo);
+	const vec3 PBR = subpassLoad(InputPBR).xyz;
+	const vec3 Emissive = subpassLoad(InputEmissive).rgb;
+	const float Metallic = PBR.b;
+	const float Roughness = PBR.g;
 
-	const vec3 albedo = baseColor.rgb;
-	const float metallic = pbrParams.b;
-	const float roughness = pbrParams.g;
+	vec3 Lo = vec3(0.0);
+	for (int i = 0; i < Lights.LightCount; ++i) {
+		const vec3 L = normalize(Lights.Lights[i].Position.xyz - WorldPos);
+		const vec3 H = normalize(V + L);
+		const float distance = length(Lights.Lights[i].Position.xyz - WorldPos);
+		const float attenuation = 1.0 / (distance * distance);
+		const vec3 radiance = Lights.Lights[i].Color.rgb * attenuation;
+		const vec3 f0 = mix(vec3(0.04), BaseColor.rgb, Metallic);
+		const vec3 F = FresnelSchlick(max(dot(H, V), 0.0), f0);
+		const float NDF = DistributionGGX(N, H, Roughness);
+		const float G = GeometrySmith(N, V, L, Roughness);
+		const vec3 num = NDF * G * F;
+		const float denom = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.001;
+		const vec3 specular = num / denom;
+		const vec3 kS = F;
+		const vec3 kD = (vec3(1.0) - kS) * (1.0 - Metallic);
+		const float NdotL = max(dot(N, L), 0.0);
 
-	vec3 f0 = vec3(0.04);
-	vec3 diffuseColor = (baseColor.rgb * (vec3(1.0) - f0)) * (1.0 - metallic);
-	float alphaRoughness = roughness * roughness;
-	vec3 specularColor = mix(f0, baseColor.rgb, metallic);
-	float reflectance = max(max(specularColor.r, specularColor.g), specularColor.b);
-	float reflectance90 = clamp(reflectance * 25.0, 0.0, 1.0);
-	vec3 specularEnvironmentR0 = specularColor.rgb;
-	vec3 specularEnvironmentR90 = vec3(1.0, 1.0, 1.0) * reflectance90;
-	const vec3 v = normalize(Camera.Position - worldPos);
-	vec3 l = -normalize(Scene.SunDirection.xyz);
-	vec3 h = normalize(l + v);
-	vec3 reflection = -normalize(reflect(v, n));
-	float NdotL = clamp(dot(n, l), 0.001, 1.0);
-	float NdotV = clamp(abs(dot(n, v)), 0.001, 1.0);
-	float NdotH = clamp(dot(n, h), 0.0, 1.0);
-	float LdotH = clamp(dot(l, h), 0.0, 1.0);
-	float VdotH = clamp(dot(v, h), 0.0, 1.0);
-
-	PBRInfo pbr = PBRInfo(
-		NdotL,
-		NdotV,
-		NdotH,
-		LdotH,
-		VdotH,
-		roughness,
-		metallic,
-		specularEnvironmentR0,
-		specularEnvironmentR90,
-		alphaRoughness,
-		diffuseColor,
-		specularColor);
-
-	vec3 F = SpecularReflection(pbr);
-	float G = GeometricOcclusion(pbr);
-	float D = MicrofacetDistribution(pbr);
-
-	const vec3 sunColor = vec3(1.0);
-
-	vec3 diffuseContrib = (1.0 - F) * Diffuse(pbr);
-	vec3 specularContrib = F * G * D / (4.0 * NdotL * NdotV);
-
-
-	vec3 iblDiffuse = vec3(0.0);
-	vec3 iblSpecular = vec3(0.0);
-	{
-		const float lod = pbr.PerceptualRoughness * Scene.PrefilteredCubeMipLevels;
-		const vec2 brdf = (texture(TexBrdfLut, vec2(pbr.NdotV, 1.0 - pbr.PerceptualRoughness))).rg;
-		//const vec3 diffuseLight = SrgbToLinear(Tonemap(texture(TexIrradiance, n))).rgb;
-		const vec3 diffuseLight = SrgbToLinear(Tonemap(textureLod(TexIrradiance, n, 0.0))).rgb;
-		const vec3 specularLight = SrgbToLinear(Tonemap(textureLod(TexPrefiltered, reflection, lod))).rgb;
-		iblDiffuse = (diffuseLight * pbr.DiffuseColor) * Scene.IBLContribution;
-		iblSpecular = (specularLight * (pbr.SpecularColor * brdf.x + brdf.y) * Scene.IBLContribution);
+		Lo += (kD * BaseColor.rgb / PI + specular) * radiance * NdotL;
 	}
 
-	vec3 iblContrib = iblDiffuse + iblSpecular;
-	vec3 color = (NdotL * sunColor * (diffuseContrib + specularContrib)) + iblContrib;
-	color += emissive;
+	vec3 Albedo = (BaseColor.rgb * vec3(0.1)) + Lo;
+	Albedo = Albedo / (Albedo + vec3(1.0));
 
-	outColor = vec4(color, baseColor.a);
+	outColor = vec4(Albedo, BaseColor.a);
 }

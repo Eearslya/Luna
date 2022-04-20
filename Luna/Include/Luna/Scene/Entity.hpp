@@ -17,6 +17,16 @@ class Entity {
 	bool Valid() const;
 
 	void RotateAround(const glm::vec3& point, const glm::quat& rotation, TransformSpace space);
+	void SetLocalPosition(const glm::vec3& pos);
+
+	template <typename T, typename... Args>
+	decltype(auto) AddComponent(Args&&... args) {
+		return _registry.emplace_or_replace<T>(EntityID, std::forward<Args>(args)...);
+	}
+
+	operator entt::entity() const {
+		return EntityID;
+	}
 
 	const entt::entity EntityID = entt::null;
 

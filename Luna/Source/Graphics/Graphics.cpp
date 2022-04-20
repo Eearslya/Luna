@@ -5,6 +5,7 @@
 #include <Luna/Graphics/AssetManager.hpp>
 #include <Luna/Graphics/Graphics.hpp>
 #include <Luna/Scene/Entity.hpp>
+#include <Luna/Scene/Light.hpp>
 #include <Luna/Scene/MeshRenderer.hpp>
 #include <Luna/Scene/TransformComponent.hpp>
 #include <Luna/Scene/WorldData.hpp>
@@ -47,7 +48,6 @@ Graphics::Graphics() {
 	_assetManager = std::make_unique<AssetManager>();
 	_imgui        = std::make_unique<ImGuiManager>(*_device);
 	_sceneImages.resize(_swapchain->GetImages().size());
-	_gBuffers.resize(_swapchain->GetImages().size());
 
 	// Create placeholder textures.
 	{
@@ -105,6 +105,8 @@ Graphics::Graphics() {
 		Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, sizeof(CameraData), vk::BufferUsageFlagBits::eUniformBuffer));
 	_sceneBuffer = _device->CreateBuffer(
 		Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, sizeof(SceneData), vk::BufferUsageFlagBits::eUniformBuffer));
+	_lightsBuffer = _device->CreateBuffer(
+		Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, sizeof(LightsData), vk::BufferUsageFlagBits::eUniformBuffer));
 
 	LoadShaders();
 	keyboard->OnKey() += [&](Key key, InputAction action, InputMods mods, bool uiCapture) -> bool {
@@ -178,6 +180,7 @@ void Graphics::Update() {
 	const bool environmentReady = worldData && worldData->Environment && worldData->Environment->Ready;
 	CameraData cameraData       = {};
 	SceneData sceneData         = {};
+	LightsData lightsData       = {};
 
 	// Scene Drawing
 	vk::Extent2D sceneExtent        = _swapchain->GetExtent();
@@ -225,7 +228,7 @@ void Graphics::Update() {
 			}
 		}
 		if (needNewSceneImage) {
-			Vulkan::ImageCreateInfo imageCI = Vulkan::ImageCreateInfo::RenderTarget(_swapchain->GetFormat(), sceneExtent);
+			Vulkan::ImageCreateInfo imageCI = Vulkan::ImageCreateInfo::RenderTarget(vk::Format::eR8G8B8A8Srgb, sceneExtent);
 			imageCI.Usage |= vk::ImageUsageFlagBits::eSampled;
 			sceneImage = _device->CreateImage(imageCI);
 		}
@@ -233,13 +236,6 @@ void Graphics::Update() {
 		ImGuizmo::SetRect(windowMin.x, windowMin.y, windowMax.x - windowMin.x, windowMax.y - windowMin.y);
 	} else {
 		ImGuizmo::SetRect(0.0f, 0.0f, sceneExtent.width, sceneExtent.height);
-	}
-
-	// GBuffer Update
-	GBuffer& gBuffer = _gBuffers[_swapchain->GetAcquiredIndex()];
-	{
-		const bool needGBuffer = !gBuffer.Position || gBuffer.Extent != sceneExtent;
-		if (needGBuffer) { ZoneScopedN("Create GBuffer"); }
 	}
 
 	// Update Camera movement.
@@ -294,6 +290,26 @@ void Graphics::Update() {
 		_sceneBuffer->Unmap();
 	}
 
+	// Update Lights buffer.
+	{
+		ZoneScopedN("Lights Uniform Update");
+
+		auto lights    = registry.view<TransformComponent, Light>();
+		int lightCount = 0;
+		for (const auto& entity : lights) {
+			const auto& transform                  = lights.get<TransformComponent>(entity);
+			const auto& light                      = lights.get<Light>(entity);
+			lightsData.Lights[lightCount].Position = glm::vec4(transform.CachedGlobalPosition, 1.0f);
+			lightsData.Lights[lightCount].Color    = glm::vec4(light.Color, 1.0f);
+
+			if (++lightCount >= 32) { break; }
+		}
+		lightsData.LightCount = lightCount;
+		auto* data            = _lightsBuffer->Map();
+		memcpy(data, &lightsData, sizeof(LightsData));
+		_lightsBuffer->Unmap();
+	}
+
 	struct PushConstant {
 		glm::mat4 Model;
 	};
@@ -335,22 +351,31 @@ void Graphics::Update() {
 
 			Vulkan::RenderPassInfo::SubpassInfo gBufferPass  = {};
 			Vulkan::RenderPassInfo::SubpassInfo lightingPass = {};
+			Vulkan::RenderPassInfo::SubpassInfo gammaPass    = {};
 			gBufferPass.DSUsage                              = Vulkan::DepthStencilUsage::ReadWrite;
 			lightingPass.DSUsage                             = Vulkan::DepthStencilUsage::ReadOnly;
 
 			Vulkan::RenderPassInfo info = {};
 
-			info.ColorAttachments[info.ColorAttachmentCount] = sceneImage->GetView().Get();
+			info.ColorAttachments[info.ColorAttachmentCount] = &(*sceneImage->GetView());
 			if (!_drawSkybox) {
 				info.ClearAttachments |= 1 << info.ColorAttachmentCount;
 				info.ClearColors[info.ColorAttachmentCount].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
 			}
 			info.StoreAttachments |= 1 << info.ColorAttachmentCount;
-			lightingPass.ColorAttachments[lightingPass.ColorAttachmentCount] = info.ColorAttachmentCount;
-			lightingPass.ColorAttachmentCount++;
+			gammaPass.ColorAttachments[gammaPass.ColorAttachmentCount] = info.ColorAttachmentCount;
+			gammaPass.ColorAttachmentCount++;
 			info.ColorAttachmentCount++;
 
-			auto position = _device->RequestTransientAttachment(sceneExtent, vk::Format::eR32G32B32A32Sfloat, 0);
+			auto hdr = _device->RequestTransientAttachment(sceneExtent, vk::Format::eB10G11R11UfloatPack32, 0);
+			info.ColorAttachments[info.ColorAttachmentCount]                 = &(*hdr->GetView());
+			lightingPass.ColorAttachments[lightingPass.ColorAttachmentCount] = info.ColorAttachmentCount;
+			lightingPass.ColorAttachmentCount++;
+			gammaPass.InputAttachments[gammaPass.InputAttachmentCount] = info.ColorAttachmentCount;
+			gammaPass.InputAttachmentCount++;
+			info.ColorAttachmentCount++;
+
+			auto position = _device->RequestTransientAttachment(sceneExtent, vk::Format::eR32G32B32A32Sfloat, 1);
 			info.ColorAttachments[info.ColorAttachmentCount] = &(*position->GetView());
 			info.ClearAttachments |= 1 << info.ColorAttachmentCount;
 			info.ClearColors[info.ColorAttachmentCount].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
@@ -360,7 +385,7 @@ void Graphics::Update() {
 			lightingPass.InputAttachmentCount++;
 			info.ColorAttachmentCount++;
 
-			auto normal = _device->RequestTransientAttachment(sceneExtent, vk::Format::eR32G32B32A32Sfloat, 1);
+			auto normal = _device->RequestTransientAttachment(sceneExtent, vk::Format::eR32G32B32A32Sfloat, 2);
 			info.ColorAttachments[info.ColorAttachmentCount] = &(*normal->GetView());
 			info.ClearAttachments |= 1 << info.ColorAttachmentCount;
 			info.ClearColors[info.ColorAttachmentCount].setFloat32({0.5f, 0.5f, 1.0f, 1.0f});
@@ -370,7 +395,7 @@ void Graphics::Update() {
 			lightingPass.InputAttachmentCount++;
 			info.ColorAttachmentCount++;
 
-			auto albedo = _device->RequestTransientAttachment(sceneExtent, vk::Format::eR8G8B8A8Srgb, 2);
+			auto albedo = _device->RequestTransientAttachment(sceneExtent, vk::Format::eR8G8B8A8Srgb, 3);
 			info.ColorAttachments[info.ColorAttachmentCount] = &(*albedo->GetView());
 			info.ClearAttachments |= 1 << info.ColorAttachmentCount;
 			info.ClearColors[info.ColorAttachmentCount].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
@@ -380,7 +405,7 @@ void Graphics::Update() {
 			lightingPass.InputAttachmentCount++;
 			info.ColorAttachmentCount++;
 
-			auto pbr = _device->RequestTransientAttachment(sceneExtent, vk::Format::eR32G32B32A32Sfloat, 3);
+			auto pbr = _device->RequestTransientAttachment(sceneExtent, vk::Format::eR32G32B32A32Sfloat, 4);
 			info.ColorAttachments[info.ColorAttachmentCount] = &(*pbr->GetView());
 			info.ClearAttachments |= 1 << info.ColorAttachmentCount;
 			info.ClearColors[info.ColorAttachmentCount].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
@@ -390,7 +415,7 @@ void Graphics::Update() {
 			lightingPass.InputAttachmentCount++;
 			info.ColorAttachmentCount++;
 
-			auto emissive = _device->RequestTransientAttachment(sceneExtent, vk::Format::eR8G8B8A8Srgb, 4);
+			auto emissive = _device->RequestTransientAttachment(sceneExtent, vk::Format::eR8G8B8A8Srgb, 5);
 			info.ColorAttachments[info.ColorAttachmentCount] = &(*emissive->GetView());
 			info.ClearAttachments |= 1 << info.ColorAttachmentCount;
 			info.ClearColors[info.ColorAttachmentCount].setFloat32({0.0f, 0.0f, 0.0f, 1.0f});
@@ -400,13 +425,14 @@ void Graphics::Update() {
 			lightingPass.InputAttachmentCount++;
 			info.ColorAttachmentCount++;
 
-			auto depth = _device->RequestTransientAttachment(sceneExtent, _device->GetDefaultDepthFormat(), 5);
+			auto depth = _device->RequestTransientAttachment(sceneExtent, _device->GetDefaultDepthFormat(), 6);
 			info.DSOps |= Vulkan::DepthStencilOpBits::ClearDepthStencil;
 			info.DepthStencilAttachment = &(*depth->GetView());
 			info.ClearDepthStencil.setDepth(1.0f);
 
 			info.Subpasses.push_back(gBufferPass);
 			info.Subpasses.push_back(lightingPass);
+			info.Subpasses.push_back(gammaPass);
 
 			cmd->BeginRenderPass(info);
 		}
@@ -424,14 +450,15 @@ void Graphics::Update() {
 			cmd->SetVertexAttribute(2, 2, vk::Format::eR32G32Sfloat, 0);
 			cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
 			cmd->SetUniformBuffer(0, 1, *_sceneBuffer);
+			cmd->SetUniformBuffer(0, 2, *_lightsBuffer);
 			if (worldData->Environment && worldData->Environment->Ready) {
-				cmd->SetTexture(0, 2, *worldData->Environment->Irradiance->GetView(), Vulkan::StockSampler::LinearClamp);
-				cmd->SetTexture(0, 3, *worldData->Environment->Prefiltered->GetView(), Vulkan::StockSampler::LinearClamp);
-				cmd->SetTexture(0, 4, *worldData->Environment->BrdfLut->GetView(), Vulkan::StockSampler::LinearClamp);
+				cmd->SetTexture(0, 3, *worldData->Environment->Irradiance->GetView(), Vulkan::StockSampler::LinearClamp);
+				cmd->SetTexture(0, 4, *worldData->Environment->Prefiltered->GetView(), Vulkan::StockSampler::LinearClamp);
+				cmd->SetTexture(0, 5, *worldData->Environment->BrdfLut->GetView(), Vulkan::StockSampler::LinearClamp);
 			} else {
-				cmd->SetTexture(0, 2, *_defaultImages.BlackCube->GetView(), Vulkan::StockSampler::LinearClamp);
 				cmd->SetTexture(0, 3, *_defaultImages.BlackCube->GetView(), Vulkan::StockSampler::LinearClamp);
-				cmd->SetTexture(0, 4, *_defaultImages.Black2D->GetView(), Vulkan::StockSampler::LinearClamp);
+				cmd->SetTexture(0, 4, *_defaultImages.BlackCube->GetView(), Vulkan::StockSampler::LinearClamp);
+				cmd->SetTexture(0, 5, *_defaultImages.Black2D->GetView(), Vulkan::StockSampler::LinearClamp);
 			}
 
 			const auto view = registry.view<MeshRenderer>();
@@ -532,6 +559,24 @@ void Graphics::Update() {
 			}
 		}
 
+		cmd->NextSubpass();
+
+		// Gamma Correction
+		{
+			ZoneScopedN("Gamma Pass");
+			CbZone(cmd, "Gamma Pass");
+			cmd->BeginZone("Gamma Pass", glm::vec3(0.8f, 0.8f, 0.8f));
+
+			cmd->SetOpaqueState();
+			cmd->SetCullMode(vk::CullModeFlagBits::eFront);
+			cmd->SetDepthWrite(false);
+			cmd->SetProgram(_programGamma);
+			cmd->SetInputAttachments(1, 0);
+			cmd->Draw(3);
+
+			cmd->EndZone();
+		}
+
 		cmd->EndRenderPass();
 
 		if (_editorLayout) {
@@ -564,6 +609,13 @@ void Graphics::Update() {
 		ZoneScopedN("UI Update");
 
 		ImGui::ShowDemoWindow(nullptr);
+
+		if (ImGui::Begin("Console")) {
+			const auto logs = Log::GetLast(64);
+			for (const auto& log : logs) { ImGui::Text("%s", log.c_str()); }
+			ImGui::SetScrollY(ImGui::GetScrollMaxY());
+		}
+		ImGui::End();
 
 		_scene.DrawSceneGraph();
 		if (registry.valid(_scene.GetSelectedEntity())) {
@@ -713,6 +765,16 @@ void Graphics::LoadShaders() {
 		if (vert.has_value() && frag.has_value()) {
 			auto program = _device->RequestProgram(*vert, *frag);
 			if (program) { _programDeferred = program; }
+		}
+	}
+
+	// Deferred Lighting
+	{
+		auto vert = filesystem->Read("Shaders/Deferred.vert.glsl");
+		auto frag = filesystem->Read("Shaders/Gamma.frag.glsl");
+		if (vert.has_value() && frag.has_value()) {
+			auto program = _device->RequestProgram(*vert, *frag);
+			if (program) { _programGamma = program; }
 		}
 	}
 

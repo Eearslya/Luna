@@ -1,4 +1,5 @@
 #include <Luna.hpp>
+#include <Luna/Scene/Light.hpp>
 #include <memory>
 
 using namespace Luna;
@@ -40,7 +41,9 @@ class EditorApp : public App {
 
 		auto& scene = Graphics::Get()->GetScene();
 		scene.LoadEnvironment("Environments/TokyoBigSight.hdr");
-		scene.LoadModel("Models/TestScene/TestScene.gltf", scene.GetRoot());
+		auto model  = scene.LoadModel("Models/TestScene/TestScene.gltf", scene.GetRoot());
+		auto light1 = scene.CreateEntity("Light 1", model);
+		light1.AddComponent<Light>();
 	}
 
 	virtual void Update() override {}

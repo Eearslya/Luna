@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Luna/Scene/Entity.hpp>
 #include <entt/entt.hpp>
 #include <optional>
 
@@ -19,9 +20,9 @@ class Scene {
 		return _selected;
 	}
 
-	entt::entity CreateEntity(const std::string& name, std::optional<entt::entity> parent = std::nullopt);
+	Entity CreateEntity(const std::string& name, std::optional<entt::entity> parent = std::nullopt);
 	void LoadEnvironment(const std::string& filePath);
-	entt::entity LoadModel(const std::string& filePath, entt::entity parent);
+	Entity LoadModel(const std::string& filePath, entt::entity parent);
 
 	void DrawSceneGraph();
 

@@ -19,6 +19,7 @@ struct TransformComponent {
 	glm::vec3 Scale    = glm::vec3(1, 1, 1);
 
 	mutable glm::mat4 CachedGlobalTransform = glm::mat4(1.0f);
+	mutable glm::vec3 CachedGlobalPosition  = glm::vec3(0, 0, 0);
 	mutable glm::quat CachedGlobalRotation  = glm::quat(1, 0, 0, 0);
 
 	glm::mat4 GetLocalTransform() const {
@@ -46,9 +47,11 @@ struct TransformComponent {
 		if (registry.valid(Parent)) {
 			const auto& parentTransform = registry.get<TransformComponent>(Parent);
 			CachedGlobalTransform       = parentTransform.CachedGlobalTransform * myTransform;
+			CachedGlobalPosition        = glm::vec3(myTransform * glm::vec4(parentTransform.CachedGlobalPosition, 1.0));
 			CachedGlobalRotation        = parentTransform.CachedGlobalRotation * Rotation;
 		} else {
 			CachedGlobalTransform = myTransform;
+			CachedGlobalPosition  = Position;
 			CachedGlobalRotation  = Rotation;
 		}
 

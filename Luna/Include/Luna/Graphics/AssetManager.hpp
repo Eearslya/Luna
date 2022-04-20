@@ -20,6 +20,7 @@ struct ModelLoadContext {
 	std::string FilePath;
 	tinygltf::Model Model;
 	std::vector<TextureHandle> Textures;
+	std::vector<vk::Format> TextureFormats;
 	std::vector<MaterialHandle> Materials;
 	std::vector<StaticMeshHandle> Meshes;
 };

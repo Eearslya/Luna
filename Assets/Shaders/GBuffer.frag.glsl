@@ -18,6 +18,7 @@ layout(set = 1, binding = 0) uniform MaterialData {
 	float Roughness;
 	float DebugView;
 } Material;
+
 layout(set = 1, binding = 1) uniform sampler2D texAlbedo;
 layout(set = 1, binding = 2) uniform sampler2D texNormal;
 layout(set = 1, binding = 3) uniform sampler2D texPBR;
@@ -31,17 +32,6 @@ layout(location = 4) out vec4 outEmissive;
 
 const float PI = 3.141592653589793f;
 const float MinRoughness = 0.04f;
-
-vec4 SrgbToLinear(vec4 srgb) {
-#ifdef SRGB_FAST
-	const vec3 linear = pow(srgb.rgb, vec3(2.2));
-#else
-	const vec3 bLess = step(vec3(0.04045), srgb.rgb);
-	const vec3 linear = mix(srgb.rgb / vec3(12.92), pow((srgb.rgb + vec3(0.055)) / vec3(1.055), vec3(2.4)), bLess);
-#endif
-
-	return vec4(linear, srgb.a);
-}
 
 vec3 GetNormal() {
 	const vec3 tangentNormal = texture(texNormal, inUV0).xyz * 2.0 - 1.0;
@@ -60,7 +50,7 @@ vec3 GetNormal() {
 void main() {
 	vec4 baseColor = Material.BaseColorFactor;
 	if (Material.HasAlbedo == 1) {
-		baseColor = SrgbToLinear(texture(texAlbedo, inUV0)) * baseColor;
+		baseColor = texture(texAlbedo, inUV0) * baseColor;
 	}
 	if (Material.AlphaMask == 1 && baseColor.a < Material.AlphaCutoff) { discard; }
 
@@ -77,7 +67,7 @@ void main() {
 
 	vec3 emissive = vec3(0);
 	if (Material.HasEmissive == 1) {
-		emissive = vec3(SrgbToLinear(texture(texEmissive, inUV0)) * Material.EmissiveFactor);
+		emissive = vec3(texture(texEmissive, inUV0) * Material.EmissiveFactor);
 	}
 
 	outPosition = vec4(inWorldPos, 0.0f);

@@ -1,4 +1,5 @@
 #include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/ringbuffer_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <Luna/Core/Log.hpp>
@@ -7,6 +8,7 @@ namespace Luna {
 namespace Log {
 namespace _Internal {
 static bool LoggerCreated = false;
+static std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> RingSink;
 
 static void Create() {
 #ifdef _MSC_VER
@@ -36,7 +38,10 @@ static void Create() {
 	auto fileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("Luna.log", true);
 	fileSink->set_pattern("[%T] %n-%L: %v");
 
-	auto logger = std::make_shared<spdlog::logger>("Luna", spdlog::sinks_init_list{consoleSink, fileSink});
+	RingSink = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(8192);
+	RingSink->set_pattern("[%T] %n-%L: %v");
+
+	auto logger = std::make_shared<spdlog::logger>("Luna", spdlog::sinks_init_list{consoleSink, fileSink, RingSink});
 	spdlog::register_logger(logger);
 
 	LoggerCreated = true;
@@ -48,6 +53,10 @@ spdlog::logger& Get() {
 	return *spdlog::get("Luna");
 }
 }  // namespace _Internal
+
+std::vector<std::string> GetLast(size_t count) {
+	return _Internal::RingSink->last_formatted(count);
+}
 
 void SetLevel(spdlog::level::level_enum level) {
 	_Internal::Get().set_level(level);

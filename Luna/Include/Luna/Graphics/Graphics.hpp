@@ -85,13 +85,20 @@ class Graphics : public Module::Registrar<Graphics> {
 		float Gamma;
 		float IBLContribution;
 	};
+	struct LightData {
+		glm::vec4 Position = glm::vec4(0);
+		glm::vec4 Color    = glm::vec4(1);
+	};
+	struct LightsData {
+		LightData Lights[32] = {};
+		int LightCount       = 0;
+	};
 
 	std::unique_ptr<Vulkan::Context> _context;
 	std::unique_ptr<Vulkan::Device> _device;
 	std::unique_ptr<Vulkan::Swapchain> _swapchain;
 	std::unique_ptr<AssetManager> _assetManager;
 	std::unique_ptr<ImGuiManager> _imgui;
-	std::vector<GBuffer> _gBuffers;
 	DefaultImages _defaultImages;
 
 	Camera _camera;
@@ -102,9 +109,11 @@ class Graphics : public Module::Registrar<Graphics> {
 	Vulkan::Program* _program         = nullptr;
 	Vulkan::Program* _programGBuffer  = nullptr;
 	Vulkan::Program* _programDeferred = nullptr;
+	Vulkan::Program* _programGamma    = nullptr;
 	Vulkan::Program* _programSkybox   = nullptr;
 	Vulkan::BufferHandle _cameraBuffer;
 	Vulkan::BufferHandle _sceneBuffer;
+	Vulkan::BufferHandle _lightsBuffer;
 	bool _mouseControl      = false;
 	glm::vec3 _sunDirection = glm::normalize(glm::vec3(1.0f, 2.0f, 0.5f));
 	glm::vec3 _sunPosition;

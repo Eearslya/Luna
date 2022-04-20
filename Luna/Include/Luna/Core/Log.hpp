@@ -2,12 +2,16 @@
 
 #include <spdlog/spdlog.h>
 
+#include <string>
+#include <vector>
+
 namespace Luna {
 namespace Log {
 namespace _Internal {
 spdlog::logger& Get();
 }
 
+std::vector<std::string> GetLast(size_t count);
 void SetLevel(spdlog::level::level_enum level);
 
 template <typename... Args>

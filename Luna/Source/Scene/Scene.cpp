@@ -8,6 +8,7 @@
 #include <Luna/Filesystem/Filesystem.hpp>
 #include <Luna/Graphics/AssetManager.hpp>
 #include <Luna/Graphics/Graphics.hpp>
+#include <Luna/Scene/Light.hpp>
 #include <Luna/Scene/MeshRenderer.hpp>
 #include <Luna/Scene/Scene.hpp>
 #include <Luna/Scene/TransformComponent.hpp>
@@ -30,7 +31,7 @@ Scene::Scene() {
 
 Scene::~Scene() noexcept {}
 
-entt::entity Scene::CreateEntity(const std::string& name, std::optional<entt::entity> parent) {
+Entity Scene::CreateEntity(const std::string& name, std::optional<entt::entity> parent) {
 	entt::entity realParent = parent.has_value() ? parent.value() : _root;
 
 	entt::entity e   = _registry.create();
@@ -51,7 +52,7 @@ void Scene::LoadEnvironment(const std::string& filePath) {
 	graphics->GetAssetManager().LoadEnvironment(filePath, *this);
 }
 
-entt::entity Scene::LoadModel(const std::string& filePath, entt::entity parent) {
+Entity Scene::LoadModel(const std::string& filePath, entt::entity parent) {
 	const std::filesystem::path gltfPath(filePath);
 	const auto gltfFileName = gltfPath.filename().string();
 
@@ -89,8 +90,9 @@ void Scene::DrawSceneGraph() {
 	if (ImGui::Begin("Inspector")) {
 		if (_registry.valid(_selected)) {
 			if (auto* comp = _registry.try_get<TransformComponent>(_selected)) { comp->DrawComponent(_registry); }
-			if (auto* comp = _registry.try_get<WorldData>(_selected)) { comp->DrawComponent(_registry); }
+			if (auto* comp = _registry.try_get<Light>(_selected)) { comp->DrawComponent(_registry); }
 			if (auto* comp = _registry.try_get<MeshRenderer>(_selected)) { comp->DrawComponent(_registry); }
+			if (auto* comp = _registry.try_get<WorldData>(_selected)) { comp->DrawComponent(_registry); }
 		}
 	}
 	ImGui::End();
