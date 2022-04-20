@@ -270,6 +270,8 @@ void CommandBuffer::NextSubpass() {
 	_commandBuffer.nextSubpass(vk::SubpassContents::eInline);
 
 	_pipelineCompileInfo.SubpassIndex++;
+	_dirty |= CommandBufferDirtyFlagBits::StaticState;
+	_dirtyDescriptorSets = ~0u;
 }
 
 void CommandBuffer::EndRenderPass() {
