@@ -34,6 +34,7 @@ Scene::~Scene() noexcept {}
 Entity Scene::CreateEntity(const std::string& name, std::optional<entt::entity> parent) {
 	entt::entity realParent = parent.has_value() ? parent.value() : _root;
 
+	std::lock_guard<std::mutex> lock(_mutex);
 	entt::entity e   = _registry.create();
 	auto& transform  = _registry.emplace<TransformComponent>(e);
 	transform.Parent = realParent;
@@ -50,6 +51,8 @@ Entity Scene::CreateEntity(const std::string& name, std::optional<entt::entity> 
 void Scene::DestroyEntity(entt::entity entity) {
 	if (!_registry.valid(entity)) { return; }
 	if (entity == _root) { return; }
+
+	std::lock_guard<std::mutex> lock(_mutex);
 	Entity e(entity);
 	const auto& transform = e.Transform();
 	for (auto& child : transform.Children) { DestroyEntity(child); }
@@ -74,6 +77,8 @@ Entity Scene::LoadModel(const std::string& filePath, entt::entity parent) {
 
 void Scene::DrawSceneGraph() {
 	if (!_registry.valid(_selected)) { _selected = entt::null; }
+
+	std::lock_guard<std::mutex> lock(_mutex);
 
 	if (ImGui::Begin("Hierarchy")) {
 		const auto ShowContextMenu = [&](const entt::entity entity) -> void {
@@ -134,6 +139,7 @@ void Scene::DrawSceneGraph() {
 				ShowContextMenu(entity);
 			}
 		};
+
 		DisplayEntity(_root);
 	}
 	ImGui::End();

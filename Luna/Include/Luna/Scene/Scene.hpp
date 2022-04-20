@@ -2,6 +2,7 @@
 
 #include <Luna/Scene/Entity.hpp>
 #include <entt/entt.hpp>
+#include <mutex>
 #include <optional>
 
 namespace Luna {
@@ -10,6 +11,9 @@ class Scene {
 	Scene();
 	~Scene() noexcept;
 
+	std::mutex& GetLock() {
+		return _mutex;
+	}
 	entt::registry& GetRegistry() {
 		return _registry;
 	}
@@ -31,5 +35,6 @@ class Scene {
 	entt::registry _registry;
 	entt::entity _root     = entt::null;
 	entt::entity _selected = entt::null;
+	std::mutex _mutex;
 };
 }  // namespace Luna
