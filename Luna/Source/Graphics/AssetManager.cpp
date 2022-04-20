@@ -497,7 +497,7 @@ void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const
 	{
 		ZoneScopedN("Preallocation");
 		for (size_t i = 0; i < gltfModel.textures.size(); ++i) { context->Textures.emplace_back(_texturePool.Allocate()); }
-		context->TextureFormats.resize(gltfModel.images.size());
+		context->TextureFormats.resize(gltfModel.textures.size());
 		std::fill(context->TextureFormats.begin(), context->TextureFormats.end(), vk::Format::eUndefined);
 		for (size_t i = 0; i < gltfModel.materials.size(); ++i) {
 			context->Materials.emplace_back(_materialPool.Allocate());
