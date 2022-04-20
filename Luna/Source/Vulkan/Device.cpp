@@ -171,6 +171,8 @@ Device::~Device() noexcept {
 	// Destroy our timeline semaphores, if we ever made them.
 	DestroyTimelineSemaphores();
 
+	WaitIdle();
+
 	// Any objects that are still lingering will be destroyed as the FrameContext objects go through their destructor.
 }
 
@@ -1250,8 +1252,8 @@ void Device::WaitIdleNoLock() {
 	// Wait on the actual device itself.
 	if (_device) { _device.waitIdle(); }
 
-	_framebufferAllocator->Clear();
-	_transientAttachmentAllocator->Clear();
+	if (_framebufferAllocator) { _framebufferAllocator->Clear(); }
+	if (_transientAttachmentAllocator) { _transientAttachmentAllocator->Clear(); }
 
 	// Now that we know the device is doing nothing, we can go through all of our frame contexts and clean up all deferred
 	// deletions.
@@ -1459,9 +1461,7 @@ Device::FrameContext::FrameContext(Device& device, uint32_t frameIndex) : Parent
 	}
 }
 
-Device::FrameContext::~FrameContext() noexcept {
-	Begin();
-}
+Device::FrameContext::~FrameContext() noexcept {}
 
 // Start our frame of work. Here, we perform cleanup of everything we know is no longer in use.
 void Device::FrameContext::Begin() {
