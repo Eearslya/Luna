@@ -2,13 +2,23 @@
 #include <Luna/Scene/Entity.hpp>
 
 namespace Luna {
-Entity::Entity(entt::entity entity) : EntityID(entity), _registry(Graphics::Get()->GetScene().GetRegistry()) {}
+Entity::Entity(entt::entity entity)
+		: EntityID(entity), _scene(Graphics::Get()->GetScene()), _registry(_scene.GetRegistry()) {}
 
 TransformComponent& Entity::Transform() const {
 	if (EntityID == entt::null) { throw std::runtime_error("Attempting to access transform of invalid entity!"); }
 	if (!_transform) { _transform = _registry.try_get<TransformComponent>(EntityID); }
 
 	return *_transform;
+}
+
+Entity Entity::CreateChild(const std::string& name) {
+	std::string childName = name;
+	if (name.length() == 0) {
+		const auto& transform = Transform();
+		childName             = transform.Name + " - Child";
+	}
+	return _scene.CreateEntity(childName, EntityID);
 }
 
 Entity Entity::GetParent() const {

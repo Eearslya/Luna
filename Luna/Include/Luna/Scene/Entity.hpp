@@ -2,8 +2,10 @@
 
 #include <Luna/Scene/TransformComponent.hpp>
 #include <entt/entt.hpp>
+#include <string>
 
 namespace Luna {
+class Scene;
 enum class TransformSpace { Local, Parent, World };
 
 class Entity {
@@ -12,6 +14,7 @@ class Entity {
 
 	TransformComponent& Transform() const;
 
+	Entity CreateChild(const std::string& name = "");
 	Entity GetParent() const;
 	bool HasParent() const;
 	bool Valid() const;
@@ -31,6 +34,7 @@ class Entity {
 	const entt::entity EntityID = entt::null;
 
  private:
+	Scene& _scene;
 	entt::registry& _registry;
 	mutable TransformComponent* _transform = nullptr;
 };

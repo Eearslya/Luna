@@ -43,7 +43,9 @@ class EditorApp : public App {
 		scene.LoadEnvironment("Environments/TokyoBigSight.hdr");
 		auto model  = scene.LoadModel("Models/TestScene/TestScene.gltf", scene.GetRoot());
 		auto light1 = scene.CreateEntity("Light 1", model);
-		light1.AddComponent<Light>();
+		light1.SetLocalPosition({0.0f, 1.25f, -1.825f});
+		auto& lightComp1 = light1.AddComponent<Light>();
+		lightComp1.Color = glm::vec3(200.0f, 200.0f, 200.0f);
 	}
 
 	virtual void Update() override {}

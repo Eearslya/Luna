@@ -47,6 +47,15 @@ Entity Scene::CreateEntity(const std::string& name, std::optional<entt::entity> 
 	return e;
 }
 
+void Scene::DestroyEntity(entt::entity entity) {
+	if (!_registry.valid(entity)) { return; }
+	if (entity == _root) { return; }
+	Entity e(entity);
+	const auto& transform = e.Transform();
+	for (auto& child : transform.Children) { DestroyEntity(child); }
+	_registry.destroy(entity);
+}
+
 void Scene::LoadEnvironment(const std::string& filePath) {
 	auto graphics = Graphics::Get();
 	graphics->GetAssetManager().LoadEnvironment(filePath, *this);
@@ -64,14 +73,55 @@ Entity Scene::LoadModel(const std::string& filePath, entt::entity parent) {
 }
 
 void Scene::DrawSceneGraph() {
+	if (!_registry.valid(_selected)) { _selected = entt::null; }
+
 	if (ImGui::Begin("Hierarchy")) {
+		const auto ShowContextMenu = [&](const entt::entity entity) -> void {
+			if (ImGui::BeginPopupContextItem()) {
+				bool clicked = false;
+
+				if (ImGui::BeginMenu("Create...")) {
+					entt::entity newEntity = entt::null;
+
+					if (ImGui::MenuItem("Empty Entity")) {
+						newEntity = Entity(entity).CreateChild("Empty");
+						clicked   = true;
+					}
+
+					ImGui::Separator();
+
+					if (ImGui::MenuItem("Light")) {
+						auto child = Entity(entity).CreateChild("New Light");
+						child.AddComponent<Light>();
+						newEntity = child;
+						clicked   = true;
+					}
+
+					if (_registry.valid(newEntity)) { _selected = newEntity; }
+
+					ImGui::EndMenu();
+				}
+				if (entity != _root && ImGui::Selectable("Destroy")) {
+					if (_selected == entity) { _selected = entt::null; }
+					DestroyEntity(entity);
+					clicked = true;
+				}
+
+				if (clicked) { ImGui::CloseCurrentPopup(); }
+
+				ImGui::EndPopup();
+			}
+		};
+
 		std::function<void(const entt::entity)> DisplayEntity = [&](const entt::entity entity) -> void {
+			if (!_registry.valid(entity)) { return; }
 			const auto& transform       = _registry.get<TransformComponent>(entity);
 			const bool hasChildren      = transform.Children.size() > 0;
 			ImGuiTreeNodeFlags addFlags = entity == _selected ? ImGuiTreeNodeFlags_Selected : 0;
 			if (hasChildren) {
 				bool open = ImGui::TreeNodeEx(transform.Name.c_str(), ImGuiTreeNodeFlags_OpenOnArrow | addFlags);
 				if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) { _selected = entity; }
+				ShowContextMenu(entity);
 				if (open) {
 					for (const auto child : transform.Children) { DisplayEntity(child); }
 					ImGui::TreePop();
@@ -81,6 +131,7 @@ void Scene::DrawSceneGraph() {
 					transform.Name.c_str(),
 					ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_Bullet | ImGuiTreeNodeFlags_NoTreePushOnOpen | addFlags);
 				if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) { _selected = entity; }
+				ShowContextMenu(entity);
 			}
 		};
 		DisplayEntity(_root);

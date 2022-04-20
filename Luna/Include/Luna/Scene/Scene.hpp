@@ -21,6 +21,7 @@ class Scene {
 	}
 
 	Entity CreateEntity(const std::string& name, std::optional<entt::entity> parent = std::nullopt);
+	void DestroyEntity(entt::entity entity);
 	void LoadEnvironment(const std::string& filePath);
 	Entity LoadModel(const std::string& filePath, entt::entity parent);
 
