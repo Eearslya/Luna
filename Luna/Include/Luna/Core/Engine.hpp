@@ -55,7 +55,8 @@ class Engine final : NonCopyable {
 
 	App* _app = nullptr;
 	std::string _argv0;
-	std::multimap<Module::StageIndex, std::unique_ptr<Module>> _modules;
+	std::multimap<Module::StageIndex, Module*> _moduleMap;
+	std::vector<std::unique_ptr<Module>> _modules;
 	bool _running = false;
 
 	ElapsedTime _frameDelta;

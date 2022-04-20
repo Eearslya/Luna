@@ -37,7 +37,8 @@ Engine::Engine(const char* argv0) : _argv0(argv0) {
 
 			Log::Debug("Initializing Engine module '{}'.", moduleInfo.Name);
 			auto&& module = moduleInfo.Create();
-			_modules.emplace(Module::StageIndex(moduleInfo.Stage, moduleID), std::move(module));
+			_moduleMap.emplace(Module::StageIndex(moduleInfo.Stage, moduleID), module.get());
+			_modules.push_back(std::move(module));
 			createdModules.emplace_back(moduleID);
 		}
 
@@ -58,14 +59,16 @@ Engine::Engine(const char* argv0) : _argv0(argv0) {
 }
 
 Engine::~Engine() noexcept {
+	for (auto modIt = _modules.rbegin(); modIt != _modules.rend(); ++modIt) { modIt->reset(); }
 	_modules.clear();
+	_moduleMap.clear();
 	Module::Registry().clear();
 	_instance = nullptr;
 }
 
 int Engine::Run() {
 	const auto UpdateStage = [this](Module::Stage stage) {
-		for (auto& [stageIndex, module] : _modules) {
+		for (auto& [stageIndex, module] : _moduleMap) {
 			if (stageIndex.first == stage) { module->Update(); }
 		}
 	};
