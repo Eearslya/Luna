@@ -892,22 +892,18 @@ void Device::SetupSwapchain(Badge<Swapchain>, Swapchain& swapchain) {
 	_swapchainImages.reserve(images.size());
 
 	for (size_t i = 0; i < images.size(); ++i) {
-		const auto& image = images[i];
-		Image* img        = _imagePool.Allocate(*this, createInfo, image);
-#ifdef LUNA_VULKAN_DEBUG
+		const auto& image         = images[i];
+		Image* img                = _imagePool.Allocate(*this, createInfo, image);
 		const std::string imgName = fmt::format("Swapchain Image {}", i);
 		SetObjectName(img->GetImage(), imgName);
-#endif
 		ImageHandle handle(img);
 		handle->_internalSync = true;
 		handle->SetSwapchainLayout(vk::ImageLayout::ePresentSrcKHR);
 
 		const ImageViewCreateInfo viewCI{.Image = img, .Format = format, .Type = vk::ImageViewType::e2D};
 		ImageViewHandle view(_imageViewPool.Allocate(*this, viewCI));
-#ifdef LUNA_VULKAN_DEBUG
 		const std::string viewName = fmt::format("Swapchain Image View {}", i);
 		SetObjectName(view->GetImageView(), viewName);
-#endif
 		handle->SetDefaultView(view);
 		view->_internalSync = true;
 
@@ -1436,7 +1432,6 @@ RenderPass& Device::RequestRenderPass(const RenderPassInfo& info, bool compatibl
 	return *ret;
 }
 
-#ifdef LUNA_VULKAN_DEBUG
 // Set an object's debug name for validation layers and RenderDoc functionality.
 void Device::SetObjectNameImpl(vk::ObjectType type, uint64_t handle, const std::string& name) {
 	if (!_extensions.DebugUtils) { return; }
@@ -1444,7 +1439,6 @@ void Device::SetObjectNameImpl(vk::ObjectType type, uint64_t handle, const std::
 	const vk::DebugUtilsObjectNameInfoEXT nameInfo(type, handle, name.c_str());
 	_device.setDebugUtilsObjectNameEXT(nameInfo);
 }
-#endif
 
 /* **********
  * FrameContext Methods

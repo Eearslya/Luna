@@ -134,13 +134,13 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 		// If we can't get the real sync2, see if we can get the fake compatibility extension.
 		TryLayer("VK_LAYER_KHRONOS_synchronization2");
 
+		_extensions.DebugUtils                   = TryExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 		_extensions.GetPhysicalDeviceProperties2 = TryExtension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 		_extensions.GetSurfaceCapabilities2      = TryExtension(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
 
 #ifdef LUNA_VULKAN_DEBUG
 		TryLayer("VK_LAYER_KHRONOS_validation");
 
-		_extensions.DebugUtils         = TryExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 		_extensions.ValidationFeatures = TryExtension(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
 #endif
 	}
