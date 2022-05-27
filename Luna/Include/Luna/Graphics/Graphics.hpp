@@ -111,9 +111,9 @@ class Graphics : public Module::Registrar<Graphics> {
 	Vulkan::Program* _programDeferred = nullptr;
 	Vulkan::Program* _programGamma    = nullptr;
 	Vulkan::Program* _programSkybox   = nullptr;
-	Vulkan::BufferHandle _cameraBuffer;
-	Vulkan::BufferHandle _sceneBuffer;
-	Vulkan::BufferHandle _lightsBuffer;
+	std::vector<Vulkan::BufferHandle> _cameraBuffers;
+	std::vector<Vulkan::BufferHandle> _sceneBuffers;
+	std::vector<Vulkan::BufferHandle> _lightsBuffers;
 	bool _mouseControl      = false;
 	glm::vec3 _sunDirection = glm::normalize(glm::vec3(1.0f, 2.0f, 0.5f));
 	glm::vec3 _sunPosition;

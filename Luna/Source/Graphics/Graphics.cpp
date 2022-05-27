@@ -48,6 +48,7 @@ Graphics::Graphics() {
 	_assetManager = std::make_unique<AssetManager>();
 	_imgui        = std::make_unique<ImGuiManager>(*_device);
 	_sceneImages.resize(_swapchain->GetImages().size());
+	const auto swapchainImageCount = _swapchain->GetImages().size();
 
 	// Create placeholder textures.
 	{
@@ -101,12 +102,14 @@ Graphics::Graphics() {
 		_defaultImages.WhiteCube = _device->CreateImage(imageCICube, initialImages);
 	}
 
-	_cameraBuffer = _device->CreateBuffer(
-		Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, sizeof(CameraData), vk::BufferUsageFlagBits::eUniformBuffer));
-	_sceneBuffer = _device->CreateBuffer(
-		Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, sizeof(SceneData), vk::BufferUsageFlagBits::eUniformBuffer));
-	_lightsBuffer = _device->CreateBuffer(
-		Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, sizeof(LightsData), vk::BufferUsageFlagBits::eUniformBuffer));
+	for (size_t i = 0; i < swapchainImageCount; ++i) {
+		_cameraBuffers.emplace_back(_device->CreateBuffer(Vulkan::BufferCreateInfo(
+			Vulkan::BufferDomain::Host, sizeof(CameraData), vk::BufferUsageFlagBits::eUniformBuffer)));
+		_sceneBuffers.emplace_back(_device->CreateBuffer(Vulkan::BufferCreateInfo(
+			Vulkan::BufferDomain::Host, sizeof(SceneData), vk::BufferUsageFlagBits::eUniformBuffer)));
+		_lightsBuffers.emplace_back(_device->CreateBuffer(Vulkan::BufferCreateInfo(
+			Vulkan::BufferDomain::Host, sizeof(LightsData), vk::BufferUsageFlagBits::eUniformBuffer)));
+	}
 
 	LoadShaders();
 	keyboard->OnKey() += [&](Key key, InputAction action, InputMods mods, bool uiCapture) -> bool {
@@ -185,7 +188,8 @@ void Graphics::Update() {
 	// Scene Drawing
 	vk::Extent2D sceneExtent        = _swapchain->GetExtent();
 	bool sceneWindow                = false;
-	Vulkan::ImageHandle& sceneImage = _sceneImages[_swapchain->GetAcquiredIndex()];
+	const auto swapchainIndex       = _swapchain->GetAcquiredIndex();
+	Vulkan::ImageHandle& sceneImage = _sceneImages[swapchainIndex];
 
 	if (_editorLayout) {
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -262,6 +266,7 @@ void Graphics::Update() {
 	_sunDirection            = glm::normalize(-_sunPosition);
 
 	// Update Camera buffer.
+	auto& cameraBuffer = _cameraBuffers[swapchainIndex];
 	{
 		ZoneScopedN("Camera Uniform Update");
 		const float aspectRatio = float(sceneExtent.width) / float(sceneExtent.height);
@@ -271,12 +276,13 @@ void Graphics::Update() {
 		cameraData.View        = _camera.GetView();
 		cameraData.ViewInverse = glm::inverse(_camera.GetView());
 		cameraData.Position    = _camera.GetPosition();
-		auto* data             = _cameraBuffer->Map();
+		auto* data             = cameraBuffer->Map();
 		memcpy(data, &cameraData, sizeof(CameraData));
-		_cameraBuffer->Unmap();
+		cameraBuffer->Unmap();
 	}
 
 	// Update Scene buffer.
+	auto& sceneBuffer = _sceneBuffers[swapchainIndex];
 	{
 		ZoneScopedN("Scene Uniform Update");
 		sceneData.SunDirection = glm::vec4(_sunDirection, 0.0f);
@@ -285,12 +291,13 @@ void Graphics::Update() {
 		sceneData.Exposure        = _exposure;
 		sceneData.Gamma           = _gamma;
 		sceneData.IBLContribution = environmentReady ? _iblContribution : 0.0f;
-		auto* data                = _sceneBuffer->Map();
+		auto* data                = sceneBuffer->Map();
 		memcpy(data, &sceneData, sizeof(SceneData));
-		_sceneBuffer->Unmap();
+		sceneBuffer->Unmap();
 	}
 
 	// Update Lights buffer.
+	auto& lightsBuffer = _lightsBuffers[swapchainIndex];
 	{
 		ZoneScopedN("Lights Uniform Update");
 
@@ -305,9 +312,9 @@ void Graphics::Update() {
 			if (++lightCount >= 32) { break; }
 		}
 		lightsData.LightCount = lightCount;
-		auto* data            = _lightsBuffer->Map();
+		auto* data            = lightsBuffer->Map();
 		memcpy(data, &lightsData, sizeof(LightsData));
-		_lightsBuffer->Unmap();
+		lightsBuffer->Unmap();
 	}
 
 	struct PushConstant {
@@ -448,9 +455,9 @@ void Graphics::Update() {
 			cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
 			cmd->SetVertexAttribute(1, 1, vk::Format::eR32G32B32Sfloat, 0);
 			cmd->SetVertexAttribute(2, 2, vk::Format::eR32G32Sfloat, 0);
-			cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
-			cmd->SetUniformBuffer(0, 1, *_sceneBuffer);
-			cmd->SetUniformBuffer(0, 2, *_lightsBuffer);
+			cmd->SetUniformBuffer(0, 0, *cameraBuffer);
+			cmd->SetUniformBuffer(0, 1, *sceneBuffer);
+			cmd->SetUniformBuffer(0, 2, *lightsBuffer);
 			if (worldData->Environment && worldData->Environment->Ready) {
 				cmd->SetTexture(0, 3, *worldData->Environment->Irradiance->GetView(), Vulkan::StockSampler::LinearClamp);
 				cmd->SetTexture(0, 4, *worldData->Environment->Prefiltered->GetView(), Vulkan::StockSampler::LinearClamp);
@@ -548,7 +555,7 @@ void Graphics::Update() {
 				cmd->SetDepthCompareOp(vk::CompareOp::eLessOrEqual);
 				cmd->SetDepthWrite(false);
 				cmd->SetCullMode(vk::CullModeFlagBits::eFront);
-				cmd->SetUniformBuffer(0, 0, *_cameraBuffer);
+				cmd->SetUniformBuffer(0, 0, *cameraBuffer);
 				cmd->SetTexture(1, 0, *worldData->Environment->Skybox->GetView(), Vulkan::StockSampler::LinearClamp);
 				cmd->SetTexture(1, 1, *worldData->Environment->Irradiance->GetView(), Vulkan::StockSampler::LinearClamp);
 				cmd->SetTexture(1, 2, *worldData->Environment->Prefiltered->GetView(), Vulkan::StockSampler::LinearClamp);
@@ -671,7 +678,7 @@ void Graphics::Update() {
 		cmd->BeginZone("ImGUI Render");
 
 		_imgui->EndFrame();
-		_imgui->Render(cmd);
+		_imgui->Render(cmd, swapchainIndex);
 
 		cmd->EndZone();
 	}

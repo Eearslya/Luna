@@ -15,11 +15,11 @@ class ImGuiManager {
 
 	void BeginFrame();
 	void EndFrame();
-	void Render(Vulkan::CommandBufferHandle& cmd);
+	void Render(Vulkan::CommandBufferHandle& cmd, uint32_t frameIndex);
 	void SetDockspace(bool dockspace);
 
  private:
-	void SetRenderState(Vulkan::CommandBufferHandle& cmd, ImDrawData* drawData) const;
+	void SetRenderState(Vulkan::CommandBufferHandle& cmd, ImDrawData* drawData, uint32_t frameIndex) const;
 
 	Vulkan::Device& _device;
 	std::unique_ptr<ImGuiRenderData> _renderData;
@@ -27,8 +27,8 @@ class ImGuiManager {
 	Vulkan::ImageHandle _fontTexture;
 	Vulkan::Program* _program     = nullptr;
 	Vulkan::Sampler* _fontSampler = nullptr;
-	Vulkan::BufferHandle _vertexBuffer;
-	Vulkan::BufferHandle _indexBuffer;
+	std::vector<Vulkan::BufferHandle> _vertexBuffers;
+	std::vector<Vulkan::BufferHandle> _indexBuffers;
 	bool _dockspace = false;
 };
 }  // namespace Luna

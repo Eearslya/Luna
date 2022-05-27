@@ -321,7 +321,7 @@ void ImGuiManager::EndFrame() {
 	ImGui::EndFrame();
 }
 
-void ImGuiManager::Render(Vulkan::CommandBufferHandle& cmd) {
+void ImGuiManager::Render(Vulkan::CommandBufferHandle& cmd, uint32_t frameIndex) {
 	ZoneScopedN("ImGuiManager::Render()");
 
 	ImGui::Render();
@@ -332,23 +332,28 @@ void ImGuiManager::Render(Vulkan::CommandBufferHandle& cmd) {
 	const int fbHeight = static_cast<int>(drawData->DisplaySize.y * drawData->FramebufferScale.y);
 	if (fbWidth <= 0 || fbHeight <= 0) { return; }
 
+	if (_vertexBuffers.size() <= frameIndex) { _vertexBuffers.resize(frameIndex + 1); }
+	if (_indexBuffers.size() <= frameIndex) { _indexBuffers.resize(frameIndex + 1); }
+	auto& vertexBuffer = _vertexBuffers[frameIndex];
+	auto& indexBuffer  = _indexBuffers[frameIndex];
+
 	// Set up our vertex and index buffers.
 	if (drawData->TotalVtxCount > 0) {
 		// Resize or create our buffers if needed.
 		const size_t vertexSize = drawData->TotalVtxCount * sizeof(ImDrawVert);
 		const size_t indexSize  = drawData->TotalIdxCount * sizeof(ImDrawIdx);
-		if (!_vertexBuffer || _vertexBuffer->GetCreateInfo().Size < vertexSize) {
-			_vertexBuffer = _device.CreateBuffer(
+		if (!vertexBuffer || vertexBuffer->GetCreateInfo().Size < vertexSize) {
+			vertexBuffer = _device.CreateBuffer(
 				Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, vertexSize, vk::BufferUsageFlagBits::eVertexBuffer));
 		}
-		if (!_indexBuffer || _indexBuffer->GetCreateInfo().Size < indexSize) {
-			_indexBuffer = _device.CreateBuffer(
+		if (!indexBuffer || indexBuffer->GetCreateInfo().Size < indexSize) {
+			indexBuffer = _device.CreateBuffer(
 				Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Host, vertexSize, vk::BufferUsageFlagBits::eIndexBuffer));
 		}
 
 		// Copy our vertex and index data.
-		ImDrawVert* vertices = reinterpret_cast<ImDrawVert*>(_vertexBuffer->Map());
-		ImDrawIdx* indices   = reinterpret_cast<ImDrawIdx*>(_indexBuffer->Map());
+		ImDrawVert* vertices = reinterpret_cast<ImDrawVert*>(vertexBuffer->Map());
+		ImDrawIdx* indices   = reinterpret_cast<ImDrawIdx*>(indexBuffer->Map());
 		for (int i = 0; i < drawData->CmdListsCount; ++i) {
 			const ImDrawList* list = drawData->CmdLists[i];
 			memcpy(vertices, list->VtxBuffer.Data, list->VtxBuffer.Size * sizeof(ImDrawVert));
@@ -356,8 +361,8 @@ void ImGuiManager::Render(Vulkan::CommandBufferHandle& cmd) {
 			vertices += list->VtxBuffer.Size;
 			indices += list->IdxBuffer.Size;
 		}
-		_vertexBuffer->Unmap();
-		_indexBuffer->Unmap();
+		vertexBuffer->Unmap();
+		indexBuffer->Unmap();
 	}
 
 	// Set up our render state.
@@ -370,7 +375,7 @@ void ImGuiManager::Render(Vulkan::CommandBufferHandle& cmd) {
 			rp.LoadAttachments = 1 << 0;
 		}
 		cmd->BeginRenderPass(rp);
-		SetRenderState(cmd, drawData);
+		SetRenderState(cmd, drawData, frameIndex);
 	}
 
 	const ImVec2 clipOffset = drawData->DisplayPos;
@@ -387,7 +392,7 @@ void ImGuiManager::Render(Vulkan::CommandBufferHandle& cmd) {
 
 				if (drawCmd.UserCallback != nullptr) {
 					if (drawCmd.UserCallback == ImDrawCallback_ResetRenderState) {
-						SetRenderState(cmd, drawData);
+						SetRenderState(cmd, drawData, frameIndex);
 					} else {
 						drawCmd.UserCallback(cmdList, &drawCmd);
 					}
@@ -439,7 +444,7 @@ void ImGuiManager::SetDockspace(bool dockspace) {
 	_dockspace = dockspace;
 }
 
-void ImGuiManager::SetRenderState(Vulkan::CommandBufferHandle& cmd, ImDrawData* drawData) const {
+void ImGuiManager::SetRenderState(Vulkan::CommandBufferHandle& cmd, ImDrawData* drawData, uint32_t frameIndex) const {
 	if (drawData->TotalVtxCount == 0) { return; }
 
 	cmd->SetProgram(_program);
@@ -447,7 +452,8 @@ void ImGuiManager::SetRenderState(Vulkan::CommandBufferHandle& cmd, ImDrawData* 
 	cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, pos));
 	cmd->SetVertexAttribute(1, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, uv));
 	cmd->SetVertexAttribute(2, 0, vk::Format::eR8G8B8A8Unorm, offsetof(ImDrawVert, col));
-	cmd->SetVertexBinding(0, *_vertexBuffer, 0, sizeof(ImDrawVert), vk::VertexInputRate::eVertex);
-	cmd->SetIndexBuffer(*_indexBuffer, 0, sizeof(ImDrawIdx) == 2 ? vk::IndexType::eUint16 : vk::IndexType::eUint32);
+	cmd->SetVertexBinding(0, *_vertexBuffers[frameIndex], 0, sizeof(ImDrawVert), vk::VertexInputRate::eVertex);
+	cmd->SetIndexBuffer(
+		*_indexBuffers[frameIndex], 0, sizeof(ImDrawIdx) == 2 ? vk::IndexType::eUint16 : vk::IndexType::eUint32);
 }
 }  // namespace Luna
