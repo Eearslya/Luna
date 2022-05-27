@@ -164,9 +164,9 @@ Device::~Device() noexcept {
 	// Clean up our VMA allocator.
 	vmaDestroyAllocator(_allocator);
 
-	for (auto& queue : _queueData) {
-		if (queue.Tracing) { tracy::DestroyVkContext(queue.Tracing); }
-	}
+	// Clean up our Tracy contexts.
+	for (auto tracing : _queueTracing) { tracy::DestroyVkContext(tracing.second); }
+	_queueTracing.clear();
 
 	// Destroy our timeline semaphores, if we ever made them.
 	DestroyTimelineSemaphores();
@@ -1370,7 +1370,6 @@ void Device::CreateTracingContexts() {
 	const auto families     = _gpu.getQueueFamilyProperties();
 	const size_t queueCount = _queueData.size();
 	std::vector<uint32_t> queues;
-	std::unordered_map<uint32_t, TracyVkCtx> contexts;
 	std::mutex contextMutex;
 	for (size_t q = 0; q < queueCount; ++q) {
 		const auto family = _queues.Families[q];
@@ -1387,10 +1386,10 @@ void Device::CreateTracingContexts() {
 				auto vkQueue = _queues.Queues[q];
 				auto pool    = CommandPool(*this, family, true);
 				auto cmd     = pool.RequestCommandBuffer();
-				auto context = tracy::CreateVkContext(_gpu, _device, vkQueue, cmd, pfn1, pfn2);
+				auto context = tracy::CreateVkContext(_gpu, static_cast<VkDevice>(_device), vkQueue, cmd, pfn1, pfn2);
 
 				std::lock_guard lock(contextMutex);
-				contexts[family] = context;
+				_queueTracing[family] = context;
 			});
 			queues.push_back(family);
 		}
@@ -1401,7 +1400,7 @@ void Device::CreateTracingContexts() {
 	for (size_t q = 0; q < queueCount; ++q) {
 		const auto family = _queues.Families[q];
 		auto& queue       = _queueData[q];
-		queue.Tracing     = contexts[family];
+		queue.Tracing     = _queueTracing[family];
 	}
 }
 

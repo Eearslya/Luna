@@ -225,6 +225,7 @@ class Device final : NonCopyable {
 #endif
 	uint32_t _pendingCommandBuffers = 0;
 	std::array<QueueData, QueueTypeCount> _queueData;
+	std::unordered_map<uint32_t, TracyVkCtx> _queueTracing;
 
 	// Swapchain/WSI Sync Objects
 	SemaphoreHandle _swapchainAcquire;
