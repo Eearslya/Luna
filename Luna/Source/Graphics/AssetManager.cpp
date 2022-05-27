@@ -754,13 +754,16 @@ void AssetManager::LoadMeshTask(ModelLoadContext* context, size_t meshIndex) con
 	{
 		ZoneScopedN("Buffer Data Creation");
 
+		// Count the number of vertices we've written so far so we can offset the indices.
+		size_t indexOffset = 0;
 		for (size_t prim = 0; prim < gltfMesh.primitives.size(); ++prim) {
 			const auto& data = primData[prim];
 			auto& submesh    = mesh->SubMeshes[prim];
 
 			submesh.VertexCount = data.VertexCount;
 			submesh.IndexCount  = data.IndexCount;
-			submesh.FirstVertex = data.FirstVertex;
+			// We are adding an offset to the index buffer, removing the need for vertex offsets.
+			submesh.FirstVertex = 0;
 			submesh.FirstIndex  = data.FirstIndex;
 
 			const size_t positionSize  = data.VertexCount * sizeof(glm::vec3);
@@ -786,21 +789,22 @@ void AssetManager::LoadMeshTask(ModelLoadContext* context, size_t meshIndex) con
 			texcoord0Cursor += texcoord0Size;
 
 			if (data.IndexData) {
+				uint32_t* dst = reinterpret_cast<uint32_t*>(indexCursor);
 				if (data.IndexStride == 1) {
-					uint32_t* dst      = reinterpret_cast<uint32_t*>(indexCursor);
 					const uint8_t* src = reinterpret_cast<const uint8_t*>(data.IndexData);
-					for (size_t i = 0; i < data.IndexCount; ++i) { dst[i] = src[i]; }
+					for (size_t i = 0; i < data.IndexCount; ++i) { dst[i] = src[i] + indexOffset; }
 				} else if (data.IndexStride == 2) {
-					uint32_t* dst       = reinterpret_cast<uint32_t*>(indexCursor);
 					const uint16_t* src = reinterpret_cast<const uint16_t*>(data.IndexData);
-					for (size_t i = 0; i < data.IndexCount; ++i) { dst[i] = src[i]; }
+					for (size_t i = 0; i < data.IndexCount; ++i) { dst[i] = src[i] + indexOffset; }
 				} else if (data.IndexStride == 4) {
-					memcpy(indexCursor, data.IndexData, indexSize);
+					const uint32_t* src = reinterpret_cast<const uint32_t*>(data.IndexData);
+					for (size_t i = 0; i < data.IndexCount; ++i) { dst[i] = src[i] + indexOffset; }
 				}
 			} else {
 				memset(indexCursor, 0, indexSize);
 			}
 			indexCursor += indexSize;
+			indexOffset += data.VertexCount;
 		}
 	}
 
