@@ -23,6 +23,7 @@ struct StaticMesh : public IntrusivePtrEnabled<StaticMesh, StaticMeshDeleter, Mu
 
 	std::vector<SubMesh> SubMeshes;
 	Vulkan::BufferHandle Buffer;
+	std::vector<std::byte> Geometry;
 	vk::DeviceSize PositionOffset   = 0;
 	vk::DeviceSize NormalOffset     = 0;
 	vk::DeviceSize Texcoord0Offset  = 0;

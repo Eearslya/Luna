@@ -741,15 +741,14 @@ void AssetManager::LoadMeshTask(ModelLoadContext* context, size_t meshIndex) con
 	mesh->TotalVertexCount = totalVertexCount;
 	mesh->TotalIndexCount  = totalIndexCount;
 
-	std::unique_ptr<uint8_t[]> bufferData;
 	{
 		ZoneScopedN("Buffer Data Allocation");
-		bufferData.reset(new uint8_t[bufferSize]);
+		mesh->Geometry.resize(bufferSize);
 	}
-	uint8_t* positionCursor  = bufferData.get();
-	uint8_t* normalCursor    = bufferData.get() + totalPositionSize;
-	uint8_t* texcoord0Cursor = bufferData.get() + totalPositionSize + totalNormalSize;
-	uint8_t* indexCursor     = bufferData.get() + totalPositionSize + totalNormalSize + totalTexcoord0Size;
+	std::byte* positionCursor  = mesh->Geometry.data();
+	std::byte* normalCursor    = mesh->Geometry.data() + totalPositionSize;
+	std::byte* texcoord0Cursor = mesh->Geometry.data() + totalPositionSize + totalNormalSize;
+	std::byte* indexCursor     = mesh->Geometry.data() + totalPositionSize + totalNormalSize + totalTexcoord0Size;
 
 	{
 		ZoneScopedN("Buffer Data Creation");
@@ -816,7 +815,7 @@ void AssetManager::LoadMeshTask(ModelLoadContext* context, size_t meshIndex) con
       Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Device,
                                bufferSize,
                                vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer),
-      bufferData.get());
+      mesh->Geometry.data());
 	}
 
 	mesh->Ready = true;
