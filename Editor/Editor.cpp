@@ -56,14 +56,18 @@ class EditorApp : public App {
 };
 
 int main(int argc, const char** argv) {
-#ifdef LUNA_DEBUG
-	Log::SetLevel(spdlog::level::trace);
-#endif
+	try {
+		Engine engine(argv[0]);
 
-	std::unique_ptr<EditorApp> app = std::make_unique<EditorApp>();
+		std::unique_ptr<EditorApp> app = std::make_unique<EditorApp>();
+		engine.SetApp(app.get());
 
-	std::unique_ptr<Engine> engine = std::make_unique<Engine>(argv[0]);
-	engine->SetApp(app.get());
+		return engine.Run();
+	} catch (const std::exception& e) {
+		std::cerr << "Encountered unhandled exception when running Luna Engine:" << std::endl << e.what() << std::endl;
 
-	return engine->Run();
+		return 1;
+	}
+
+	return 0;
 }

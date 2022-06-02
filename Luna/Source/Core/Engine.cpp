@@ -10,9 +10,14 @@ Engine* Engine::_instance = nullptr;
 Engine::Engine(const char* argv0) : _argv0(argv0) {
 	ZoneScopedN("Engine::Engine()");
 
+	if (_instance != nullptr) { throw std::runtime_error("Cannot initialize Luna::Engine more than once!"); }
 	_instance = this;
 
-	Log::Info("Initializing Luna engine.");
+#ifdef LUNA_DEBUG
+	Log::SetLevel(Log::Level::Trace);
+#endif
+
+	Log::Info("Initializing Luna Engine.");
 
 	std::vector<TypeID> createdModules;
 	uint8_t retryCount = 64;
@@ -59,6 +64,8 @@ Engine::Engine(const char* argv0) : _argv0(argv0) {
 }
 
 Engine::~Engine() noexcept {
+	Log::Info("Shutting down Luna Engine.");
+
 	for (auto modIt = _modules.rbegin(); modIt != _modules.rend(); ++modIt) { modIt->reset(); }
 	_modules.clear();
 	_moduleMap.clear();
