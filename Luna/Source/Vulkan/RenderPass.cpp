@@ -73,7 +73,7 @@ Hash HashRenderPassInfo(const RenderPassInfo& info, bool compatible) {
 
 RenderPass::RenderPass(Hash hash, Device& device, const RenderPassInfo& info)
 		: HashedObject<RenderPass>(hash), _device(device), _renderPassInfo(info) {
-	Log::Trace("[Vulkan::RenderPass] Creating new Render Pass.");
+	Log::Trace("Vulkan::RenderPass", "Creating new Render Pass.");
 
 	std::fill(_colorFormats.begin(), _colorFormats.end(), vk::Format::eUndefined);
 
@@ -623,21 +623,23 @@ RenderPass::RenderPass(Hash hash, Device& device, const RenderPassInfo& info)
 #if 1
 	// Dump pass info to console.
 	{
-		Log::Trace("[Vulkan::RenderPass] - Final create info:");
-		Log::Trace("[Vulkan::RenderPass]   - Attachments ({}):", rpCI.attachmentCount);
+		Log::Trace("Vulkan::RenderPass", "- Final create info:");
+		Log::Trace("Vulkan::RenderPass", "  - Attachments ({}):", rpCI.attachmentCount);
 		for (uint32_t i = 0; i < rpCI.attachmentCount; ++i) {
 			const auto& att = rpCI.pAttachments[i];
-			Log::Trace("[Vulkan::RenderPass]     {}: {} MSAA x{}", i, vk::to_string(att.format), vk::to_string(att.samples));
-			Log::Trace("[Vulkan::RenderPass]        Initial {}, Final {}",
+			Log::Trace("Vulkan::RenderPass", "    {}: {} MSAA x{}", i, vk::to_string(att.format), vk::to_string(att.samples));
+			Log::Trace("Vulkan::RenderPass",
+			           "       Initial {}, Final {}",
 			           vk::to_string(att.initialLayout),
 			           vk::to_string(att.finalLayout));
 			Log::Trace(
-				"[Vulkan::RenderPass]        LoadOp {}, StoreOp {}", vk::to_string(att.loadOp), vk::to_string(att.storeOp));
-			Log::Trace("[Vulkan::RenderPass]        StencilLoadOp {}, StencilStoreOp {}",
+				"Vulkan::RenderPass", "       LoadOp {}, StoreOp {}", vk::to_string(att.loadOp), vk::to_string(att.storeOp));
+			Log::Trace("Vulkan::RenderPass",
+			           "       StencilLoadOp {}, StencilStoreOp {}",
 			           vk::to_string(att.stencilLoadOp),
 			           vk::to_string(att.stencilStoreOp));
 		}
-		Log::Trace("[Vulkan::RenderPass]   - Subpasses ({}):", rpCI.subpassCount);
+		Log::Trace("Vulkan::RenderPass", "  - Subpasses ({}):", rpCI.subpassCount);
 		for (uint32_t i = 0; i < rpCI.subpassCount; ++i) {
 			const auto& sp = rpCI.pSubpasses[i];
 			std::vector<std::string> colors;
@@ -664,25 +666,28 @@ RenderPass::RenderPass(Hash hash, Device& device, const RenderPassInfo& info)
 				}
 			}
 			Log::Trace(
-				"[Vulkan::RenderPass]     {}: Color Attachments: {}", i, fmt::join(colors.begin(), colors.end(), ", "));
-			Log::Trace("[Vulkan::RenderPass]        Input Attachments: {}", fmt::join(inputs.begin(), inputs.end(), ", "));
-			Log::Trace("[Vulkan::RenderPass]        Resolve Attachments: {}",
-			           fmt::join(resolves.begin(), resolves.end(), ", "));
-			Log::Trace("[Vulkan::RenderPass]        Preserve Attachments: {}",
-			           fmt::join(preserves.begin(), preserves.end(), ", "));
+				"Vulkan::RenderPass", "    {}: Color Attachments: {}", i, fmt::join(colors.begin(), colors.end(), ", "));
+			Log::Trace("Vulkan::RenderPass", "       Input Attachments: {}", fmt::join(inputs.begin(), inputs.end(), ", "));
+			Log::Trace(
+				"Vulkan::RenderPass", "       Resolve Attachments: {}", fmt::join(resolves.begin(), resolves.end(), ", "));
+			Log::Trace(
+				"Vulkan::RenderPass", "       Preserve Attachments: {}", fmt::join(preserves.begin(), preserves.end(), ", "));
 		}
-		Log::Trace("[Vulkan::RenderPass]  - Dependencies ({}):", rpCI.dependencyCount);
+		Log::Trace("Vulkan::RenderPass", " - Dependencies ({}):", rpCI.dependencyCount);
 		for (uint32_t i = 0; i < rpCI.dependencyCount; ++i) {
 			const auto& dep = rpCI.pDependencies[i];
-			Log::Trace("[Vulkan::RenderPass]     {}: {} to {}",
+			Log::Trace("Vulkan::RenderPass",
+			           "    {}: {} to {}",
 			           i,
 			           dep.srcSubpass == VK_SUBPASS_EXTERNAL ? "External" : std::to_string(dep.srcSubpass),
 			           dep.dstSubpass == VK_SUBPASS_EXTERNAL ? "External" : std::to_string(dep.dstSubpass));
-			Log::Trace("[Vulkan::RenderPass]        Flags: {}", vk::to_string(dep.dependencyFlags));
-			Log::Trace("[Vulkan::RenderPass]        Stages {} to {}",
+			Log::Trace("Vulkan::RenderPass", "       Flags: {}", vk::to_string(dep.dependencyFlags));
+			Log::Trace("Vulkan::RenderPass",
+			           "       Stages {} to {}",
 			           vk::to_string(dep.srcStageMask),
 			           vk::to_string(dep.dstStageMask));
-			Log::Trace("[Vulkan::RenderPass]        Access {} to {}",
+			Log::Trace("Vulkan::RenderPass",
+			           "       Access {} to {}",
 			           vk::to_string(dep.srcAccessMask),
 			           vk::to_string(dep.dstAccessMask));
 		}
@@ -698,7 +703,7 @@ RenderPass::~RenderPass() noexcept {
 
 Framebuffer::Framebuffer(Device& device, const RenderPass& renderPass, const RenderPassInfo& renderPassInfo)
 		: Cookie(device), _device(device), _renderPass(renderPass) {
-	Log::Trace("[Vulkan::Framebuffer] Creating new Framebuffer.");
+	Log::Trace("Vulkan::Framebuffer", "Creating new Framebuffer.");
 
 	uint32_t viewCount = 0;
 	std::array<vk::ImageView, MaxColorAttachments + 1> imageViews;

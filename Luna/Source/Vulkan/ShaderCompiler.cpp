@@ -147,9 +147,9 @@ std::optional<std::vector<uint32_t>> ShaderCompiler::Compile(vk::ShaderStageFlag
 	const EShMessages messages = static_cast<EShMessages>(EShMsgSpvRules | EShMsgVulkanRules);
 
 	if (!shader.parse(&resources, 100, false, messages)) {
-		Log::Error("[Vulkan::ShaderCompiler] Failed to compile {} shader!", vk::to_string(stage));
-		Log::Error("[Vulkan::ShaderCompiler] Info Log: {}", shader.getInfoLog());
-		Log::Error("[Vulkan::ShaderCompiler] Info Debug Log: {}", shader.getInfoDebugLog());
+		Log::Error("Vulkan::ShaderCompiler", "Failed to compile {} shader!", vk::to_string(stage));
+		Log::Error("Vulkan::ShaderCompiler", "Info Log: {}", shader.getInfoLog());
+		Log::Error("Vulkan::ShaderCompiler", "Info Debug Log: {}", shader.getInfoDebugLog());
 		return std::nullopt;
 	}
 
@@ -157,9 +157,9 @@ std::optional<std::vector<uint32_t>> ShaderCompiler::Compile(vk::ShaderStageFlag
 	program.addShader(&shader);
 
 	if (!program.link(messages)) {
-		Log::Error("[Vulkan::ShaderCompiler] Failed to compile {} shader!", vk::to_string(stage));
-		Log::Error("[Vulkan::ShaderCompiler] Info Log: {}", program.getInfoLog());
-		Log::Error("[Vulkan::ShaderCompiler] Info Debug Log: {}", program.getInfoDebugLog());
+		Log::Error("Vulkan::ShaderCompiler", "Failed to compile {} shader!", vk::to_string(stage));
+		Log::Error("Vulkan::ShaderCompiler", "Info Log: {}", program.getInfoLog());
+		Log::Error("Vulkan::ShaderCompiler", "Info Debug Log: {}", program.getInfoDebugLog());
 		return std::nullopt;
 	}
 

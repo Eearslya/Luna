@@ -61,7 +61,7 @@ void CommandBuffer::Begin() {
 
 void CommandBuffer::End() {
 	if (_zoneDepth != 0) {
-		Log::Error("[Vulkan::CommandBuffer] Command Buffer has mismatched BeginZone()/EndZone() calls!");
+		Log::Error("Vulkan::CommandBuffer", "Command Buffer has mismatched BeginZone()/EndZone() calls!");
 		for (size_t i = 0; i < _zoneDepth; ++i) { EndZone(); }
 	}
 	if (_tracing) { TracyVkCollect(_tracing, _commandBuffer); }
@@ -707,7 +707,7 @@ vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 	                                                _pipelineCompileInfo.SubpassIndex,
 	                                                VK_NULL_HANDLE,
 	                                                0);
-	Log::Trace("[Vulkan::CommandBuffer] Creating new Pipeline.");
+	Log::Trace("Vulkan::CommandBuffer", "Creating new Pipeline.");
 	const auto pipelineResult = _device.GetDevice().createGraphicsPipeline(VK_NULL_HANDLE, pipelineCI);
 	const auto returnedPipeline =
 		_pipelineCompileInfo.Program->AddPipeline(_pipelineCompileInfo.CachedHash, pipelineResult.value);

@@ -6,7 +6,7 @@
 
 namespace Luna {
 void Window::CallbackError(int32_t error, const char* description) {
-	Log::Error("GLFW Error {}: {}", error, description);
+	Log::Error("Window", "GLFW Error {}: {}", error, description);
 }
 
 void Window::CallbackMonitor(GLFWmonitor* monitor, int32_t event) {

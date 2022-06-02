@@ -12,7 +12,9 @@ class ObjectPool {
  public:
 	~ObjectPool() noexcept {
 		if (_available.size() != _totalObjectCount) {
-			Log::Error("[ObjectPool] Object pool is being destroyed while {} allocated objects still exist!", _totalObjectCount - _available.size());
+			Log::Error("ObjectPool",
+			           "Object pool is being destroyed while {} allocated objects still exist!",
+			           _totalObjectCount - _available.size());
 		}
 	}
 

@@ -101,7 +101,7 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 		bytes = filesystem->ReadBytes(envPath);
 	}
 	if (!bytes.has_value()) {
-		Log::Error("[AssetManager] Failed to load environment map {}!", filePath);
+		Log::Error("AssetManager", "Failed to load environment map {}!", filePath);
 		return;
 	}
 
@@ -114,7 +114,7 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 		stbi__vertical_flip(pixels, width, height, STBI_rgb_alpha * sizeof(float));
 	}
 	if (!pixels) {
-		Log::Error("[AssetManager] Failed to parse environment map {}!", envFileName);
+		Log::Error("AssetManager", "Failed to parse environment map {}!", envFileName);
 		return;
 	}
 
@@ -130,32 +130,32 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 
 		auto cubeMapVertCode = filesystem->Read("Shaders/CubeMap.vert.glsl");
 		if (!cubeMapVertCode.has_value()) {
-			Log::Error("[AssetManager] Failed to load CubeMap vertex shader!");
+			Log::Error("AssetManager", "Failed to load CubeMap vertex shader!");
 			return;
 		}
 		auto cubeMapFragCode = filesystem->Read("Shaders/CubeMap.frag.glsl");
 		if (!cubeMapFragCode.has_value()) {
-			Log::Error("[AssetManager] Failed to load CubeMap fragment shader!");
+			Log::Error("AssetManager", "Failed to load CubeMap fragment shader!");
 			return;
 		}
 		auto irradianceFragCode = filesystem->Read("Shaders/CubeMapConvolute.frag.glsl");
 		if (!irradianceFragCode.has_value()) {
-			Log::Error("[AssetManager] Failed to load CubeMap convolution fragment shader!");
+			Log::Error("AssetManager", "Failed to load CubeMap convolution fragment shader!");
 			return;
 		}
 		auto prefilterFragCode = filesystem->Read("Shaders/CubeMapPreFilter.frag.glsl");
 		if (!prefilterFragCode.has_value()) {
-			Log::Error("[AssetManager] Failed to load CubeMap prefilter fragment shader!");
+			Log::Error("AssetManager", "Failed to load CubeMap prefilter fragment shader!");
 			return;
 		}
 		auto brdfVertCode = filesystem->Read("Shaders/BrdfLut.vert.glsl");
 		if (!brdfVertCode.has_value()) {
-			Log::Error("[AssetManager] Failed to load BRDF LUT vertex shader!");
+			Log::Error("AssetManager", "Failed to load BRDF LUT vertex shader!");
 			return;
 		}
 		auto brdfFragCode = filesystem->Read("Shaders/BrdfLut.frag.glsl");
 		if (!brdfFragCode.has_value()) {
-			Log::Error("[AssetManager] Failed to load BRDF LUT fragment shader!");
+			Log::Error("AssetManager", "Failed to load BRDF LUT fragment shader!");
 			return;
 		}
 
@@ -168,22 +168,22 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 
 		cubeMapProgram = device.RequestProgram(cubeMapVert, cubeMapFrag);
 		if (cubeMapProgram == nullptr) {
-			Log::Error("[AssetManager] Failed to load shader program for cubemap generation!");
+			Log::Error("AssetManager", "Failed to load shader program for cubemap generation!");
 			return;
 		}
 		irradianceProgram = device.RequestProgram(cubeMapVert, irradianceFrag);
 		if (irradianceProgram == nullptr) {
-			Log::Error("[AssetManager] Failed to load shader program for cubemap irradiance generation!");
+			Log::Error("AssetManager", "Failed to load shader program for cubemap irradiance generation!");
 			return;
 		}
 		prefilterProgram = device.RequestProgram(cubeMapVert, prefilterFrag);
 		if (prefilterProgram == nullptr) {
-			Log::Error("[AssetManager] Failed to load shader program for cubemap prefilter generation!");
+			Log::Error("AssetManager", "Failed to load shader program for cubemap prefilter generation!");
 			return;
 		}
 		brdfProgram = device.RequestProgram(brdfVert, brdfFrag);
 		if (brdfProgram == nullptr) {
-			Log::Error("[AssetManager] Failed to load shader program for BRDF LUT generation!");
+			Log::Error("AssetManager", "Failed to load shader program for BRDF LUT generation!");
 			return;
 		}
 	}
@@ -433,7 +433,7 @@ void AssetManager::LoadEnvironmentTask(const std::string& filePath, Scene& scene
 	env->Ready       = true;
 
 	elapsed.Update();
-	Log::Info("[AssetManager] {} loaded in {}ms", envFileName, elapsed.Get().Milliseconds());
+	Log::Info("AssetManager", "{} loaded in {}ms", envFileName, elapsed.Get().Milliseconds());
 }
 
 void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const entt::entity rootEntity) {
@@ -471,20 +471,20 @@ void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const
 		} else if (gltfExt.compare(".glb") == 0) {
 			loaded = loader.LoadBinaryFromFile(&context->Model, &gltfError, &gltfWarning, gltfFile);
 		} else {
-			Log::Error("[AssetManager] glTF file {} is not recognized!", gltfFileName);
+			Log::Error("AssetManager", "glTF file {} is not recognized!", gltfFileName);
 			return;
 		}
 		gltfLoadTime.Update();
 
 		if (!gltfError.empty()) {
-			Log::Error("[AssetManager] Encountered error while loading {}: {}", gltfFileName, gltfError);
+			Log::Error("AssetManager", "Encountered error while loading {}: {}", gltfFileName, gltfError);
 		}
 		if (!gltfWarning.empty()) {
-			Log::Warning("[AssetManager] Encountered warning while loading {}: {}", gltfFileName, gltfWarning);
+			Log::Warning("AssetManager", "Encountered warning while loading {}: {}", gltfFileName, gltfWarning);
 		}
 
 		if (!loaded) {
-			Log::Error("[AssetManager] Failed to load glTF model!");
+			Log::Error("AssetManager", "Failed to load glTF model!");
 
 			_contextPool.Free(context);
 
@@ -581,7 +581,7 @@ void AssetManager::LoadGltfTask(const std::string& gltfFile, Scene& scene, const
 	auto cleanupGroup = threading->CreateTaskGroup();
 	cleanupGroup->Enqueue([this, context]() {
 		context->LoadTime.Update();
-		Log::Info("[AssetManager] {} loaded in {}ms.", context->FileName, context->LoadTime.Get().Milliseconds());
+		Log::Info("AssetManager", "{} loaded in {}ms.", context->FileName, context->LoadTime.Get().Milliseconds());
 		_contextPool.Free(context);
 	});
 	for (auto& g : groups) { cleanupGroup->DependOn(*g); }
@@ -600,10 +600,10 @@ void AssetManager::LoadMaterialsTask(ModelLoadContext* context) const {
 	const auto EnsureFormat = [&](uint32_t index, vk::Format expected) -> void {
 		auto& format = context->TextureFormats[index];
 		if (format != vk::Format::eUndefined && format != expected) {
-			Log::Error(
-				"[AssetManager::LoadMaterialsTask] For asset '{}', texture index {} is used in both Srgb and Unorm contexts!",
-				context->FileName,
-				index);
+			Log::Error("AssetManager::LoadMaterialsTask",
+			           "For asset '{}', texture index {} is used in both Srgb and Unorm contexts!",
+			           context->FileName,
+			           index);
 		}
 		format = expected;
 	};
@@ -683,11 +683,11 @@ void AssetManager::LoadMeshTask(ModelLoadContext* context, size_t meshIndex) con
 		for (size_t prim = 0; prim < gltfMesh.primitives.size(); ++prim) {
 			const auto& gltfPrimitive = gltfMesh.primitives[prim];
 			if (gltfPrimitive.mode != 4) {
-				Log::Warning(
-					"[AssetManager] {} mesh {} contains a primitive with mode {}. Only mode 4 (triangle list) is supported.",
-					context->FileName,
-					meshIndex,
-					gltfPrimitive.mode);
+				Log::Warning("AssetManager",
+				             "{} mesh {} contains a primitive with mode {}. Only mode 4 (triangle list) is supported.",
+				             context->FileName,
+				             meshIndex,
+				             gltfPrimitive.mode);
 				continue;
 			}
 
@@ -831,7 +831,7 @@ void AssetManager::LoadTextureTask(ModelLoadContext* context, size_t textureInde
 	const auto format       = context->TextureFormats[textureIndex];
 	TextureHandle texture   = context->Textures[textureIndex];
 	if (gltfTexture.source < 0) {
-		Log::Error("[AssetManager] {} texture {} does not specify a source image!", context->FileName, textureIndex);
+		Log::Error("AssetManager", "{} texture {} does not specify a source image!", context->FileName, textureIndex);
 		return;
 	}
 	if (format == vk::Format::eUndefined) { return; }
@@ -851,7 +851,7 @@ void AssetManager::LoadTextureTask(ModelLoadContext* context, size_t textureInde
 		bytes = filesystem->ReadBytes(imagePath);
 
 		if (!bytes.has_value()) {
-			Log::Error("[AssetManager] Failed to load texture for {}: {}", context->FileName, uri);
+			Log::Error("AssetManager", "Failed to load texture for {}: {}", context->FileName, uri);
 			return;
 		}
 
@@ -875,7 +875,7 @@ void AssetManager::LoadTextureTask(ModelLoadContext* context, size_t textureInde
 
 	if (!loaded) {
 		Log::Error(
-			"[AssetManager] Failed to find data source for texture for {}, image '{}'!", context->FileName, gltfImage.name);
+			"AssetManager", "Failed to find data source for texture for {}, image '{}'!", context->FileName, gltfImage.name);
 		return;
 	}
 
@@ -888,7 +888,7 @@ void AssetManager::LoadTextureTask(ModelLoadContext* context, size_t textureInde
 	}
 	if (pixels == nullptr) {
 		Log::Error(
-			"[AssetManager] Failed to read texture data for {}, {}: {}", context->FileName, uri, stbi_failure_reason());
+			"AssetManager", "Failed to read texture data for {}, {}: {}", context->FileName, uri, stbi_failure_reason());
 		return;
 	}
 

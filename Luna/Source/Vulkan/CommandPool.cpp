@@ -5,7 +5,7 @@
 namespace Luna {
 namespace Vulkan {
 CommandPool::CommandPool(Device& device, uint32_t familyIndex, bool resettable) : _device(device) {
-	Log::Trace("[Vulkan::CommandPool] Creating new command pool on queue family {}.", familyIndex);
+	Log::Trace("Vulkan::CommandPool", "Creating new command pool on queue family {}.", familyIndex);
 
 	const auto dev = _device.GetDevice();
 

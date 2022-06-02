@@ -13,13 +13,13 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugCallback(VkDebugUtilsMessageSev
                                                           void* userData) {
 	switch (severity) {
 		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-			Log::Error("Vulkan ERROR: {}", data->pMessage);
+			Log::Error("Vulkan::Context", "Vulkan ERROR: {}", data->pMessage);
 			break;
 		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-			Log::Warning("Vulkan Warning: {}", data->pMessage);
+			Log::Warning("Vulkan::Context", "Vulkan Warning: {}", data->pMessage);
 			break;
 		default:
-			Log::Debug("Vulkan: {}", data->pMessage);
+			Log::Debug("Vulkan::Context", "Vulkan: {}", data->pMessage);
 			break;
 	}
 
@@ -103,7 +103,7 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 			for (const auto& name : enabledLayers) {
 				if (strcmp(name, layerName) == 0) { return true; }
 			}
-			Log::Debug("Enabling instance layer '{}'.", layerName);
+			Log::Debug("Vulkan::Context", "Enabling instance layer '{}'.", layerName);
 			enabledLayers.push_back(layerName);
 			return true;
 		};
@@ -120,7 +120,7 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 			const std::string name(extensionName);
 			const auto it = availableExtensions.find(name);
 			if (it->second.Layer.length() != 0) { TryLayer(it->second.Layer.c_str()); }
-			Log::Debug("Enabling instance extension '{}'.", extensionName);
+			Log::Debug("Vulkan::Context", "Enabling instance extension '{}'.", extensionName);
 			enabledExtensions.push_back(extensionName);
 			return true;
 		};
@@ -173,11 +173,11 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 	_instance = vk::createInstance(instanceCI);
 #endif
 
-	Log::Trace("Instance created.");
+	Log::Trace("Vulkan::Context", "Instance created.");
 
 	VULKAN_HPP_DEFAULT_DISPATCHER.init(_instance);
 
-	Log::Trace("Instance functions loaded.");
+	Log::Trace("Vulkan::Context", "Instance functions loaded.");
 
 #ifdef LUNA_VULKAN_DEBUG
 	if (_extensions.DebugUtils) { _debugMessenger = _instance.createDebugUtilsMessengerEXT(debugCI); }
@@ -323,7 +323,7 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 			for (const auto& name : enabledExtensions) {
 				if (strcmp(name, extensionName) == 0) { return true; }
 			}
-			Log::Debug("Enabling device extension '{}'.", extensionName);
+			Log::Debug("Vulkan::Context", "Enabling device extension '{}'.", extensionName);
 			enabledExtensions.push_back(extensionName);
 
 			return true;
@@ -371,7 +371,11 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 				--family.queueCount;
 				familyPriorities[q].push_back(1.0f);
 
-				Log::Debug("Using queue {}.{} for {}.", _queues.Family(type), _queues.Index(type), VulkanEnumToString(type));
+				Log::Debug("Vulkan::Context",
+				           "Using queue {}.{} for {}.",
+				           _queues.Family(type),
+				           _queues.Index(type),
+				           VulkanEnumToString(type));
 
 				return true;
 			}
@@ -390,7 +394,7 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 		    !AssignQueue(QueueType::Compute, vk::QueueFlagBits::eCompute, {})) {
 			_queues.Family(QueueType::Compute) = _queues.Family(QueueType::Graphics);
 			_queues.Index(QueueType::Compute)  = _queues.Index(QueueType::Graphics);
-			Log::Debug("Sharing Compute queue with Graphics.");
+			Log::Debug("Vulkan::Context", "Sharing Compute queue with Graphics.");
 		}
 
 		// Finally, attempt to find a dedicated transfer queue. Try to avoid graphics/compute, then
@@ -402,7 +406,7 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 		    !AssignQueue(QueueType::Transfer, vk::QueueFlagBits::eTransfer, {})) {
 			_queues.Family(QueueType::Transfer) = _queues.Family(QueueType::Compute);
 			_queues.Index(QueueType::Transfer)  = _queues.Index(QueueType::Compute);
-			Log::Debug("Sharing Transfer queue with Compute.");
+			Log::Debug("Vulkan::Context", "Sharing Transfer queue with Compute.");
 		}
 
 		uint32_t familyCount = 0;
@@ -414,7 +418,7 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 			}
 		}
 		queueCIs.resize(familyCount);
-		Log::Trace("Creating {} queues on {} unique families.", queueCount, familyCount);
+		Log::Trace("Vulkan::Context", "Creating {} queues on {} unique families.", queueCount, familyCount);
 	}
 
 	// Determine what features we want to enable.
@@ -422,18 +426,20 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 	{
 		auto& features = enabledFeaturesChain.get<vk::PhysicalDeviceFeatures2>().features;
 		if (_gpuInfo.AvailableFeatures.Features.samplerAnisotropy == VK_TRUE) {
-			Log::Trace("Enabling Sampler Anisotropy (x{}).", _gpuInfo.Properties.Properties.limits.maxSamplerAnisotropy);
+			Log::Trace("Vulkan::Context",
+			           "Enabling Sampler Anisotropy (x{}).",
+			           _gpuInfo.Properties.Properties.limits.maxSamplerAnisotropy);
 			features.samplerAnisotropy = VK_TRUE;
 		}
 		if (_gpuInfo.AvailableFeatures.Features.depthClamp == VK_TRUE) {
-			Log::Trace("Enabling Depth Clamp.");
+			Log::Trace("Vulkan::Context", "Enabling Depth Clamp.");
 			features.depthClamp = VK_TRUE;
 		}
 
 		if (_extensions.TimelineSemaphore) {
 			auto& timelineSemaphore = enabledFeaturesChain.get<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
 			if (_gpuInfo.AvailableFeatures.TimelineSemaphore.timelineSemaphore == VK_TRUE) {
-				Log::Trace("Enabling Timeline Semaphores.");
+				Log::Trace("Vulkan::Context", "Enabling Timeline Semaphores.");
 				timelineSemaphore.timelineSemaphore = VK_TRUE;
 			}
 		} else {
@@ -467,23 +473,27 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 }
 
 void Context::DumpInstanceInformation() const {
-	Log::Trace("----- Vulkan Global Information -----");
+	Log::Trace("Vulkan::Context", "----- Vulkan Global Information -----");
 
 	const auto instanceVersion = vk::enumerateInstanceVersion();
-	Log::Trace("Instance Version: {}.{}.{}.{}",
+	Log::Trace("Vulkan::Context",
+	           "Instance Version: {}.{}.{}.{}",
 	           VK_API_VERSION_VARIANT(instanceVersion),
 	           VK_API_VERSION_MAJOR(instanceVersion),
 	           VK_API_VERSION_MINOR(instanceVersion),
 	           VK_API_VERSION_PATCH(instanceVersion));
 
 	const auto instanceExtensions = vk::enumerateInstanceExtensionProperties(nullptr);
-	Log::Trace("Instance Extensions ({}):", instanceExtensions.size());
-	for (const auto& ext : instanceExtensions) { Log::Trace(" - {} v{}", ext.extensionName, ext.specVersion); }
+	Log::Trace("Vulkan::Context", "Instance Extensions ({}):", instanceExtensions.size());
+	for (const auto& ext : instanceExtensions) {
+		Log::Trace("Vulkan::Context", " - {} v{}", ext.extensionName, ext.specVersion);
+	}
 
 	const auto instanceLayers = vk::enumerateInstanceLayerProperties();
-	Log::Trace("Instance Layers ({}):", instanceLayers.size());
+	Log::Trace("Vulkan::Context", "Instance Layers ({}):", instanceLayers.size());
 	for (const auto& layer : instanceLayers) {
-		Log::Trace(" - {} v{} (Vulkan {}.{}.{}) - {}",
+		Log::Trace("Vulkan::Context",
+		           " - {} v{} (Vulkan {}.{}.{}) - {}",
 		           layer.layerName,
 		           layer.implementationVersion,
 		           VK_API_VERSION_MAJOR(layer.specVersion),
@@ -491,10 +501,12 @@ void Context::DumpInstanceInformation() const {
 		           VK_API_VERSION_PATCH(layer.specVersion),
 		           layer.description);
 		const auto layerExtensions = vk::enumerateInstanceExtensionProperties(std::string(layer.layerName));
-		for (const auto& ext : layerExtensions) { Log::Trace("  - {} v{}", ext.extensionName, ext.specVersion); }
+		for (const auto& ext : layerExtensions) {
+			Log::Trace("Vulkan::Context", "  - {} v{}", ext.extensionName, ext.specVersion);
+		}
 	}
 
-	Log::Trace("----- End Vulkan Global Information -----");
+	Log::Trace("Vulkan::Context", "----- End Vulkan Global Information -----");
 }
 
 void Context::DumpDeviceInformation() const {
@@ -505,22 +517,25 @@ void Context::DumpDeviceInformation() const {
 		       _gpuInfo.AvailableExtensions.end();
 	};
 
-	Log::Trace("----- Vulkan Physical Device Info -----");
+	Log::Trace("Vulkan::Context", "----- Vulkan Physical Device Info -----");
 
-	Log::Trace("- Device Name: {}", _gpuInfo.Properties.Properties.deviceName);
-	Log::Trace("- Device Type: {}", vk::to_string(_gpuInfo.Properties.Properties.deviceType));
-	Log::Trace("- Device API Version: {}.{}.{}",
+	Log::Trace("Vulkan::Context", "- Device Name: {}", _gpuInfo.Properties.Properties.deviceName);
+	Log::Trace("Vulkan::Context", "- Device Type: {}", vk::to_string(_gpuInfo.Properties.Properties.deviceType));
+	Log::Trace("Vulkan::Context",
+	           "- Device API Version: {}.{}.{}",
 	           VK_API_VERSION_MAJOR(_gpuInfo.Properties.Properties.apiVersion),
 	           VK_API_VERSION_MINOR(_gpuInfo.Properties.Properties.apiVersion),
 	           VK_API_VERSION_PATCH(_gpuInfo.Properties.Properties.apiVersion));
-	Log::Trace("- Device Driver Version: {}.{}.{}",
+	Log::Trace("Vulkan::Context",
+	           "- Device Driver Version: {}.{}.{}",
 	           VK_API_VERSION_MAJOR(_gpuInfo.Properties.Properties.driverVersion),
 	           VK_API_VERSION_MINOR(_gpuInfo.Properties.Properties.driverVersion),
 	           VK_API_VERSION_PATCH(_gpuInfo.Properties.Properties.driverVersion));
 
-	Log::Trace("- Layers ({}):", _gpuInfo.Layers.size());
+	Log::Trace("Vulkan::Context", "- Layers ({}):", _gpuInfo.Layers.size());
 	for (const auto& layer : _gpuInfo.Layers) {
-		Log::Trace(" - {} v{} (Vulkan {}.{}.{}) - {}",
+		Log::Trace("Vulkan::Context",
+		           " - {} v{} (Vulkan {}.{}.{}) - {}",
 		           layer.layerName,
 		           layer.implementationVersion,
 		           VK_API_VERSION_MAJOR(layer.specVersion),
@@ -529,24 +544,27 @@ void Context::DumpDeviceInformation() const {
 		           layer.description);
 	}
 
-	Log::Trace("- Device Extensions ({}):", _gpuInfo.AvailableExtensions.size());
-	for (const auto& ext : _gpuInfo.AvailableExtensions) { Log::Trace("  - {} v{}", ext.extensionName, ext.specVersion); }
+	Log::Trace("Vulkan::Context", "- Device Extensions ({}):", _gpuInfo.AvailableExtensions.size());
+	for (const auto& ext : _gpuInfo.AvailableExtensions) {
+		Log::Trace("Vulkan::Context", "  - {} v{}", ext.extensionName, ext.specVersion);
+	}
 
-	Log::Trace("- Memory Heaps ({}):", _gpuInfo.Memory.memoryHeapCount);
+	Log::Trace("Vulkan::Context", "- Memory Heaps ({}):", _gpuInfo.Memory.memoryHeapCount);
 	for (size_t i = 0; i < _gpuInfo.Memory.memoryHeapCount; ++i) {
 		const auto& heap = _gpuInfo.Memory.memoryHeaps[i];
-		Log::Trace("  - {} {}", FormatSize(heap.size), vk::to_string(heap.flags));
+		Log::Trace("Vulkan::Context", "  - {} {}", FormatSize(heap.size), vk::to_string(heap.flags));
 	}
-	Log::Trace("- Memory Types ({}):", _gpuInfo.Memory.memoryTypeCount);
+	Log::Trace("Vulkan::Context", "- Memory Types ({}):", _gpuInfo.Memory.memoryTypeCount);
 	for (size_t i = 0; i < _gpuInfo.Memory.memoryTypeCount; ++i) {
 		const auto& type = _gpuInfo.Memory.memoryTypes[i];
-		Log::Trace("  - Heap {} {}", type.heapIndex, vk::to_string(type.propertyFlags));
+		Log::Trace("Vulkan::Context", "  - Heap {} {}", type.heapIndex, vk::to_string(type.propertyFlags));
 	}
 
-	Log::Trace("- Queue Families ({}):", _gpuInfo.QueueFamilies.size());
+	Log::Trace("Vulkan::Context", "- Queue Families ({}):", _gpuInfo.QueueFamilies.size());
 	for (size_t i = 0; i < _gpuInfo.QueueFamilies.size(); ++i) {
 		const auto& family = _gpuInfo.QueueFamilies[i];
-		Log::Trace("  - Family {}: {} Queues {} Granularity {}x{}x{} TimestampBits {}",
+		Log::Trace("Vulkan::Context",
+		           "  - Family {}: {} Queues {} Granularity {}x{}x{} TimestampBits {}",
 		           i,
 		           family.queueCount,
 		           vk::to_string(family.queueFlags),
@@ -557,40 +575,49 @@ void Context::DumpDeviceInformation() const {
 	}
 
 	if (static_cast<uint32_t>(_gpuInfo.Properties.Driver.driverID) != 0) {
-		Log::Trace("- Driver:");
-		Log::Trace("  - ID: {}", vk::to_string(_gpuInfo.Properties.Driver.driverID));
-		Log::Trace("  - Name: {}", _gpuInfo.Properties.Driver.driverName);
-		Log::Trace("  - Info: {}", _gpuInfo.Properties.Driver.driverInfo);
-		Log::Trace("  - Conformance Version: {}.{}.{}.{}",
+		Log::Trace("Vulkan::Context", "- Driver:");
+		Log::Trace("Vulkan::Context", "  - ID: {}", vk::to_string(_gpuInfo.Properties.Driver.driverID));
+		Log::Trace("Vulkan::Context", "  - Name: {}", _gpuInfo.Properties.Driver.driverName);
+		Log::Trace("Vulkan::Context", "  - Info: {}", _gpuInfo.Properties.Driver.driverInfo);
+		Log::Trace("Vulkan::Context",
+		           "  - Conformance Version: {}.{}.{}.{}",
 		           _gpuInfo.Properties.Driver.conformanceVersion.major,
 		           _gpuInfo.Properties.Driver.conformanceVersion.minor,
 		           _gpuInfo.Properties.Driver.conformanceVersion.patch,
 		           _gpuInfo.Properties.Driver.conformanceVersion.subminor);
 	}
 
-	Log::Trace("- Features:");
-	Log::Trace("  - Geometry Shader: {}", _gpuInfo.AvailableFeatures.Features.geometryShader == VK_TRUE);
-	Log::Trace("  - Sampler Anisotropy: {}", _gpuInfo.AvailableFeatures.Features.samplerAnisotropy == VK_TRUE);
-	Log::Trace("  - Synchronization 2: {}", _gpuInfo.AvailableFeatures.Synchronization2.synchronization2 == VK_TRUE);
-	Log::Trace("  - Tesselation Shader: {}", _gpuInfo.AvailableFeatures.Features.tessellationShader == VK_TRUE);
-	Log::Trace("  - Timeline Semaphores: {}", _gpuInfo.AvailableFeatures.TimelineSemaphore.timelineSemaphore == VK_TRUE);
-	Log::Trace("  - Wide Lines: {}", _gpuInfo.AvailableFeatures.Features.wideLines == VK_TRUE);
+	Log::Trace("Vulkan::Context", "- Features:");
+	Log::Trace(
+		"Vulkan::Context", "  - Geometry Shader: {}", _gpuInfo.AvailableFeatures.Features.geometryShader == VK_TRUE);
+	Log::Trace(
+		"Vulkan::Context", "  - Sampler Anisotropy: {}", _gpuInfo.AvailableFeatures.Features.samplerAnisotropy == VK_TRUE);
+	Log::Trace("Vulkan::Context",
+	           "  - Synchronization 2: {}",
+	           _gpuInfo.AvailableFeatures.Synchronization2.synchronization2 == VK_TRUE);
+	Log::Trace(
+		"Vulkan::Context", "  - Tesselation Shader: {}", _gpuInfo.AvailableFeatures.Features.tessellationShader == VK_TRUE);
+	Log::Trace("Vulkan::Context",
+	           "  - Timeline Semaphores: {}",
+	           _gpuInfo.AvailableFeatures.TimelineSemaphore.timelineSemaphore == VK_TRUE);
+	Log::Trace("Vulkan::Context", "  - Wide Lines: {}", _gpuInfo.AvailableFeatures.Features.wideLines == VK_TRUE);
 
-	Log::Trace("- Properties:");
+	Log::Trace("Vulkan::Context", "- Properties:");
 	if (_gpuInfo.AvailableFeatures.Features.samplerAnisotropy) {
-		Log::Trace("  - Max Anisotropy: {}", _gpuInfo.Properties.Properties.limits.maxSamplerAnisotropy);
+		Log::Trace("Vulkan::Context", "  - Max Anisotropy: {}", _gpuInfo.Properties.Properties.limits.maxSamplerAnisotropy);
 	}
 
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 	if (HasExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) {
-		Log::Trace("- Portability Subset:");
-		Log::Trace("  - Minimum Vertex Binding Stride Alignment: {}",
+		Log::Trace("Vulkan::Context", "- Portability Subset:");
+		Log::Trace("Vulkan::Context",
+		           "  - Minimum Vertex Binding Stride Alignment: {}",
 		           _gpuInfo.Properties.PortabilitySubset.minVertexInputBindingStrideAlignment);
 
-		Log::Trace("  - The following features are UNAVAILABLE:");
-#	define FEAT(flag, name)                                                                   \
-		do {                                                                                     \
-			if (!_gpuInfo.AvailableFeatures.PortabilitySubset.flag) { Log::Trace("    - " name); } \
+		Log::Trace("Vulkan::Context", "  - The following features are UNAVAILABLE:");
+#	define FEAT(flag, name)                                                                                      \
+		do {                                                                                                        \
+			if (!_gpuInfo.AvailableFeatures.PortabilitySubset.flag) { Log::Trace("Vulkan::Context", "    - " name); } \
 		} while (0)
 		FEAT(constantAlphaColorBlendFactors, "Constant Alpha Color Blend Factors");
 		FEAT(events, "Events");
@@ -610,7 +637,7 @@ void Context::DumpDeviceInformation() const {
 	}
 #endif
 
-	Log::Trace("----- End Vulkan Physical Device Info -----");
+	Log::Trace("Vulkan::Context", "----- End Vulkan Physical Device Info -----");
 }
 }  // namespace Vulkan
 }  // namespace Luna

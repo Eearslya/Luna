@@ -32,7 +32,7 @@ void ImageViewDeleter::operator()(ImageView* view) {
 
 Image::Image(Device& device, const ImageCreateInfo& createInfo)
 		: Cookie(device), _device(device), _createInfo(createInfo) {
-	Log::Trace("[Vulkan::Image] Creating new Image.");
+	Log::Trace("Vulkan::Image", "Creating new Image.");
 
 	const vk::ImageCreateInfo imageCI(createInfo.Flags & ImageCreateFlagBits::CreateCubeCompatible
 	                                    ? vk::ImageCreateFlagBits::eCubeCompatible
@@ -63,7 +63,7 @@ Image::Image(Device& device, const ImageCreateInfo& createInfo)
 	                                         &_allocation,
 	                                         &allocationInfo));
 	if (createResult != vk::Result::eSuccess) {
-		Log::Error("[Vulkan::Error] Error creating image: {}", vk::to_string(createResult));
+		Log::Error("Vulkan::Error", "Error creating image: {}", vk::to_string(createResult));
 		// Use vulkan.hpp's ResultValue to throw the proper exception.
 		// vk::createResultValue(createResult, "vmaCreateImage");
 	}
@@ -92,7 +92,7 @@ vk::ImageLayout Image::GetLayout(vk::ImageLayout optimal) const {
 
 ImageView::ImageView(Device& device, const ImageViewCreateInfo& createInfo)
 		: Cookie(device), _device(device), _createInfo(createInfo) {
-	Log::Trace("[Vulkan::ImageView] Creating new ImageView.");
+	Log::Trace("Vulkan::ImageView", "Creating new ImageView.");
 
 	const auto& imageCI = _createInfo.Image->GetCreateInfo();
 
@@ -116,7 +116,7 @@ ImageView::ImageView(Device& device, const ImageViewCreateInfo& createInfo)
 		    _createInfo.Type != vk::ImageViewType::e3D &&
 		    viewCI.subresourceRange.aspectMask == (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil) &&
 		    imageCI.Usage & ~vk::ImageUsageFlagBits::eDepthStencilAttachment) {
-			Log::Trace("[Vulkan::ImageView] - Creating Depth/Stencil views.");
+			Log::Trace("Vulkan::ImageView", "- Creating Depth/Stencil views.");
 			auto dsView = viewCI;
 
 			dsView.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
@@ -134,7 +134,7 @@ ImageView::ImageView(Device& device, const ImageViewCreateInfo& createInfo)
 		     (vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eDepthStencilAttachment)) &&
 		    ((viewCI.subresourceRange.levelCount > 1 && viewCI.subresourceRange.levelCount != VK_REMAINING_MIP_LEVELS) ||
 		     (viewCI.subresourceRange.layerCount > 1 && viewCI.subresourceRange.layerCount != VK_REMAINING_ARRAY_LAYERS))) {
-			Log::Trace("[Vulkan::ImageView] - Creating Render Target views.");
+			Log::Trace("Vulkan::ImageView", "- Creating Render Target views.");
 			_renderTargetViews.reserve(viewCI.subresourceRange.layerCount);
 
 			auto rtView                        = viewCI;

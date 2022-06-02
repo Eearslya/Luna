@@ -355,7 +355,7 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo, const void
 			memcpy(data, initialData, createInfo.Size);
 			handle->Unmap();
 		} else {
-			Log::Error("[Vulkan::Device] Failed to map buffer!");
+			Log::Error("Vulkan::Device", "Failed to map buffer!");
 		}
 	}
 
@@ -447,7 +447,8 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo, const Initial
 	const auto requiredMipGenerationFeatures = vk::FormatFeatureFlagBits::eBlitDst | vk::FormatFeatureFlagBits::eBlitSrc;
 	if (generateMips &&
 	    (formatFeatures.optimalTilingFeatures & requiredMipGenerationFeatures) != requiredMipGenerationFeatures) {
-		Log::Warning("[Vulkan::Device] Mipmap generation was requested for image, but is unavailable for format {}.",
+		Log::Warning("Vulkan::Device",
+		             "Mipmap generation was requested for image, but is unavailable for format {}.",
 		             vk::to_string(createInfo.Format));
 		generateMips = false;
 	}
@@ -688,7 +689,7 @@ Program* Device::RequestProgram(Shader* vertex, Shader* fragment) {
 		try {
 			ret = _programs.EmplaceYield(hash, hash, *this, vertex, fragment);
 		} catch (const std::exception& e) {
-			Log::Error("[Vulkan::Device] Failed to create program: {}", e.what());
+			Log::Error("Vulkan::Device", "Failed to create program: {}", e.what());
 			return nullptr;
 		}
 	}
@@ -736,7 +737,7 @@ Shader* Device::RequestShader(size_t codeSize, const void* code) {
 		try {
 			shader = _shaders.EmplaceYield(hash, hash, *this, codeSize, code);
 		} catch (const std::exception& e) {
-			Log::Error("[Vulkan::Device] Failed to create shader module: {}", e.what());
+			Log::Error("Vulkan::Device", "Failed to create shader module: {}", e.what());
 			return nullptr;
 		}
 	}
@@ -1154,7 +1155,7 @@ void Device::SubmitQueue(QueueType queueType, InternalFence* submitFence, std::v
 	// Finally, submit it all!
 	const auto submitResult = queue.submit(submitCount, submits.data(), fence);
 	if (submitResult != vk::Result::eSuccess) {
-		Log::Error("[Vulkan::Device] Error occurred when submitting command buffers: {}", vk::to_string(submitResult));
+		Log::Error("Vulkan::Device", "Error occurred when submitting command buffers: {}", vk::to_string(submitResult));
 	}
 
 	// If we weren't able to use a timeline semaphore, we need to make sure there is a fence in
@@ -1260,7 +1261,7 @@ void Device::WaitIdleNoLock() {
 
 vk::Fence Device::AllocateFence() {
 	if (_availableFences.empty()) {
-		Log::Trace("[Vulkan::Device] Creating new Fence.");
+		Log::Trace("Vulkan::Device", "Creating new Fence.");
 
 		const vk::FenceCreateInfo fenceCI;
 		vk::Fence fence = _device.createFence(fenceCI);
@@ -1276,7 +1277,7 @@ vk::Fence Device::AllocateFence() {
 
 vk::Semaphore Device::AllocateSemaphore() {
 	if (_availableSemaphores.empty()) {
-		Log::Trace("[Vulkan::Device] Creating new Semaphore.");
+		Log::Trace("Vulkan::Device", "Creating new Semaphore.");
 
 		const vk::SemaphoreCreateInfo semaphoreCI;
 		vk::Semaphore semaphore = _device.createSemaphore(semaphoreCI);
@@ -1292,7 +1293,7 @@ vk::Semaphore Device::AllocateSemaphore() {
 
 // Reset and create our internal frame context objects.
 void Device::CreateFrameContexts(uint32_t count) {
-	Log::Debug("[Vulkan::Device] Creating {} frame contexts.", count);
+	Log::Debug("Vulkan::Device", "Creating {} frame contexts.", count);
 
 	_framebufferAllocator->Clear();
 	_currentFrameContext = 0;
@@ -1351,7 +1352,7 @@ void Device::CreateTimelineSemaphores() {
 	const vk::SemaphoreTypeCreateInfo semaphoreType(vk::SemaphoreType::eTimeline, 0);
 	const vk::StructureChain chain(semaphoreCI, semaphoreType);
 	for (auto& queue : _queueData) {
-		Log::Trace("[Vulkan::Device] Creating new Timeline Semaphore.");
+		Log::Trace("Vulkan::Device", "Creating new Timeline Semaphore.");
 
 		queue.TimelineSemaphore = _device.createSemaphore(chain.get());
 		queue.TimelineValue     = 0;
@@ -1490,7 +1491,7 @@ void Device::FrameContext::Begin() {
 				const vk::SemaphoreWaitInfo waitInfo({}, semaphoreCount, semaphores.data(), values.data());
 				const auto waitResult = device.waitSemaphoresKHR(waitInfo, std::numeric_limits<uint64_t>::max());
 				if (waitResult != vk::Result::eSuccess) {
-					Log::Error("[Vulkan::Device] Failed to wait on timeline semaphores!");
+					Log::Error("Vulkan::Device", "Failed to wait on timeline semaphores!");
 				}
 			}
 		}
@@ -1501,7 +1502,7 @@ void Device::FrameContext::Begin() {
 	if (!FencesToAwait.empty()) {
 		ZoneScopedN("Fence Wait");
 		const auto waitResult = device.waitForFences(FencesToAwait, VK_TRUE, std::numeric_limits<uint64_t>::max());
-		if (waitResult != vk::Result::eSuccess) { Log::Error("[Vulkan::Device] Failed to wait on submit fences!"); }
+		if (waitResult != vk::Result::eSuccess) { Log::Error("Vulkan::Device", "Failed to wait on submit fences!"); }
 		FencesToAwait.clear();
 	}
 

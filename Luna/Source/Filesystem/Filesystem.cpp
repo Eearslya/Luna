@@ -156,7 +156,7 @@ void Filesystem::AddSearchPath(const std::string& path) {
 	if (std::find(_searchPaths.begin(), _searchPaths.end(), path) != _searchPaths.end()) { return; }
 
 	if (PHYSFS_mount(path.c_str(), nullptr, true) == 0) {
-		Log::Warning("Failed to mount search path '{}'.", path);
+		Log::Warning("Filesystem", "Failed to mount search path '{}'.", path);
 		return;
 	}
 
@@ -192,7 +192,7 @@ void Filesystem::RemoveSearchPath(const std::string& path) {
 	auto it = std::find(_searchPaths.begin(), _searchPaths.end(), path);
 	if (it == _searchPaths.end()) { return; }
 
-	if (PHYSFS_unmount(path.c_str()) == 0) { Log::Warning("Failed to unmount search path '{}'.", path); }
+	if (PHYSFS_unmount(path.c_str()) == 0) { Log::Warning("Filesystem", "Failed to unmount search path '{}'.", path); }
 
 	_searchPaths.erase(it);
 }
@@ -204,7 +204,8 @@ std::optional<std::string> Filesystem::Read(const std::filesystem::path& path) {
 
 	if (!fsFile) {
 		if (!std::filesystem::exists(path) || !std::filesystem::is_regular_file(path)) {
-			Log::Error("Failed to open file '{}': {}", pathStr, PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
+			Log::Error(
+				"Filesystem", "Failed to open file '{}': {}", pathStr, PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
 			return std::nullopt;
 		}
 
@@ -220,7 +221,8 @@ std::optional<std::string> Filesystem::Read(const std::filesystem::path& path) {
 	PHYSFS_readBytes(fsFile, data.data(), static_cast<PHYSFS_uint64>(size));
 
 	if (PHYSFS_close(fsFile) == 0) {
-		Log::Warning("Failed to close file '{}': {}", pathStr, PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
+		Log::Warning(
+			"Filesystem", "Failed to close file '{}': {}", pathStr, PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
 	}
 
 	return std::string(data.begin(), data.end());
@@ -233,7 +235,8 @@ std::optional<std::vector<uint8_t>> Filesystem::ReadBytes(const std::filesystem:
 
 	if (!fsFile) {
 		if (!std::filesystem::exists(path) || !std::filesystem::is_regular_file(path)) {
-			Log::Error("Failed to open file '{}': {}", pathStr, PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
+			Log::Error(
+				"Filesystem", "Failed to open file '{}': {}", pathStr, PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
 			return std::nullopt;
 		}
 
@@ -250,7 +253,8 @@ std::optional<std::vector<uint8_t>> Filesystem::ReadBytes(const std::filesystem:
 	PHYSFS_readBytes(fsFile, data.data(), static_cast<PHYSFS_uint64>(size));
 
 	if (PHYSFS_close(fsFile) == 0) {
-		Log::Warning("Failed to close file '{}': {}", pathStr, PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
+		Log::Warning(
+			"Filesystem", "Failed to close file '{}': {}", pathStr, PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
 	}
 
 	return data;

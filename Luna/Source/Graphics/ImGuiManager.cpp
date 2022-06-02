@@ -44,7 +44,7 @@ struct PushConstant {
 ImGuiManager::ImGuiManager(Vulkan::Device& device) : _device(device) {
 	ZoneScopedN("ImGuiManager::ImGuiManager()");
 
-	Log::Trace("[ImGuiManager] Initializing ImGui interface.");
+	Log::Trace("ImGuiManager", "Initializing ImGui interface.");
 
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();

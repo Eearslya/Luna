@@ -10,7 +10,7 @@ class EditorApp : public App {
 	~EditorApp() {}
 
 	virtual void Start() override {
-		Log::Info("Starting Editor app.");
+		Log::Info("Editor", "Starting Editor app.");
 
 		Window::Get()->Maximize();
 
@@ -51,7 +51,7 @@ class EditorApp : public App {
 	virtual void Update() override {}
 
 	virtual void Stop() override {
-		Log::Info("Stopping Editor app.");
+		Log::Info("Editor", "Stopping Editor app.");
 	}
 };
 

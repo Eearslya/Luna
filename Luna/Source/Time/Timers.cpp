@@ -26,7 +26,7 @@ Timers::~Timers() noexcept {
 void Timers::TimerThread() {
 	std::unique_lock<std::mutex> lock(_timerMutex);
 
-	Log::Info("Timers thread started.");
+	Log::Info("Timers", "Timers thread started.");
 
 	tracy::SetThreadName("Timers Thread");
 

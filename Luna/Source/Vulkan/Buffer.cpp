@@ -19,7 +19,7 @@ Buffer::Buffer(Device& device, const BufferCreateInfo& createInfo)
 		bufferAI.preferredFlags |= VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	}
 
-	Log::Trace("[Vulkan::Buffer] Creating new Buffer.");
+	Log::Trace("Vulkan::Buffer", "Creating new Buffer.");
 
 	VkBuffer buffer;
 	VmaAllocation allocation;

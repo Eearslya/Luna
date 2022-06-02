@@ -17,7 +17,7 @@ Engine::Engine(const char* argv0) : _argv0(argv0) {
 	Log::SetLevel(Log::Level::Trace);
 #endif
 
-	Log::Info("Initializing Luna Engine.");
+	Log::Info("Engine", "Initializing Luna Engine.");
 
 	std::vector<TypeID> createdModules;
 	uint8_t retryCount = 64;
@@ -40,7 +40,7 @@ Engine::Engine(const char* argv0) : _argv0(argv0) {
 				continue;
 			}
 
-			Log::Debug("Initializing Engine module '{}'.", moduleInfo.Name);
+			Log::Debug("Engine", "Initializing Engine module '{}'.", moduleInfo.Name);
 			auto&& module = moduleInfo.Create();
 			_moduleMap.emplace(Module::StageIndex(moduleInfo.Stage, moduleID), module.get());
 			_modules.push_back(std::move(module));
@@ -49,7 +49,8 @@ Engine::Engine(const char* argv0) : _argv0(argv0) {
 
 		if (postponed) {
 			if (--retryCount == 0) {
-				Log::Fatal("Failed to initialize Engine modules. A dependency is missing or a circular dependency is present.");
+				Log::Fatal("Engine",
+				           "Failed to initialize Engine modules. A dependency is missing or a circular dependency is present.");
 				throw std::runtime_error("Failed to initialize Engine modules!");
 			}
 		} else {
@@ -57,14 +58,14 @@ Engine::Engine(const char* argv0) : _argv0(argv0) {
 		}
 	}
 
-	Log::Debug("All engine modules initialized.");
+	Log::Debug("Engine", "All engine modules initialized.");
 
 	SetFPSLimit(_fpsLimit);
 	SetUPSLimit(_upsLimit);
 }
 
 Engine::~Engine() noexcept {
-	Log::Info("Shutting down Luna Engine.");
+	Log::Info("Engine", "Shutting down Luna Engine.");
 
 	for (auto modIt = _modules.rbegin(); modIt != _modules.rend(); ++modIt) { modIt->reset(); }
 	_modules.clear();
@@ -101,7 +102,7 @@ int Engine::Run() {
 					ZoneScopedN("Update: App");
 					_app->Update();
 				} catch (const std::exception& e) {
-					Log::Fatal("Caught fatal error when updating application: {}", e.what());
+					Log::Fatal("Engine", "Caught fatal error when updating application: {}", e.what());
 					_running = false;
 					break;
 				}
@@ -121,7 +122,7 @@ int Engine::Run() {
 					UpdateStage(Module::Stage::Post);
 				}
 			} catch (const std::exception& e) {
-				Log::Fatal("Caught fatal error when updating engine modules: {}", e.what());
+				Log::Fatal("Engine", "Caught fatal error when updating engine modules: {}", e.what());
 				_running = false;
 				break;
 			}
@@ -135,7 +136,7 @@ int Engine::Run() {
 				ZoneScopedN("Update: Render");
 				UpdateStage(Module::Stage::Render);
 			} catch (const std::exception& e) {
-				Log::Fatal("Caught fatal error when rendering: {}", e.what());
+				Log::Fatal("Engine", "Caught fatal error when rendering: {}", e.what());
 				_running = false;
 			}
 		}

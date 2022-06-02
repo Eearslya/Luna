@@ -617,13 +617,6 @@ void Graphics::Update() {
 
 		ImGui::ShowDemoWindow(nullptr);
 
-		if (ImGui::Begin("Console")) {
-			const auto logs = Log::GetLast(64);
-			for (const auto& log : logs) { ImGui::Text("%s", log.c_str()); }
-			ImGui::SetScrollY(ImGui::GetScrollMaxY());
-		}
-		ImGui::End();
-
 		_scene.DrawSceneGraph();
 		if (registry.valid(_scene.GetSelectedEntity())) {
 			Entity selected(_scene.GetSelectedEntity());

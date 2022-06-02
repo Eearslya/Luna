@@ -94,7 +94,7 @@ void TaskGroup::Wait() {
 
 Threading::Threading() {
 	const auto threadCount = std::thread::hardware_concurrency();
-	Log::Debug("Starting {} worker threads.", threadCount);
+	Log::Debug("Threading", "Starting {} worker threads.", threadCount);
 	_running = true;
 	for (int i = 0; i < threadCount; ++i) {
 		_workerThreads.emplace_back([this, i]() { WorkerThread(i + 1); });
@@ -166,7 +166,7 @@ void Threading::FreeTaskGroup(TaskGroup* group) {
 }
 
 void Threading::WorkerThread(int threadID) {
-	Log::Trace("Starting worker thread {}.", threadID);
+	Log::Trace("Threading", "Starting worker thread {}.", threadID);
 
 	{
 		SetThreadID(threadID);
@@ -190,7 +190,7 @@ void Threading::WorkerThread(int threadID) {
 			try {
 				task->Function();
 			} catch (const std::exception& e) {
-				Log::Error("[Threading] Exception encountered when running task: {}", e.what());
+				Log::Error("Threading", "Exception encountered when running task: {}", e.what());
 			}
 		}
 
@@ -206,6 +206,6 @@ void Threading::WorkerThread(int threadID) {
 		}
 	}
 
-	Log::Trace("Worker thread {} has exited.", threadID);
+	Log::Trace("Threading", "Worker thread {} has exited.", threadID);
 }
 }  // namespace Luna

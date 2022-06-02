@@ -30,8 +30,8 @@ Swapchain::Swapchain(Device& device) : _device(device) {
 	}
 
 	Log::Trace(
-		"[Vulkan::Swapchain] Swapchain Format: {}, {}", vk::to_string(_format.format), vk::to_string(_format.colorSpace));
-	Log::Trace("[Vulkan::Swapchain] Swapchain Present Mode: {}", vk::to_string(_presentMode));
+		"Vulkan::Swapchain", "Swapchain Format: {}, {}", vk::to_string(_format.format), vk::to_string(_format.colorSpace));
+	Log::Trace("Vulkan::Swapchain", "Swapchain Present Mode: {}", vk::to_string(_presentMode));
 
 	RecreateSwapchain();
 }
@@ -68,7 +68,7 @@ bool Swapchain::AcquireNextImage() {
 
 			if (acquireResult.result == vk::Result::eSuboptimalKHR) {
 				_suboptimal = true;
-				Log::Debug("[Vulkan::Swapchain] Swapchain is suboptimal, will recreate.");
+				Log::Debug("Vulkan::Swapchain", "Swapchain is suboptimal, will recreate.");
 			}
 
 			acquire->SignalExternal();
@@ -102,14 +102,14 @@ void Swapchain::Present() {
 	try {
 		presentResult = queue.presentKHR(presentInfo);
 		if (presentResult == vk::Result::eSuboptimalKHR) {
-			Log::Debug("[Vulkan::Swapchain] Swapchain is suboptimal, will recreate.");
+			Log::Debug("Vulkan::Swapchain", "Swapchain is suboptimal, will recreate.");
 			_suboptimal = true;
 		}
 		release->WaitExternal();
 		// We have to keep this semaphore handle alive until this swapchain image comes around again.
 		_releaseSemaphores[_acquiredImage] = release;
 	} catch (const vk::OutOfDateKHRError& e) {
-		Log::Debug("[Vulkan::Swapchain] Failed to present out of date swapchain. Recreating.");
+		Log::Debug("Vulkan::Swapchain", "Failed to present out of date swapchain. Recreating.");
 		RecreateSwapchain();
 	}
 
@@ -127,17 +127,20 @@ void Swapchain::RecreateSwapchain() {
 
 	if (capabilities.maxImageExtent.width == 0 && capabilities.maxImageExtent.height == 0) { return; }
 
-	Log::Trace("[Vulkan::Swapchain] Recreating Swapchain.");
+	Log::Trace("Vulkan::Swapchain", "Recreating Swapchain.");
 
 	auto windowSize = Window::Get()->GetFramebufferSize();
-	Log::Trace("[Vulkan::Swapchain]   Desired size:   {} x {}", windowSize.x, windowSize.y);
-	Log::Trace("[Vulkan::Swapchain]   Min Extent:     {} x {}",
+	Log::Trace("Vulkan::Swapchain", "  Desired size:   {} x {}", windowSize.x, windowSize.y);
+	Log::Trace("Vulkan::Swapchain",
+	           "  Min Extent:     {} x {}",
 	           capabilities.minImageExtent.width,
 	           capabilities.minImageExtent.height);
-	Log::Trace("[Vulkan::Swapchain]   Max Extent:     {} x {}",
+	Log::Trace("Vulkan::Swapchain",
+	           "  Max Extent:     {} x {}",
 	           capabilities.maxImageExtent.width,
 	           capabilities.maxImageExtent.height);
-	Log::Trace("[Vulkan::Swapchain]   Current Extent: {} x {}",
+	Log::Trace("Vulkan::Swapchain",
+	           "  Current Extent: {} x {}",
 	           capabilities.currentExtent.width,
 	           capabilities.currentExtent.height);
 	_extent = vk::Extent2D(
@@ -145,7 +148,7 @@ void Swapchain::RecreateSwapchain() {
 			static_cast<uint32_t>(windowSize.x), capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
 		std::clamp(
 			static_cast<uint32_t>(windowSize.y), capabilities.minImageExtent.height, capabilities.maxImageExtent.height));
-	Log::Trace("[Vulkan::Swapchain]   Final Size:     {} x {}", _extent.width, _extent.height);
+	Log::Trace("Vulkan::Swapchain", "  Final Size:     {} x {}", _extent.width, _extent.height);
 	_imageCount = std::clamp(3u, capabilities.minImageCount, capabilities.maxImageCount);
 
 	const vk::SwapchainCreateInfoKHR swapchainCI({},

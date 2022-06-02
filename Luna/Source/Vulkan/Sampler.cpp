@@ -6,7 +6,7 @@ namespace Luna {
 namespace Vulkan {
 Sampler::Sampler(Hash hash, Device& device, const SamplerCreateInfo& info)
 		: Cookie(device), HashedObject<Sampler>(hash), _device(device), _createInfo(info) {
-	Log::Trace("[Vulkan::Sampler] Creating new Sampler.");
+	Log::Trace("Vulkan::Sampler", "Creating new Sampler.");
 
 	const vk::SamplerCreateInfo samplerCI({},
 	                                      info.MagFilter,

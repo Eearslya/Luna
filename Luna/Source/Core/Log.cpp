@@ -1,65 +1,35 @@
 #include <spdlog/sinks/basic_file_sink.h>
-#include <spdlog/sinks/ringbuffer_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <Luna/Core/Log.hpp>
+#include <filesystem>
 
 namespace Luna {
-namespace Log {
-namespace _Internal {
-static bool LoggerCreated = false;
-static std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> RingSink;
+std::shared_ptr<spdlog::logger> Log::_mainLogger;
 
-static void Create() {
-#ifdef _MSC_VER
+void Log::Initialize() {
+	const std::filesystem::path logDirectory = "Logs";
+	if (!std::filesystem::exists(logDirectory)) { std::filesystem::create_directories(logDirectory); }
+	// TODO: Separate log files per run?
+	const auto logFile = logDirectory / "Luna.log";
+
 	auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-#else
-	auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>(spdlog::color_mode::always);
-#endif
+	auto fileSink    = std::make_shared<spdlog::sinks::basic_file_sink_mt>(logFile.string(), true);
 
+	// Set the format for our logs. The two formats are identical, except for the lack of color output for the file sink.
+	// e.g. [13:33:12] Luna-I: [Engine] Initializing Luna Engine.
 	consoleSink->set_pattern("%^[%T] %n-%L: %v%$");
-
-#ifdef _MSC_VER
-	consoleSink->set_color(spdlog::level::critical, 4);  // Red
-	consoleSink->set_color(spdlog::level::err, 4);       // Red
-	consoleSink->set_color(spdlog::level::warn, 14);     // Yellow
-	consoleSink->set_color(spdlog::level::info, 3);      // Cyan
-	consoleSink->set_color(spdlog::level::debug, 5);     // Magenta
-	consoleSink->set_color(spdlog::level::trace, 15);    // White
-#else
-	consoleSink->set_color(spdlog::level::critical, consoleSink->red_bold);
-	consoleSink->set_color(spdlog::level::err, consoleSink->red);
-	consoleSink->set_color(spdlog::level::warn, consoleSink->yellow);
-	consoleSink->set_color(spdlog::level::info, consoleSink->cyan);
-	consoleSink->set_color(spdlog::level::debug, consoleSink->magenta);
-	consoleSink->set_color(spdlog::level::trace, consoleSink->white);
-#endif
-
-	auto fileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("Luna.log", true);
 	fileSink->set_pattern("[%T] %n-%L: %v");
 
-	RingSink = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(8192);
-	RingSink->set_pattern("[%T] %n-%L: %v");
+	_mainLogger = std::make_shared<spdlog::logger>("Luna", spdlog::sinks_init_list{consoleSink, fileSink});
+	spdlog::register_logger(_mainLogger);
 
-	auto logger = std::make_shared<spdlog::logger>("Luna", spdlog::sinks_init_list{consoleSink, fileSink, RingSink});
-	spdlog::register_logger(logger);
-
-	LoggerCreated = true;
+	// Default to Info level logging.
+	SetLevel(Level::Info);
 }
 
-spdlog::logger& Get() {
-	if (!LoggerCreated) { Create(); }
-
-	return *spdlog::get("Luna");
+void Log::Shutdown() {
+	_mainLogger.reset();
+	spdlog::drop_all();
 }
-}  // namespace _Internal
-
-std::vector<std::string> GetLast(size_t count) {
-	return _Internal::RingSink->last_formatted(count);
-}
-
-void SetLevel(spdlog::level::level_enum level) {
-	_Internal::Get().set_level(level);
-}
-}  // namespace Log
 }  // namespace Luna
