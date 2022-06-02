@@ -1,10 +1,13 @@
 #include <GLFW/glfw3.h>
 
+#include <Luna/Core/Engine.hpp>
 #include <Luna/Core/Log.hpp>
 #include <Luna/Devices/Window.hpp>
 #include <Tracy.hpp>
 
 namespace Luna {
+Window* Window::_instance = nullptr;
+
 void Window::CallbackError(int32_t error, const char* description) {
 	Log::Error("Window", "GLFW Error {}: {}", error, description);
 }
@@ -69,6 +72,9 @@ void Window::CallbackWindowSize(GLFWwindow* window, int32_t w, int32_t h) {
 }
 
 Window::Window() : _size(1280, 720), _title("Luna") {
+	if (_instance) { throw std::runtime_error("Window was initialized more than once!"); }
+	_instance = this;
+
 	ZoneScopedN("Window::Window()");
 
 	glfwSetErrorCallback(CallbackError);

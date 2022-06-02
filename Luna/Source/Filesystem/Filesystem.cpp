@@ -1,10 +1,14 @@
 #include <physfs.h>
 
+#include <Luna/Core/Engine.hpp>
 #include <Luna/Core/Log.hpp>
 #include <Luna/Filesystem/Filesystem.hpp>
+#include <Luna/Utility/NonCopyable.hpp>
 #include <fstream>
 
 namespace Luna {
+Filesystem* Filesystem::_instance = nullptr;
+
 class FileBuffer : public std::streambuf, NonCopyable {
  public:
 	explicit FileBuffer(PHYSFS_File* file, std::size_t bufferSize = 2048) : _bufferSize(bufferSize), _file(file) {
@@ -141,6 +145,9 @@ FileStream::~FileStream() noexcept {
 }
 
 Filesystem::Filesystem() {
+	if (_instance) { throw std::runtime_error("Filesystem was initialized twice!"); }
+	_instance = this;
+
 	if (PHYSFS_init(Engine::Get()->GetArgv0().c_str()) == 0) {
 		throw std::runtime_error("Failed to initialize PhysicsFS!");
 	}
@@ -148,9 +155,9 @@ Filesystem::Filesystem() {
 
 Filesystem::~Filesystem() noexcept {
 	PHYSFS_deinit();
-}
 
-void Filesystem::Update() {}
+	_instance = nullptr;
+}
 
 void Filesystem::AddSearchPath(const std::string& path) {
 	if (std::find(_searchPaths.begin(), _searchPaths.end(), path) != _searchPaths.end()) { return; }

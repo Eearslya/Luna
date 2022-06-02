@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Luna/Devices/Window.hpp>
 #include <Luna/Input/Common.hpp>
+#include <Luna/Utility/Delegate.hpp>
+
+struct GLFWwindow;
 
 namespace Luna {
 enum class Key : int16_t {
@@ -128,13 +130,13 @@ enum class Key : int16_t {
 	Menu           = 348
 };
 
-class Keyboard : public Module::Registrar<Keyboard> {
-	static inline const bool Registered = Register("Keyboard", Stage::Pre, Depends<Window>());
-
+class Keyboard {
  public:
 	Keyboard();
 
-	virtual void Update() override;
+	static Keyboard* Get() {
+		return _instance;
+	}
 
 	InputAction GetKey(Key key, bool allowGuiOverride = true) const;
 
@@ -146,6 +148,7 @@ class Keyboard : public Module::Registrar<Keyboard> {
 	}
 
  private:
+	static Keyboard* _instance;
 	static void CallbackKey(GLFWwindow* window, int32_t key, int32_t scancode, int32_t action, int32_t mods);
 	static void CallbackChar(GLFWwindow* window, uint32_t codepoint);
 

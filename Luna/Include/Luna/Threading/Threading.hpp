@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Luna/Core/Module.hpp>
 #include <Luna/Utility/IntrusivePtr.hpp>
 #include <Luna/Utility/ObjectPool.hpp>
 #include <atomic>
@@ -67,9 +66,7 @@ struct TaskGroup : IntrusivePtrEnabled<TaskGroup, TaskGroupDeleter, MultiThreadC
 };
 using TaskGroupHandle = IntrusivePtr<TaskGroup>;
 
-class Threading : public Module::Registrar<Threading> {
-	static const inline bool Registered = Register("Threading", Stage::Never);
-
+class Threading {
 	friend struct TaskDependenciesDeleter;
 	friend struct TaskGroup;
 	friend struct TaskGroupDeleter;
@@ -78,7 +75,9 @@ class Threading : public Module::Registrar<Threading> {
 	Threading();
 	~Threading() noexcept;
 
-	virtual void Update() override {}
+	static Threading* Get() {
+		return _instance;
+	}
 
 	void AddDependency(TaskGroup& dependee, TaskGroup& dependency);
 	TaskGroupHandle CreateTaskGroup();
@@ -91,6 +90,8 @@ class Threading : public Module::Registrar<Threading> {
 	static uint32_t GetThreadID();
 
  private:
+	static Threading* _instance;
+
 	void FreeTaskDependencies(TaskDependencies* dependencies);
 	void FreeTaskGroup(TaskGroup* group);
 	void WorkerThread(int threadID);

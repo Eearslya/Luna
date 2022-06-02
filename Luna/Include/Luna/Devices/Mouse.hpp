@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Luna/Core/Module.hpp>
-#include <Luna/Devices/Window.hpp>
 #include <Luna/Input/Common.hpp>
+#include <Luna/Utility/Delegate.hpp>
 #include <glm/glm.hpp>
 
 struct GLFWcursor;
+struct GLFWwindow;
 
 namespace Luna {
 class Window;
@@ -35,14 +35,15 @@ enum class CursorStandard : uint32_t {
 	ResizeY   = 0x00036006
 };
 
-class Mouse : public Module::Registrar<Mouse> {
-	static inline const bool Registered = Register("Mouse", Stage::Pre, Depends<Window>());
-
+class Mouse {
  public:
 	Mouse();
-	~Mouse() noexcept;
 
-	virtual void Update() override;
+	static Mouse* Get() {
+		return _instance;
+	}
+
+	void Update();
 
 	const glm::dvec2& GetPosition() const {
 		return _position;
@@ -82,6 +83,7 @@ class Mouse : public Module::Registrar<Mouse> {
 	}
 
  private:
+	static Mouse* _instance;
 	static void CallbackButton(GLFWwindow* window, int32_t button, int32_t action, int32_t mods);
 	static void CallbackPosition(GLFWwindow* window, double x, double y);
 	static void CallbackEnter(GLFWwindow* window, int32_t entered);

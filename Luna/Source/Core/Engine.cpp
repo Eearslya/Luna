@@ -1,6 +1,13 @@
 #include <Luna/Core/App.hpp>
 #include <Luna/Core/Engine.hpp>
 #include <Luna/Core/Log.hpp>
+#include <Luna/Devices/Keyboard.hpp>
+#include <Luna/Devices/Mouse.hpp>
+#include <Luna/Devices/Window.hpp>
+#include <Luna/Filesystem/Filesystem.hpp>
+#include <Luna/Graphics/Graphics.hpp>
+#include <Luna/Threading/Threading.hpp>
+#include <Luna/Time/Timers.hpp>
 #include <Tracy.hpp>
 #include <cstdlib>
 
@@ -19,46 +26,13 @@ Engine::Engine(const char* argv0) : _argv0(argv0) {
 
 	Log::Info("Engine", "Initializing Luna Engine.");
 
-	std::vector<TypeID> createdModules;
-	uint8_t retryCount = 64;
-	while (true) {
-		bool postponed = false;
-
-		for (const auto& [moduleID, moduleInfo] : Module::Registry()) {
-			if (std::find(createdModules.begin(), createdModules.end(), moduleID) != createdModules.end()) { continue; }
-
-			bool thisPostponed = false;
-			for (const auto& dependencyID : moduleInfo.Dependencies) {
-				if (std::find(createdModules.begin(), createdModules.end(), dependencyID) == createdModules.end()) {
-					thisPostponed = true;
-					break;
-				}
-			}
-
-			if (thisPostponed) {
-				postponed = true;
-				continue;
-			}
-
-			Log::Debug("Engine", "Initializing Engine module '{}'.", moduleInfo.Name);
-			auto&& module = moduleInfo.Create();
-			_moduleMap.emplace(Module::StageIndex(moduleInfo.Stage, moduleID), module.get());
-			_modules.push_back(std::move(module));
-			createdModules.emplace_back(moduleID);
-		}
-
-		if (postponed) {
-			if (--retryCount == 0) {
-				Log::Fatal("Engine",
-				           "Failed to initialize Engine modules. A dependency is missing or a circular dependency is present.");
-				throw std::runtime_error("Failed to initialize Engine modules!");
-			}
-		} else {
-			break;
-		}
-	}
-
-	Log::Debug("Engine", "All engine modules initialized.");
+	_modFilesystem = std::make_unique<Filesystem>();
+	_modThreading  = std::make_unique<Threading>();
+	_modTimers     = std::make_unique<Timers>();
+	_modWindow     = std::make_unique<Window>();
+	_modKeyboard   = std::make_unique<Keyboard>();
+	_modMouse      = std::make_unique<Mouse>();
+	_modGraphics   = std::make_unique<Graphics>();
 
 	SetFPSLimit(_fpsLimit);
 	SetUPSLimit(_upsLimit);
@@ -67,24 +41,20 @@ Engine::Engine(const char* argv0) : _argv0(argv0) {
 Engine::~Engine() noexcept {
 	Log::Info("Engine", "Shutting down Luna Engine.");
 
-	for (auto modIt = _modules.rbegin(); modIt != _modules.rend(); ++modIt) { modIt->reset(); }
-	_modules.clear();
-	_moduleMap.clear();
-	Module::Registry().clear();
+	_modGraphics.reset();
+	_modMouse.reset();
+	_modKeyboard.reset();
+	_modWindow.reset();
+	_modTimers.reset();
+	_modThreading.reset();
+	_modFilesystem.reset();
+
 	_instance = nullptr;
 }
 
 int Engine::Run() {
-	const auto UpdateStage = [this](Module::Stage stage) {
-		for (auto& [stageIndex, module] : _moduleMap) {
-			if (stageIndex.first == stage) { module->Update(); }
-		}
-	};
-
 	_running = true;
 	while (_running) {
-		UpdateStage(Module::Stage::Always);
-
 		_updateLimiter.Update();
 		if (_updateLimiter.Get() > 0) {
 			ZoneScopedN("Update");
@@ -109,18 +79,9 @@ int Engine::Run() {
 			}
 
 			try {
-				{
-					ZoneScopedN("Update: Pre");
-					UpdateStage(Module::Stage::Pre);
-				}
-				{
-					ZoneScopedN("Update: Normal");
-					UpdateStage(Module::Stage::Normal);
-				}
-				{
-					ZoneScopedN("Update: Post");
-					UpdateStage(Module::Stage::Post);
-				}
+				ZoneScopedN("Update: Modules");
+				_modWindow->Update();
+				_modMouse->Update();
 			} catch (const std::exception& e) {
 				Log::Fatal("Engine", "Caught fatal error when updating engine modules: {}", e.what());
 				_running = false;
@@ -134,7 +95,7 @@ int Engine::Run() {
 			_frameDelta.Update();
 			try {
 				ZoneScopedN("Update: Render");
-				UpdateStage(Module::Stage::Render);
+				_modGraphics->Update();
 			} catch (const std::exception& e) {
 				Log::Fatal("Engine", "Caught fatal error when rendering: {}", e.what());
 				_running = false;

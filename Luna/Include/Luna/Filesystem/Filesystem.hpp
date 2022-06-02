@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Luna/Core/Engine.hpp>
 #include <filesystem>
 #include <iostream>
 #include <vector>
@@ -39,14 +38,14 @@ class FileStream : public BaseFileStream, public std::iostream {
 	virtual ~FileStream() noexcept;
 };
 
-class Filesystem : public Module::Registrar<Filesystem> {
-	static inline const bool Registered = Register("Filesystem", Stage::Post);
-
+class Filesystem {
  public:
 	Filesystem();
 	~Filesystem() noexcept;
 
-	virtual void Update() override;
+	static Filesystem* Get() {
+		return _instance;
+	}
 
 	void AddSearchPath(const std::string& path);
 	void ClearSearchPaths();
@@ -58,6 +57,8 @@ class Filesystem : public Module::Registrar<Filesystem> {
 	std::optional<std::vector<uint8_t>> ReadBytes(const std::filesystem::path& path);
 
  private:
+	static Filesystem* _instance;
+
 	std::vector<std::string> _searchPaths;
 };
 }  // namespace Luna

@@ -3,6 +3,7 @@
 #include <Tracy.hpp>
 
 namespace Luna {
+Threading* Threading::_instance       = nullptr;
 static thread_local uint32_t ThreadID = ~0u;
 
 void Threading::SetThreadID(uint32_t thread) {
@@ -93,6 +94,9 @@ void TaskGroup::Wait() {
 }
 
 Threading::Threading() {
+	if (_instance) { throw std::runtime_error("Threading was initialized more than once!"); }
+	_instance = this;
+
 	const auto threadCount = std::thread::hardware_concurrency();
 	Log::Debug("Threading", "Starting {} worker threads.", threadCount);
 	_running = true;

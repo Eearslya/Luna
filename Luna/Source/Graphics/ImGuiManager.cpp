@@ -1,10 +1,11 @@
 #include <GLFW/glfw3.h>
 
 #include <Luna/Core/Log.hpp>
+#include <Luna/Devices/Keyboard.hpp>
+#include <Luna/Devices/Mouse.hpp>
 #include <Luna/Devices/Window.hpp>
 #include <Luna/Graphics/Graphics.hpp>
 #include <Luna/Graphics/ImGuiManager.hpp>
-#include <Luna/Input/Input.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Device.hpp>

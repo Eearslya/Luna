@@ -1,7 +1,12 @@
 #include <stb_image.h>
 #include <tiny_gltf.h>
 
+#include <Luna/Core/Engine.hpp>
 #include <Luna/Core/Log.hpp>
+#include <Luna/Devices/Keyboard.hpp>
+#include <Luna/Devices/Mouse.hpp>
+#include <Luna/Devices/Window.hpp>
+#include <Luna/Filesystem/Filesystem.hpp>
 #include <Luna/Graphics/AssetManager.hpp>
 #include <Luna/Graphics/Graphics.hpp>
 #include <Luna/Scene/Entity.hpp>
@@ -31,7 +36,12 @@
 #include <ImGuizmo.h>
 
 namespace Luna {
+Graphics* Graphics::_instance = nullptr;
+
 Graphics::Graphics() {
+	if (_instance) { throw std::runtime_error("Graphics was initialized more than once!"); }
+	_instance = this;
+
 	ZoneScopedN("Graphics()");
 
 	auto filesystem = Filesystem::Get();

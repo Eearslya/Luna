@@ -1,12 +1,8 @@
 #pragma once
 
-#include <Luna/Devices/Window.hpp>
-#include <Luna/Filesystem/Filesystem.hpp>
 #include <Luna/Graphics/ImGuiManager.hpp>
-#include <Luna/Input/Input.hpp>
 #include <Luna/Scene/Camera.hpp>
 #include <Luna/Scene/Scene.hpp>
-#include <Luna/Threading/Threading.hpp>
 #include <Luna/Utility/Delegate.hpp>
 #include <glm/glm.hpp>
 //
@@ -20,13 +16,14 @@ class Device;
 
 class AssetManager;
 
-class Graphics : public Module::Registrar<Graphics> {
-	static inline const bool Registered =
-		Register("Graphics", Stage::Render, Depends<Filesystem, Input, Threading, Window>());
-
+class Graphics {
  public:
 	Graphics();
 	~Graphics() noexcept;
+
+	static Graphics* Get() {
+		return _instance;
+	}
 
 	AssetManager& GetAssetManager() {
 		return *_assetManager;
@@ -42,11 +39,13 @@ class Graphics : public Module::Registrar<Graphics> {
 	}
 
 	void SetEditorLayout(bool enabled);
-	virtual void Update() override;
+	void Update();
 
 	Delegate<void()> OnUiRender;
 
  private:
+	static Graphics* _instance;
+
 	bool BeginFrame();
 	void EndFrame();
 

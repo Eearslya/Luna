@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Luna/Core/Module.hpp>
 #include <Luna/Time/Time.hpp>
 #include <Luna/Utility/NonCopyable.hpp>
 #include <map>
@@ -8,6 +7,13 @@
 
 namespace Luna {
 class App;
+class Filesystem;
+class Graphics;
+class Keyboard;
+class Mouse;
+class Threading;
+class Timers;
+class Window;
 
 class Engine final : NonCopyable {
  public:
@@ -55,8 +61,6 @@ class Engine final : NonCopyable {
 
 	App* _app = nullptr;
 	std::string _argv0;
-	std::multimap<Module::StageIndex, Module*> _moduleMap;
-	std::vector<std::unique_ptr<Module>> _modules;
 	bool _running = false;
 
 	ElapsedTime _frameDelta;
@@ -68,5 +72,14 @@ class Engine final : NonCopyable {
 	IntervalCounter _updateLimiter;
 	UpdatesPerSecond _ups;
 	uint32_t _upsLimit = 100;
+
+	// Engine modules
+	std::unique_ptr<Filesystem> _modFilesystem;
+	std::unique_ptr<Threading> _modThreading;
+	std::unique_ptr<Timers> _modTimers;
+	std::unique_ptr<Window> _modWindow;
+	std::unique_ptr<Keyboard> _modKeyboard;
+	std::unique_ptr<Mouse> _modMouse;
+	std::unique_ptr<Graphics> _modGraphics;
 };
 }  // namespace Luna

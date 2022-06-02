@@ -6,6 +6,7 @@
 #include <Luna/Assets/Material.hpp>
 #include <Luna/Assets/StaticMesh.hpp>
 #include <Luna/Assets/Texture.hpp>
+#include <Luna/Time/Time.hpp>
 #include <Luna/Utility/IntrusivePtr.hpp>
 #include <Luna/Utility/ObjectPool.hpp>
 #include <entt/entt.hpp>

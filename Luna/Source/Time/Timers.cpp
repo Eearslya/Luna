@@ -3,7 +3,12 @@
 #include <Tracy.hpp>
 
 namespace Luna {
+Timers* Timers::_instance = nullptr;
+
 Timers::Timers() {
+	if (_instance) { throw std::runtime_error("Timers was initialized more than once!"); }
+	_instance = this;
+
 	ZoneScopedN("Timers::Timers()");
 
 	std::unique_lock<std::mutex> lock(_timerMutex);

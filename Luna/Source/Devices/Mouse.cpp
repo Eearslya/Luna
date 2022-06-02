@@ -2,9 +2,12 @@
 
 #include <Luna/Core/Engine.hpp>
 #include <Luna/Devices/Mouse.hpp>
+#include <Luna/Devices/Window.hpp>
 #include <Tracy.hpp>
 
 namespace Luna {
+Mouse* Mouse::_instance = nullptr;
+
 void Mouse::CallbackButton(GLFWwindow* window, int32_t button, int32_t action, int32_t mods) {
 	Mouse::Get()->_onButton(
 		static_cast<MouseButton>(button), static_cast<InputAction>(action), MakeBitmask<InputModBits>(mods));
@@ -34,6 +37,9 @@ void Mouse::CallbackScroll(GLFWwindow* window, double xOffset, double yOffset) {
 }
 
 Mouse::Mouse() {
+	if (_instance) { throw std::runtime_error("Mouse was initialized more than once!"); }
+	_instance = this;
+
 	ZoneScopedN("Mouse::Mouse()");
 
 	auto glfwWindow = Window::Get()->GetWindow();
@@ -42,8 +48,6 @@ Mouse::Mouse() {
 	glfwSetCursorEnterCallback(glfwWindow, CallbackEnter);
 	glfwSetScrollCallback(glfwWindow, CallbackScroll);
 }
-
-Mouse::~Mouse() noexcept {}
 
 void Mouse::Update() {
 	ZoneScopedN("Mouse::Update()");

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Luna/Core/Engine.hpp>
 #include <Luna/Devices/Monitor.hpp>
 #include <Luna/Utility/Delegate.hpp>
 #include <Luna/Vulkan/Common.hpp>
@@ -12,14 +11,16 @@
 struct GLFWwindow;
 
 namespace Luna {
-class Window : public Module::Registrar<Window> {
-	static inline const bool Registered = Register("Window", Stage::Pre);
-
+class Window {
  public:
 	Window();
 	~Window() noexcept;
 
-	virtual void Update() override;
+	static Window* Get() {
+		return _instance;
+	}
+
+	void Update();
 
 	GLFWwindow* GetWindow() const {
 		return _window;
@@ -90,6 +91,7 @@ class Window : public Module::Registrar<Window> {
 	Delegate<void(std::string)> OnTitleChanged;
 
  private:
+	static Window* _instance;
 	static void CallbackError(int32_t error, const char* description);
 	static void CallbackMonitor(GLFWmonitor* monitor, int32_t event);
 	static void CallbackWindowClose(GLFWwindow* window);

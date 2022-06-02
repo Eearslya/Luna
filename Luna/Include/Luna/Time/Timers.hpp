@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Luna/Core/Module.hpp>
 #include <Luna/Time/Time.hpp>
 #include <Luna/Utility/Delegate.hpp>
 #include <Luna/Utility/ObjectPool.hpp>
@@ -41,14 +40,14 @@ class Timer {
 	std::optional<uint32_t> _repeat;
 };
 
-class Timers : public Module::Registrar<Timers> {
-	static inline const bool Registered = Register("Timers", Stage::Never);
-
+class Timers {
  public:
 	Timers();
 	~Timers() noexcept;
 
-	virtual void Update() override {}
+	static Timers* Get() {
+		return _instance;
+	}
 
 	template <typename... Args>
 	Timer* Once(const Time& delay, std::function<void()>&& function, Args... args) {
@@ -90,6 +89,8 @@ class Timers : public Module::Registrar<Timers> {
 	}
 
  private:
+	static Timers* _instance;
+
 	void TimerThread();
 
 	ObjectPool<Timer> _timerPool;
