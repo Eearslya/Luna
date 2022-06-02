@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Luna/Assets/Texture.hpp>
-#include <Luna/Graphics/Graphics.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/Common.hpp>
 #include <Luna/Vulkan/Device.hpp>

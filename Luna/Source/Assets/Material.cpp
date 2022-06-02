@@ -1,5 +1,6 @@
 #include <Luna/Assets/Material.hpp>
 #include <Luna/Graphics/AssetManager.hpp>
+#include <Luna/Graphics/Graphics.hpp>
 #include <Luna/Vulkan/Device.hpp>
 
 namespace Luna {

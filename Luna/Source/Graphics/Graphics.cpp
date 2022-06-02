@@ -9,6 +9,7 @@
 #include <Luna/Scene/MeshRenderer.hpp>
 #include <Luna/Scene/TransformComponent.hpp>
 #include <Luna/Scene/WorldData.hpp>
+#include <Luna/Time/Time.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Context.hpp>
@@ -317,6 +318,100 @@ void Graphics::Update() {
 		lightsBuffer->Unmap();
 	}
 
+	// Update Geometry data.
+	if (_geometryData.size() <= swapchainIndex) { _geometryData.resize(swapchainIndex + 1); }
+	auto& geometry = _geometryData[swapchainIndex];
+	{
+		bool geometryDirty = false;
+		if (!geometry) {
+			geometry      = std::make_unique<GeometryData>();
+			geometryDirty = true;
+		}
+
+		const auto view = registry.view<MeshRenderer>();
+		if (view.size() != geometry->Objects.size()) { geometryDirty = true; }
+
+		if (geometryDirty) {
+			ElapsedTime updateTime;
+			updateTime.Update();
+
+			geometry->GeometryData.clear();
+			geometry->Objects.clear();
+
+			size_t totalVertexCount = 0;
+			size_t totalIndexCount  = 0;
+
+			// Collect a list of every mesh in our scene.
+			for (const auto& entity : view) {
+				const auto& transform = registry.get<TransformComponent>(entity);
+				auto& meshRenderer    = registry.get<MeshRenderer>(entity);
+				auto& mesh            = meshRenderer.Mesh;
+
+				RenderObject object{.Renderer = meshRenderer, .IndexCount = 0, .IndexOffset = totalIndexCount};
+				geometry->Objects.push_back(object);
+				totalVertexCount += mesh->TotalVertexCount;
+				totalIndexCount += mesh->TotalIndexCount;
+			}
+
+			// Calculate the size of all of the scene's geometry data and allocate one big buffer to hold it all.
+			const vk::DeviceSize totalPositionSize  = ((totalVertexCount * sizeof(glm::vec3)) + 16llu) & ~16llu;
+			const vk::DeviceSize totalNormalSize    = ((totalVertexCount * sizeof(glm::vec3)) + 16llu) & ~16llu;
+			const vk::DeviceSize totalTexcoord0Size = ((totalVertexCount * sizeof(glm::vec2)) + 16llu) & ~16llu;
+			const vk::DeviceSize totalIndexSize     = ((totalIndexCount * sizeof(uint32_t)) + 16llu) & ~16llu;
+			const vk::DeviceSize bufferSize = totalPositionSize + totalNormalSize + totalTexcoord0Size + totalIndexSize;
+			geometry->GeometryData.resize(bufferSize);
+
+			// Set up our offsets and copy destinations.
+			geometry->PositionOffset   = 0;
+			geometry->NormalOffset     = totalPositionSize;
+			geometry->Texcoord0Offset  = totalPositionSize + totalNormalSize;
+			geometry->IndexOffset      = totalPositionSize + totalNormalSize + totalTexcoord0Size;
+			std::byte* positionCursor  = geometry->GeometryData.data();
+			std::byte* normalCursor    = geometry->GeometryData.data() + geometry->NormalOffset;
+			std::byte* texcoord0Cursor = geometry->GeometryData.data() + geometry->Texcoord0Offset;
+			std::byte* indexCursor     = geometry->GeometryData.data() + geometry->IndexOffset;
+
+			// Copy every mesh into one giant buffer.
+			size_t indexOffset = 0;
+			for (const auto& object : geometry->Objects) {
+				const auto& mesh           = object.Renderer.Mesh;
+				const void* positionData   = mesh->Geometry.data() + mesh->PositionOffset;
+				const void* normalData     = mesh->Geometry.data() + mesh->NormalOffset;
+				const void* texcoord0Data  = mesh->Geometry.data() + mesh->Texcoord0Offset;
+				const void* indexData      = mesh->Geometry.data() + mesh->IndexOffset;
+				const size_t positionSize  = mesh->TotalVertexCount * sizeof(glm::vec3);
+				const size_t normalSize    = mesh->TotalVertexCount * sizeof(glm::vec3);
+				const size_t texcoord0Size = mesh->TotalVertexCount * sizeof(glm::vec2);
+				const size_t indexSize     = mesh->TotalIndexCount * sizeof(uint32_t);
+
+				memcpy(positionCursor, positionData, positionSize);
+				memcpy(normalCursor, normalData, normalSize);
+				memcpy(texcoord0Cursor, texcoord0Data, texcoord0Size);
+				positionCursor += positionSize;
+				normalCursor += normalSize;
+				texcoord0Cursor += texcoord0Size;
+
+				// Add an offset to the mesh indices so we do not need to use the firstVertex parameter.
+				uint32_t* dst       = reinterpret_cast<uint32_t*>(indexCursor);
+				const uint32_t* src = reinterpret_cast<const uint32_t*>(indexData);
+				for (size_t i = 0; i < mesh->TotalIndexCount; ++i) { dst[i] = src[i] + indexOffset; }
+				indexOffset += mesh->TotalIndexCount;
+			}
+
+			if (bufferSize > 0) {
+				geometry->GeometryBuffer = _device->CreateBuffer(
+					Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Device,
+				                           bufferSize,
+				                           vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer),
+					geometry->GeometryData.data());
+			}
+
+			updateTime.Update();
+			Log::Info("[Graphics] Updated scene GeometryData in {}ms.", updateTime.Get().Milliseconds<float>());
+			Log::Info("[Graphics] Geometry data size: {}", Vulkan::FormatSize(bufferSize));
+		}
+	}
+
 	struct PushConstant {
 		glm::mat4 Model;
 	};
@@ -467,6 +562,8 @@ void Graphics::Update() {
 				cmd->SetTexture(0, 4, *_defaultImages.BlackCube->GetView(), Vulkan::StockSampler::LinearClamp);
 				cmd->SetTexture(0, 5, *_defaultImages.Black2D->GetView(), Vulkan::StockSampler::LinearClamp);
 			}
+
+			if (geometry->GeometryBuffer) {}
 
 			const auto view = registry.view<MeshRenderer>();
 			for (const auto& entity : view) {

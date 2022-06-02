@@ -5,6 +5,7 @@
 #include <Luna/Graphics/ImGuiManager.hpp>
 #include <Luna/Input/Input.hpp>
 #include <Luna/Scene/Camera.hpp>
+#include <Luna/Scene/MeshRenderer.hpp>
 #include <Luna/Scene/Scene.hpp>
 #include <Luna/Threading/Threading.hpp>
 #include <Luna/Utility/Delegate.hpp>
@@ -19,6 +20,22 @@ class Device;
 }  // namespace Vulkan
 
 class AssetManager;
+
+struct RenderObject {
+	MeshRenderer Renderer;
+	vk::DeviceSize IndexCount  = 0;
+	vk::DeviceSize IndexOffset = 0;
+};
+
+struct GeometryData {
+	Luna::Vulkan::BufferHandle GeometryBuffer;
+	std::vector<std::byte> GeometryData;
+	std::vector<RenderObject> Objects;
+	vk::DeviceSize PositionOffset  = 0;
+	vk::DeviceSize NormalOffset    = 0;
+	vk::DeviceSize Texcoord0Offset = 0;
+	vk::DeviceSize IndexOffset     = 0;
+};
 
 class Graphics : public Module::Registrar<Graphics> {
 	static inline const bool Registered =
@@ -114,6 +131,7 @@ class Graphics : public Module::Registrar<Graphics> {
 	std::vector<Vulkan::BufferHandle> _cameraBuffers;
 	std::vector<Vulkan::BufferHandle> _sceneBuffers;
 	std::vector<Vulkan::BufferHandle> _lightsBuffers;
+	std::vector<std::unique_ptr<GeometryData>> _geometryData;
 	bool _mouseControl      = false;
 	glm::vec3 _sunDirection = glm::normalize(glm::vec3(1.0f, 2.0f, 0.5f));
 	glm::vec3 _sunPosition;
