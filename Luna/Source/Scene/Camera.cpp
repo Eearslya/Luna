@@ -41,27 +41,37 @@ void Camera::Rotate(float pitchDelta, float yawDelta) {
 }
 
 void Camera::SetAspectRatio(float aspectRatio) {
+	if (aspectRatio == _aspectRatio) { return; }
+
 	_aspectRatio = aspectRatio;
 	RecalculateProjection();
 }
 
 void Camera::SetClipping(float zNear, float zFar) {
+	if (zNear == _nearPlane && zFar == _farPlane) { return; }
+
 	_nearPlane = zNear;
 	_farPlane  = zFar;
 	RecalculateProjection();
 }
 
 void Camera::SetFOV(float fovDegrees) {
+	if (fovDegrees == _fovDegrees) { return; }
+
 	_fovDegrees = fovDegrees;
 	RecalculateProjection();
 }
 
 void Camera::SetPosition(const glm::vec3& position) {
+	if (position == _position) { return; }
+
 	_position = position;
 	RecalculateView();
 }
 
 void Camera::SetRotation(float pitch, float yaw) {
+	if (pitch == _pitch && yaw == _yaw) { return; }
+
 	_pitch = std::clamp(pitch, -89.0f, 89.0f);
 	_yaw   = yaw;
 	while (_yaw >= 360.0f) { _yaw -= 360.0f; }

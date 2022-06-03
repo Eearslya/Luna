@@ -1,4 +1,5 @@
 #include <GLFW/glfw3.h>
+#include <imgui.h>
 
 #include <Luna/Core/Engine.hpp>
 #include <Luna/Devices/Mouse.hpp>
@@ -70,12 +71,17 @@ void Mouse::SetCursorHidden(bool hidden) {
 	if (_cursorHidden != hidden) {
 		glfwSetInputMode(Window::Get()->GetWindow(), GLFW_CURSOR, hidden ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
 
+		ImGuiIO& io = ImGui::GetIO();
 		if (hidden) {
 			_savedPosition = _position;
 			_position      = {0, 0};
 			glfwGetCursorPos(Window::Get()->GetWindow(), &_lastPosition.x, &_lastPosition.y);
+
+			io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
 		} else {
 			SetPosition(_savedPosition);
+
+			io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
 		}
 	}
 

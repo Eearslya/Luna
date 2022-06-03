@@ -44,24 +44,33 @@ Graphics::Graphics() {
 
 	ZoneScopedN("Graphics()");
 
+	// Grab a few engine module pointers for convenience.
 	auto filesystem = Filesystem::Get();
 	auto keyboard   = Keyboard::Get();
 	auto mouse      = Mouse::Get();
 
+	// Add the Assets folder to allow us to load any core assets.
 	filesystem->AddSearchPath("Assets");
 
+	// Initialize our graphics device.
 	const auto instanceExtensions                   = Window::Get()->GetRequiredInstanceExtensions();
 	const std::vector<const char*> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-	_context      = std::make_unique<Vulkan::Context>(instanceExtensions, deviceExtensions);
-	_device       = std::make_unique<Vulkan::Device>(*_context);
-	_swapchain    = std::make_unique<Vulkan::Swapchain>(*_device);
+	_context = std::make_unique<Vulkan::Context>(instanceExtensions, deviceExtensions);
+	_device  = std::make_unique<Vulkan::Device>(*_context);
+
+	// Initialize our helper classes.
 	_assetManager = std::make_unique<AssetManager>();
 	_imgui        = std::make_unique<ImGuiManager>(*_device);
-	_sceneImages.resize(_swapchain->GetImages().size());
+	_imgui->SetDockspace(true);  // TODO: ImGuiManager should maybe not be responsible for this.
+
+	// Initialize our swapchain.
+	_swapchain                     = std::make_unique<Vulkan::Swapchain>(*_device);
 	const auto swapchainImageCount = _swapchain->GetImages().size();
+	_sceneImages.resize(swapchainImageCount);
 
 	// Create placeholder textures.
 	{
+		// All textures will be 4x4 to allow for minimum texel size.
 		constexpr uint32_t width    = 4;
 		constexpr uint32_t height   = 4;
 		constexpr size_t pixelCount = width * height;
@@ -112,6 +121,8 @@ Graphics::Graphics() {
 		_defaultImages.WhiteCube = _device->CreateImage(imageCICube, initialImages);
 	}
 
+	// Create our global uniform buffers.
+	// TODO: Combine into 1 global buffer? Or at least 1 buffer per type, rather than 1 per type per frame.
 	for (size_t i = 0; i < swapchainImageCount; ++i) {
 		_cameraBuffers.emplace_back(_device->CreateBuffer(Vulkan::BufferCreateInfo(
 			Vulkan::BufferDomain::Host, sizeof(CameraData), vk::BufferUsageFlagBits::eUniformBuffer)));
@@ -121,25 +132,33 @@ Graphics::Graphics() {
 			Vulkan::BufferDomain::Host, sizeof(LightsData), vk::BufferUsageFlagBits::eUniformBuffer)));
 	}
 
+	// Load our core shaders.
 	LoadShaders();
+
+	// Set up keyboard controls.
 	keyboard->OnKey() += [&](Key key, InputAction action, InputMods mods, bool uiCapture) -> bool {
-		if (key == Key::F2 && action == InputAction::Press) {
-			LoadShaders();
-			return true;
-		}
-		if (key == Key::_1 && action == InputAction::Press) { _gizmoOp = ImGuizmo::TRANSLATE; }
-		if (key == Key::_2 && action == InputAction::Press) { _gizmoOp = ImGuizmo::ROTATE; }
-		if (key == Key::_3 && action == InputAction::Press) { _gizmoOp = ImGuizmo::SCALE; }
-		if (key == Key::GraveAccent && action == InputAction::Press) {
-			if (_gizmoMode == ImGuizmo::LOCAL) {
-				_gizmoMode = ImGuizmo::WORLD;
-			} else {
-				_gizmoMode = ImGuizmo::LOCAL;
+		// Ignore keyboard controls when editing text with ImGui.
+		if (!uiCapture) {
+			if (key == Key::F5 && action == InputAction::Press) {
+				LoadShaders();
+				return true;
+			}
+			if (key == Key::_1 && action == InputAction::Press) { _gizmoOp = ImGuizmo::TRANSLATE; }
+			if (key == Key::_2 && action == InputAction::Press) { _gizmoOp = ImGuizmo::ROTATE; }
+			if (key == Key::_3 && action == InputAction::Press) { _gizmoOp = ImGuizmo::SCALE; }
+			if (key == Key::GraveAccent && action == InputAction::Press) {
+				if (_gizmoMode == ImGuizmo::LOCAL) {
+					_gizmoMode = ImGuizmo::WORLD;
+				} else {
+					_gizmoMode = ImGuizmo::LOCAL;
+				}
 			}
 		}
 
 		return false;
 	};
+
+	// Set up mouse controls.
 	mouse->OnButton() += [this](MouseButton button, InputAction action, InputMods mods) -> bool {
 		auto mouse = Mouse::Get();
 		if (button == MouseButton::Button1) {
@@ -166,6 +185,7 @@ Graphics::Graphics() {
 		return false;
 	};
 
+	// Set up our default camera.
 	_camera.SetClipping(0.01f, 48.0f);
 	_camera.SetFOV(70.0f);
 	_camera.SetPosition(glm::vec3(0, 1, 0));
@@ -173,44 +193,55 @@ Graphics::Graphics() {
 
 Graphics::~Graphics() noexcept {}
 
-void Graphics::SetEditorLayout(bool enabled) {
-	_editorLayout = enabled;
-	_imgui->SetDockspace(_editorLayout);
-}
-
 void Graphics::Update() {
 	ZoneScopedN("Graphics::Update");
 
+	// Call BeginFrame first to determine if we should even render this frame.
 	if (!BeginFrame()) { return; }
 
+	// Start our ImGui frame.
 	_imgui->BeginFrame();
-	auto keyboard               = Keyboard::Get();
-	auto mouse                  = Mouse::Get();
-	auto cmd                    = _device->RequestCommandBuffer();
-	auto& registry              = _scene.GetRegistry();
-	const auto rootNode         = _scene.GetRoot();
-	WorldData* worldData        = registry.try_get<WorldData>(rootNode);
-	const bool environmentReady = worldData && worldData->Environment && worldData->Environment->Ready;
-	CameraData cameraData       = {};
-	SceneData sceneData         = {};
-	LightsData lightsData       = {};
+
+	// Allocate our primary command buffer for this frame.
+	auto cmd = _device->RequestCommandBuffer();
+
+	// Prefetch a handful of convenient pointers/references.
+	auto engine          = Engine::Get();                          // Used for delta time calculations.
+	auto keyboard        = Keyboard::Get();                        // Used for camera keyboard movement.
+	auto mouse           = Mouse::Get();                           // Used for camera mouse movement.
+	auto& registry       = _scene.GetRegistry();                   // The scene we want to render.
+	const auto rootNode  = _scene.GetRoot();                       // Convenience copy of the root node ID.
+	WorldData* worldData = registry.try_get<WorldData>(rootNode);  // Environment data needed for rendering the scene.
+	const bool environmentReady =
+		worldData && worldData->Environment &&
+		worldData->Environment->Ready;  // Determine whether the environment data is currently usable.
+	const auto deltaTime = engine->GetFrameDelta().Seconds();  // Time in seconds since our last render.
+
+	// Prepare our global uniform buffer data.
+	CameraData cameraData = {};
+	SceneData sceneData   = {};
+	LightsData lightsData = {};
 
 	// Scene Drawing
 	vk::Extent2D sceneExtent        = _swapchain->GetExtent();
-	bool sceneWindow                = false;
+	bool sceneWindow                = false;  // Determines whether the scene viewport should be drawn.
 	const auto swapchainIndex       = _swapchain->GetAcquiredIndex();
 	Vulkan::ImageHandle& sceneImage = _sceneImages[swapchainIndex];
 
-	if (_editorLayout) {
+	// Set up our editor layout.
+	// TODO: This does not belong in the Graphics class.
+	{
+		// Create our main "Scene" viewport.
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
 		sceneWindow =
 			ImGui::Begin("Scene",
 		               nullptr,
-		               ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse);
+		               ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse |
+		                 ImGuiWindowFlags_NoNavInputs | ImGuiWindowFlags_NoBringToFrontOnFocus);
 		ImGui::PopStyleVar(2);
-		if (sceneWindow) { ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList()); }
 
+		// Calculate the properties of our scene window.
 		const ImVec2 windowSize = ImGui::GetWindowContentRegionMax();
 		const ImVec2 windowPos  = ImGui::GetWindowPos();
 		ImVec2 windowMin        = ImGui::GetWindowContentRegionMin();
@@ -219,66 +250,81 @@ void Graphics::Update() {
 		ImVec2 windowMax = ImGui::GetWindowContentRegionMax();
 		windowMax.x += windowPos.x;
 		windowMax.y += windowPos.y;
+
+		// Set our scene's extent to be the size of our scene window.
 		sceneExtent =
 			vk::Extent2D{static_cast<uint32_t>(windowMax.x - windowMin.x), static_cast<uint32_t>(windowMax.y - windowMin.y)};
+
+		// Handle mouse camera control.
 		if (_mouseControl) {
-			if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+			// Note: We cannot use ImGui to determine if the mouse button is released here, because setting the cursor as
+			// hidden disables all ImGui mouse input.
+			if (mouse->GetButton(MouseButton::Right) == InputAction::Release) {
 				_mouseControl = false;
 				mouse->SetCursorHidden(false);
 			}
 		} else {
-			if (ImGui::IsMouseHoveringRect(windowMin, windowMax) && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
-			    ImGui::IsWindowHovered() && !ImGuizmo::IsOver()) {
+			if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) && ImGui::IsWindowHovered() && !ImGuizmo::IsOver()) {
 				_mouseControl = true;
 				mouse->SetCursorHidden(true);
 			}
 		}
 
-		bool needNewSceneImage = !sceneImage;
-		if (sceneImage) {
+		// If necessary, (re)generate our scene backbuffer image. This happens on first draw, or when the viewport is
+		// resized.
+		const bool sceneImageExists = bool(sceneImage);
+		bool sceneImageNeedsResize  = false;
+		if (sceneImageExists) {
 			const auto& imageCI = sceneImage->GetCreateInfo();
 			if (imageCI.Extent.width != sceneExtent.width || imageCI.Extent.height != sceneExtent.height) {
-				needNewSceneImage = true;
+				sceneImageNeedsResize = true;
 			}
 		}
+		const bool needNewSceneImage = !sceneImageExists || sceneImageNeedsResize;
 		if (needNewSceneImage) {
 			Vulkan::ImageCreateInfo imageCI = Vulkan::ImageCreateInfo::RenderTarget(vk::Format::eR8G8B8A8Srgb, sceneExtent);
 			imageCI.Usage |= vk::ImageUsageFlagBits::eSampled;
 			sceneImage = _device->CreateImage(imageCI);
 		}
 
-		ImGuizmo::SetRect(windowMin.x, windowMin.y, windowMax.x - windowMin.x, windowMax.y - windowMin.y);
-	} else {
-		ImGuizmo::SetRect(0.0f, 0.0f, sceneExtent.width, sceneExtent.height);
+		// Set ImGuizmo to draw within this window.
+		if (sceneWindow) {
+			ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
+			ImGuizmo::SetRect(windowMin.x, windowMin.y, windowMax.x - windowMin.x, windowMax.y - windowMin.y);
+		}
 	}
 
-	// Update Camera movement.
+	// Update Camera keyboard movement. Mouse movement is handled by Delegate callback defined in the constructor.
+	_camera.Update(deltaTime);
 	if (_mouseControl) {
-		ZoneScopedN("Camera Update");
-		auto engine          = Engine::Get();
-		const auto deltaTime = engine->GetFrameDelta().Seconds();
-		_camera.Update(deltaTime);
+		// Allow holding Shift for faster move speed.
+		// TODO: Configurable move speed.
 		float moveSpeed = 5.0f * deltaTime;
 		if (keyboard->GetKey(Key::ShiftLeft, false) == InputAction::Press) { moveSpeed *= 2.0f; }
+
 		if (keyboard->GetKey(Key::W, false) == InputAction::Press) { _camera.Move(_camera.GetForward() * moveSpeed); }
 		if (keyboard->GetKey(Key::S, false) == InputAction::Press) { _camera.Move(-_camera.GetForward() * moveSpeed); }
 		if (keyboard->GetKey(Key::A, false) == InputAction::Press) { _camera.Move(-_camera.GetRight() * moveSpeed); }
 		if (keyboard->GetKey(Key::D, false) == InputAction::Press) { _camera.Move(_camera.GetRight() * moveSpeed); }
-		if (keyboard->GetKey(Key::R, false) == InputAction::Press) { _camera.Move(_camera.GetUp() * moveSpeed); }
-		if (keyboard->GetKey(Key::F, false) == InputAction::Press) { _camera.Move(-_camera.GetUp() * moveSpeed); }
+		if (keyboard->GetKey(Key::Space, false) == InputAction::Press) { _camera.Move(_camera.GetUp() * moveSpeed); }
+		if (keyboard->GetKey(Key::C, false) == InputAction::Press) { _camera.Move(-_camera.GetUp() * moveSpeed); }
 	}
 
-	const auto now           = Time::Now().Seconds() * 0.025f;
-	const float sunAngle     = glm::radians(now * 360.0f);
-	const float sunRadius    = 40.0f;
-	const glm::vec3 lightPos = glm::vec3(cos(sunAngle) * sunRadius, sunRadius, sin(sunAngle) * sunRadius);
-	_sunPosition             = lightPos;
-	_sunDirection            = glm::normalize(-_sunPosition);
+	// TODO: Temporary code to orbit the sun light around the scene.
+	{
+		const auto now           = Time::Now().Seconds() * 0.025f;
+		const float sunAngle     = glm::radians(now * 360.0f);
+		const float sunRadius    = 40.0f;
+		const glm::vec3 lightPos = glm::vec3(cos(sunAngle) * sunRadius, sunRadius, sin(sunAngle) * sunRadius);
+		_sunPosition             = lightPos;
+		_sunDirection            = glm::normalize(-_sunPosition);
+	}
 
-	// Update Camera buffer.
+	// Update Camera uniform buffer.
 	auto& cameraBuffer = _cameraBuffers[swapchainIndex];
 	{
 		ZoneScopedN("Camera Uniform Update");
+
 		const float aspectRatio = float(sceneExtent.width) / float(sceneExtent.height);
 		_camera.SetAspectRatio(aspectRatio);
 
@@ -286,27 +332,30 @@ void Graphics::Update() {
 		cameraData.View        = _camera.GetView();
 		cameraData.ViewInverse = glm::inverse(_camera.GetView());
 		cameraData.Position    = _camera.GetPosition();
-		auto* data             = cameraBuffer->Map();
+
+		auto* data = cameraBuffer->Map();
 		memcpy(data, &cameraData, sizeof(CameraData));
 		cameraBuffer->Unmap();
 	}
 
-	// Update Scene buffer.
+	// Update Scene uniform buffer.
 	auto& sceneBuffer = _sceneBuffers[swapchainIndex];
 	{
 		ZoneScopedN("Scene Uniform Update");
+
 		sceneData.SunDirection = glm::vec4(_sunDirection, 0.0f);
 		sceneData.PrefilteredCubeMipLevels =
 			environmentReady ? worldData->Environment->Prefiltered->GetCreateInfo().MipLevels : 0.0f;
 		sceneData.Exposure        = _exposure;
 		sceneData.Gamma           = _gamma;
 		sceneData.IBLContribution = environmentReady ? _iblContribution : 0.0f;
-		auto* data                = sceneBuffer->Map();
+
+		auto* data = sceneBuffer->Map();
 		memcpy(data, &sceneData, sizeof(SceneData));
 		sceneBuffer->Unmap();
 	}
 
-	// Update Lights buffer.
+	// Update Lights uniform buffer.
 	auto& lightsBuffer = _lightsBuffers[swapchainIndex];
 	{
 		ZoneScopedN("Lights Uniform Update");
@@ -322,15 +371,18 @@ void Graphics::Update() {
 			if (++lightCount >= 32) { break; }
 		}
 		lightsData.LightCount = lightCount;
-		auto* data            = lightsBuffer->Map();
+
+		auto* data = lightsBuffer->Map();
 		memcpy(data, &lightsData, sizeof(LightsData));
 		lightsBuffer->Unmap();
 	}
 
+	// TODO: UBO or SSBO to store node transforms instead of push constant.
 	struct PushConstant {
 		glm::mat4 Model;
 	};
 
+	// Convenience function. Binds a texture descriptor, or if the texture has not loaded yet, binds a fallback texture.
 	const auto SetTexture =
 		[&](
 			uint32_t set, uint32_t binding, const TextureHandle& texture, const Vulkan::ImageHandle& fallback = {}) -> void {
@@ -344,24 +396,25 @@ void Graphics::Update() {
 		cmd->SetTexture(set, binding, view, sampler);
 	};
 
+	// Transition our scene backbuffer to be ready for rendering.
+	{
+		ZoneScopedN("Transition to ColorAttachment");
+		CbZone(cmd, "Transition to ColorAttachment");
+
+		const vk::ImageMemoryBarrier barrierIn({},
+		                                       vk::AccessFlagBits::eColorAttachmentWrite,
+		                                       vk::ImageLayout::eUndefined,
+		                                       vk::ImageLayout::eColorAttachmentOptimal,
+		                                       VK_QUEUE_FAMILY_IGNORED,
+		                                       VK_QUEUE_FAMILY_IGNORED,
+		                                       sceneImage->GetImage(),
+		                                       vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+		cmd->Barrier(
+			vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, {}, barrierIn);
+	}
+
 	// GBuffer Pass
 	{
-		if (_editorLayout) {
-			ZoneScopedN("Attachment Transition");
-			CbZone(cmd, "Attachment Transition");
-
-			const vk::ImageMemoryBarrier barrierIn({},
-			                                       vk::AccessFlagBits::eColorAttachmentWrite,
-			                                       vk::ImageLayout::eUndefined,
-			                                       vk::ImageLayout::eColorAttachmentOptimal,
-			                                       VK_QUEUE_FAMILY_IGNORED,
-			                                       VK_QUEUE_FAMILY_IGNORED,
-			                                       sceneImage->GetImage(),
-			                                       vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
-			cmd->Barrier(
-				vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, {}, barrierIn);
-		}
-
 		// Begin
 		{
 			ZoneScopedN("Begin");
@@ -595,28 +648,30 @@ void Graphics::Update() {
 		}
 
 		cmd->EndRenderPass();
-
-		if (_editorLayout) {
-			ZoneScopedN("Shader Transition");
-			CbZone(cmd, "Shader Transition");
-
-			const vk::ImageMemoryBarrier barrierOut(vk::AccessFlagBits::eColorAttachmentWrite,
-			                                        vk::AccessFlagBits::eShaderRead,
-			                                        vk::ImageLayout::eColorAttachmentOptimal,
-			                                        vk::ImageLayout::eShaderReadOnlyOptimal,
-			                                        VK_QUEUE_FAMILY_IGNORED,
-			                                        VK_QUEUE_FAMILY_IGNORED,
-			                                        sceneImage->GetImage(),
-			                                        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
-			cmd->Barrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
-			             vk::PipelineStageFlagBits::eFragmentShader,
-			             {},
-			             {},
-			             barrierOut);
-		}
 	}
 
-	if (_editorLayout && sceneWindow) {
+	// Transition our scene backbuffer to be ready for sampling.
+	{
+		ZoneScopedN("Transition to ShaderReadOnly");
+		CbZone(cmd, "Transition to ShaderReadOnly");
+
+		const vk::ImageMemoryBarrier barrierOut(vk::AccessFlagBits::eColorAttachmentWrite,
+		                                        vk::AccessFlagBits::eShaderRead,
+		                                        vk::ImageLayout::eColorAttachmentOptimal,
+		                                        vk::ImageLayout::eShaderReadOnlyOptimal,
+		                                        VK_QUEUE_FAMILY_IGNORED,
+		                                        VK_QUEUE_FAMILY_IGNORED,
+		                                        sceneImage->GetImage(),
+		                                        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+		cmd->Barrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+		             vk::PipelineStageFlagBits::eFragmentShader,
+		             {},
+		             {},
+		             barrierOut);
+	}
+
+	// Draw the scene image to the ImGui window
+	if (sceneWindow) {
 		ImGui::Image(reinterpret_cast<ImTextureID>(const_cast<Vulkan::ImageView*>(sceneImage->GetView().Get())),
 		             ImGui::GetWindowContentRegionMax());
 	}
@@ -627,11 +682,17 @@ void Graphics::Update() {
 
 		ImGui::ShowDemoWindow(nullptr);
 
+		// Render Hierarchy panel.
 		_scene.DrawSceneGraph();
+
+		// Render our transform gizmo, if applicable
 		if (registry.valid(_scene.GetSelectedEntity())) {
 			Entity selected(_scene.GetSelectedEntity());
+
+			// Re-flip our already-flipped projection matrix, because ImGuizmo expects OpenGL-style NDC.
 			glm::mat4 proj = cameraData.Projection;
 			proj[1][1] *= -1.0f;
+
 			auto& transform = selected.Transform();
 
 			glm::mat4 matrix = transform.CachedGlobalTransform;
@@ -652,6 +713,7 @@ void Graphics::Update() {
 				glm::vec3 skew;
 				glm::vec4 perspective;
 				glm::decompose(delta, scale, rotation, translation, skew, perspective);
+
 				if (_gizmoOp == ImGuizmo::TRANSLATE) {
 					if (registry.valid(transform.Parent)) {
 						const auto& parentTransform = registry.get<TransformComponent>(transform.Parent);
@@ -660,21 +722,27 @@ void Graphics::Update() {
 					} else {
 						transform.Position += translation;
 					}
-				}
-				if (_gizmoOp == ImGuizmo::ROTATE) {
+				} else if (_gizmoOp == ImGuizmo::ROTATE) {
 					selected.RotateAround(transform.Position, -rotation, TransformSpace::World);
+				} else if (_gizmoOp == ImGuizmo::SCALE) {
+					transform.Scale *= scale;
 				}
-				if (_gizmoOp == ImGuizmo::SCALE) { transform.Scale *= scale; }
+
 				transform.UpdateGlobalTransform(registry);
 			}
 		}
 
-		if (_editorLayout) { ImGui::End(); }
+		// End our "Scene" viewport window.
+		ImGui::End();
 
+		// Draw our Renderer settings panel.
 		DrawRenderSettings();
+
+		// Call our Delegate to allow other code to render UI as well.
 		OnUiRender();
 	}
 
+	// Final ImGui render to swapchain.
 	{
 		ZoneScopedN("ImGUI Render");
 		CbZone(cmd, "ImGUI Render");
@@ -686,10 +754,11 @@ void Graphics::Update() {
 		cmd->EndZone();
 	}
 
+	// Submit it all.
 	_device->Submit(cmd);
 
 	EndFrame();
-}  // namespace Luna
+}
 
 bool Graphics::BeginFrame() {
 	ZoneScopedN("Graphics::BeginFrame");
@@ -736,10 +805,6 @@ void Graphics::DrawRenderSettings() {
 			ImGui::Text("Programs: %llu", stats.ProgramCount.load());
 		}
 
-		if (ImGui::CollapsingHeader("Performance Queries")) {
-			ImGui::Checkbox("Enable Performance Queries", &_performanceQueries);
-		}
-
 		if (ImGui::Button("Reload Shaders")) { LoadShaders(); }
 	}
 	ImGui::End();
@@ -778,7 +843,7 @@ void Graphics::LoadShaders() {
 		}
 	}
 
-	// Deferred Lighting
+	// Gamma correction
 	{
 		auto vert = filesystem->Read("Shaders/Deferred.vert.glsl");
 		auto frag = filesystem->Read("Shaders/Gamma.frag.glsl");

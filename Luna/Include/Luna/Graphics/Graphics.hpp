@@ -34,11 +34,7 @@ class Graphics {
 	Scene& GetScene() {
 		return _scene;
 	}
-	bool IsEditorLayout() const {
-		return _editorLayout;
-	}
 
-	void SetEditorLayout(bool enabled);
 	void Update();
 
 	Delegate<void()> OnUiRender;
@@ -102,8 +98,6 @@ class Graphics {
 
 	Camera _camera;
 	Scene _scene;
-	bool _editorLayout       = false;
-	bool _performanceQueries = false;
 	std::vector<Vulkan::ImageHandle> _sceneImages;
 	Vulkan::Program* _program         = nullptr;
 	Vulkan::Program* _programGBuffer  = nullptr;
