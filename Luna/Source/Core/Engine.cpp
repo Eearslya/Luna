@@ -20,6 +20,7 @@ Engine::Engine(const char* argv0) : _argv0(argv0) {
 	if (_instance != nullptr) { throw std::runtime_error("Cannot initialize Luna::Engine more than once!"); }
 	_instance = this;
 
+	Log::Initialize();
 #ifdef LUNA_DEBUG
 	Log::SetLevel(Log::Level::Trace);
 #endif
@@ -48,6 +49,8 @@ Engine::~Engine() noexcept {
 	_modTimers.reset();
 	_modThreading.reset();
 	_modFilesystem.reset();
+
+	Log::Shutdown();
 
 	_instance = nullptr;
 }
