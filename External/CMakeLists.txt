@@ -8,13 +8,10 @@ add_subdirectory(entt)
 add_subdirectory(glfw)
 add_subdirectory(glm)
 add_subdirectory(glslang)
-add_subdirectory(physfs)
 add_subdirectory(spdlog)
 add_subdirectory(spirv-cross)
 add_subdirectory(tinygltf)
 add_subdirectory(vma)
-
-target_include_directories(physfs-static PUBLIC physfs/src)
 
 add_library(imgui STATIC)
 target_include_directories(imgui PUBLIC imgui imguizmo)
