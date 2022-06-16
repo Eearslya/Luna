@@ -2,6 +2,7 @@
 
 #include <tiny_gltf.h>
 
+#include <Luna/Assets/AssetRegistry.hpp>
 #include <Luna/Assets/Environment.hpp>
 #include <Luna/Assets/Material.hpp>
 #include <Luna/Assets/StaticMesh.hpp>
@@ -51,6 +52,8 @@ class AssetManager {
 	void LoadMeshTask(ModelLoadContext* context, size_t meshIndex) const;
 	void LoadMaterialsTask(ModelLoadContext* context) const;
 	void LoadTextureTask(ModelLoadContext* context, size_t textureIndex) const;
+
+	AssetRegistry _registry;
 
 	ThreadSafeObjectPool<Environment> _environmentPool;
 	ThreadSafeObjectPool<ModelLoadContext> _contextPool;

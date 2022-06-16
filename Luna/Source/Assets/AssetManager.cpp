@@ -60,6 +60,7 @@ AssetManager::AssetManager() {
 }
 
 AssetManager::~AssetManager() noexcept {
+	_registry.Save();
 	_instance = nullptr;
 }
 
