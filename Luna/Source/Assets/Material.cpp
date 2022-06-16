@@ -1,12 +1,11 @@
+#include <Luna/Assets/AssetManager.hpp>
 #include <Luna/Assets/Material.hpp>
-#include <Luna/Graphics/AssetManager.hpp>
 #include <Luna/Vulkan/Device.hpp>
 
 namespace Luna {
 void MaterialDeleter::operator()(Material* material) {
-	auto graphics = Graphics::Get();
-	auto& manager = graphics->GetAssetManager();
-	manager.FreeMaterial(material);
+	auto manager = AssetManager::Get();
+	manager->FreeMaterial(material);
 }
 
 Material::Material() {

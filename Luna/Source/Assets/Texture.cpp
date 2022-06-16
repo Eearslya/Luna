@@ -1,12 +1,10 @@
+#include <Luna/Assets/AssetManager.hpp>
 #include <Luna/Assets/Texture.hpp>
-#include <Luna/Graphics/AssetManager.hpp>
-#include <Luna/Graphics/Graphics.hpp>
 
 namespace Luna {
 void TextureDeleter::operator()(Texture* texture) {
-	auto graphics = Graphics::Get();
-	auto& manager = graphics->GetAssetManager();
-	manager.FreeTexture(texture);
+	auto manager = AssetManager::Get();
+	manager->FreeTexture(texture);
 }
 
 Texture::Texture() {}

@@ -4,9 +4,9 @@
 #include <stb_image.h>
 #include <tiny_gltf.h>
 
+#include <Luna/Assets/AssetManager.hpp>
 #include <Luna/Core/Log.hpp>
 #include <Luna/Filesystem/Filesystem.hpp>
-#include <Luna/Graphics/AssetManager.hpp>
 #include <Luna/Graphics/Graphics.hpp>
 #include <Luna/Scene/Light.hpp>
 #include <Luna/Scene/MeshRenderer.hpp>
@@ -61,7 +61,7 @@ void Scene::DestroyEntity(entt::entity entity) {
 
 void Scene::LoadEnvironment(const std::string& filePath) {
 	auto graphics = Graphics::Get();
-	graphics->GetAssetManager().LoadEnvironment(filePath, *this);
+	AssetManager::Get()->LoadEnvironment(filePath, *this);
 }
 
 Entity Scene::LoadModel(const std::string& filePath, entt::entity parent) {
@@ -70,7 +70,7 @@ Entity Scene::LoadModel(const std::string& filePath, entt::entity parent) {
 
 	auto graphics   = Graphics::Get();
 	auto rootEntity = CreateEntity(gltfFileName, parent);
-	graphics->GetAssetManager().LoadModel(filePath, *this, rootEntity);
+	AssetManager::Get()->LoadModel(filePath, *this, rootEntity);
 
 	return rootEntity;
 }

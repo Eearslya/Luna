@@ -3,7 +3,7 @@
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wswitch"
-#include <Luna/Graphics/AssetManager.hpp>
+#include <Luna/Assets/AssetManager.hpp>
 #pragma GCC diagnostic pop
 
 #include <Luna/Core/Log.hpp>
@@ -28,6 +28,8 @@
 #include <glm/gtx/matrix_decompose.hpp>
 
 namespace Luna {
+AssetManager* AssetManager::_instance = nullptr;
+
 constexpr static const tinygltf::FsCallbacks TinyGltfCallbacks{
 	.FileExists = [](const std::string& filename, void* userData) -> bool { return Filesystem::Get()->Exists(filename); },
 	.ExpandFilePath = [](const std::string& path, void* userData) -> std::string { return path; },
@@ -53,9 +55,13 @@ constexpr static const tinygltf::FsCallbacks TinyGltfCallbacks{
                        const std::vector<unsigned char>& contents,
                        void* userData) -> bool { return false; }};
 
-AssetManager::AssetManager() {}
+AssetManager::AssetManager() {
+	_instance = this;
+}
 
-AssetManager::~AssetManager() noexcept {}
+AssetManager::~AssetManager() noexcept {
+	_instance = nullptr;
+}
 
 void AssetManager::LoadEnvironment(const std::string& filePath, Scene& scene) {
 	auto threading           = Threading::Get();

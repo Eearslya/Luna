@@ -1,12 +1,10 @@
+#include <Luna/Assets/AssetManager.hpp>
 #include <Luna/Assets/StaticMesh.hpp>
-#include <Luna/Graphics/AssetManager.hpp>
-#include <Luna/Graphics/Graphics.hpp>
 
 namespace Luna {
 void StaticMeshDeleter::operator()(StaticMesh* mesh) {
-	auto graphics = Graphics::Get();
-	auto& manager = graphics->GetAssetManager();
-	manager.FreeStaticMesh(mesh);
+	auto manager = AssetManager::Get();
+	manager->FreeStaticMesh(mesh);
 }
 
 StaticMesh::StaticMesh() {}

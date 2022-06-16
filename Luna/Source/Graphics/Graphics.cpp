@@ -7,7 +7,6 @@
 #include <Luna/Devices/Mouse.hpp>
 #include <Luna/Devices/Window.hpp>
 #include <Luna/Filesystem/Filesystem.hpp>
-#include <Luna/Graphics/AssetManager.hpp>
 #include <Luna/Graphics/Graphics.hpp>
 #include <Luna/Scene/Entity.hpp>
 #include <Luna/Scene/Light.hpp>
@@ -59,8 +58,7 @@ Graphics::Graphics() {
 	_device  = std::make_unique<Vulkan::Device>(*_context);
 
 	// Initialize our helper classes.
-	_assetManager = std::make_unique<AssetManager>();
-	_imgui        = std::make_unique<ImGuiManager>(*_device);
+	_imgui = std::make_unique<ImGuiManager>(*_device);
 	_imgui->SetDockspace(true);  // TODO: ImGuiManager should maybe not be responsible for this.
 
 	// Initialize our swapchain.

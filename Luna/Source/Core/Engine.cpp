@@ -1,3 +1,4 @@
+#include <Luna/Assets/AssetManager.hpp>
 #include <Luna/Core/App.hpp>
 #include <Luna/Core/Engine.hpp>
 #include <Luna/Core/Log.hpp>
@@ -27,13 +28,14 @@ Engine::Engine(const char* argv0) : _argv0(argv0) {
 
 	Log::Info("Engine", "Initializing Luna Engine.");
 
-	_modFilesystem = std::make_unique<Filesystem>();
-	_modThreading  = std::make_unique<Threading>();
-	_modTimers     = std::make_unique<Timers>();
-	_modWindow     = std::make_unique<Window>();
-	_modKeyboard   = std::make_unique<Keyboard>();
-	_modMouse      = std::make_unique<Mouse>();
-	_modGraphics   = std::make_unique<Graphics>();
+	_modFilesystem   = std::make_unique<Filesystem>();
+	_modThreading    = std::make_unique<Threading>();
+	_modTimers       = std::make_unique<Timers>();
+	_modWindow       = std::make_unique<Window>();
+	_modKeyboard     = std::make_unique<Keyboard>();
+	_modMouse        = std::make_unique<Mouse>();
+	_modAssetManager = std::make_unique<AssetManager>();
+	_modGraphics     = std::make_unique<Graphics>();
 
 	SetFPSLimit(_fpsLimit);
 	SetUPSLimit(_upsLimit);
@@ -43,6 +45,7 @@ Engine::~Engine() noexcept {
 	Log::Info("Engine", "Shutting down Luna Engine.");
 
 	_modGraphics.reset();
+	_modAssetManager.reset();
 	_modMouse.reset();
 	_modKeyboard.reset();
 	_modWindow.reset();

@@ -25,9 +25,6 @@ class Graphics {
 		return _instance;
 	}
 
-	AssetManager& GetAssetManager() {
-		return *_assetManager;
-	}
 	Vulkan::Device& GetDevice() {
 		return *_device;
 	}
@@ -92,7 +89,6 @@ class Graphics {
 	std::unique_ptr<Vulkan::Context> _context;
 	std::unique_ptr<Vulkan::Device> _device;
 	std::unique_ptr<Vulkan::Swapchain> _swapchain;
-	std::unique_ptr<AssetManager> _assetManager;
 	std::unique_ptr<ImGuiManager> _imgui;
 	DefaultImages _defaultImages;
 

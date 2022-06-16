@@ -8,6 +8,7 @@
 
 namespace Luna {
 class App;
+class AssetManager;
 class Filesystem;
 class Graphics;
 class Keyboard;
@@ -86,6 +87,7 @@ class Engine final : NonCopyable {
 	std::unique_ptr<Window> _modWindow;
 	std::unique_ptr<Keyboard> _modKeyboard;
 	std::unique_ptr<Mouse> _modMouse;
+	std::unique_ptr<AssetManager> _modAssetManager;
 	std::unique_ptr<Graphics> _modGraphics;
 };
 }  // namespace Luna

@@ -31,6 +31,10 @@ class AssetManager {
 	AssetManager();
 	~AssetManager() noexcept;
 
+	static AssetManager* Get() {
+		return _instance;
+	}
+
 	void LoadEnvironment(const std::string& filePath, Scene& scene);
 	void LoadModel(const std::string& gltfFile, Scene& scene, const entt::entity parentEntity);
 
@@ -40,6 +44,8 @@ class AssetManager {
 	void FreeTexture(Texture* texture);
 
  private:
+	static AssetManager* _instance;
+
 	void LoadEnvironmentTask(const std::string& filePath, Scene& scene);
 	void LoadGltfTask(const std::string& gltfFile, Scene& scene, const entt::entity parentEntity);
 	void LoadMeshTask(ModelLoadContext* context, size_t meshIndex) const;
