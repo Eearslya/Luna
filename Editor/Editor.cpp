@@ -6,7 +6,7 @@ using namespace Luna;
 
 class EditorApp : public App {
  public:
-	EditorApp() : App("Editor") {}
+	EditorApp(std::string_view projectPath) : App("Editor"), _projectPath(projectPath) {}
 	~EditorApp() {}
 
 	virtual void Start() override {
@@ -17,9 +17,11 @@ class EditorApp : public App {
 		Filesystem::Get()->AddSearchPath("Assets");
 
 		Timers::Get()->Every(Time::Seconds(1), []() {
-			const auto fps          = Engine::Get()->GetFPS();
-			const auto ups          = Engine::Get()->GetUPS();
-			const std::string title = fmt::format("Luna - {} FPS | {} UPS", fps, ups);
+			const auto fps                = Engine::Get()->GetFPS();
+			const auto ups                = Engine::Get()->GetUPS();
+			const auto project            = Engine::Get()->GetProject();
+			const std::string projectName = project ? project->Name : "No Project";
+			const std::string title       = fmt::format("Luna Editor - {} - {} FPS | {} UPS", projectName, fps, ups);
 			Window::Get()->SetTitle(title);
 		});
 
@@ -33,6 +35,18 @@ class EditorApp : public App {
 				return false;
 			},
 			this);
+
+		Ref<Project> project;
+		if (_projectPath.empty()) {
+			_projectPath = Project::GetProjectsFolder() / std::filesystem::path("NewProject") /
+			               std::filesystem::path("NewProject.lproject");
+		}
+		try {
+			project = Ref<Project>::Create(_projectPath, true);
+		} catch (const std::exception& e) {
+			Log::Error("Editor", "Failed to load project '{}': {}", _projectPath.string(), e.what());
+		}
+		Engine::Get()->SetActiveProject(project);
 
 		/*
 		auto& scene = Graphics::Get()->GetScene();
@@ -50,13 +64,18 @@ class EditorApp : public App {
 	virtual void Stop() override {
 		Log::Info("Editor", "Stopping Editor app.");
 	}
+
+ private:
+	std::filesystem::path _projectPath;
 };
 
 int main(int argc, const char** argv) {
 	try {
 		Engine engine(argv[0]);
 
-		std::unique_ptr<EditorApp> app = std::make_unique<EditorApp>();
+		std::string_view projectPath;
+		if (argc > 1) { projectPath = argv[1]; }
+		std::unique_ptr<EditorApp> app = std::make_unique<EditorApp>(projectPath);
 		engine.SetApp(app.get());
 
 		return engine.Run();

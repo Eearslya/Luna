@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Luna/Core/Project.hpp>
 #include <Luna/Time/Time.hpp>
 #include <Luna/Utility/NonCopyable.hpp>
 #include <map>
@@ -39,6 +40,9 @@ class Engine final : NonCopyable {
 	uint32_t GetFPSLimit() const {
 		return _fpsLimit;
 	}
+	Ref<Project> GetProject() const {
+		return _activeProject;
+	}
 	Time GetUpdateDelta() const {
 		return _updateDelta.Get();
 	}
@@ -52,6 +56,7 @@ class Engine final : NonCopyable {
 	int Run();
 	void Shutdown();
 
+	void SetActiveProject(const Ref<Project>& project);
 	void SetApp(App* app);
 	void SetFPSLimit(uint32_t limit);
 	void SetUPSLimit(uint32_t limit);
@@ -59,6 +64,7 @@ class Engine final : NonCopyable {
  private:
 	static Engine* _instance;
 
+	Ref<Project> _activeProject;
 	App* _app = nullptr;
 	std::string _argv0;
 	bool _running = false;

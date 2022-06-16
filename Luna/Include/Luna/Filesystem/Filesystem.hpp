@@ -9,6 +9,8 @@ struct PHYSFS_File;
 namespace Luna {
 enum class FileMode { Read, Write, Append };
 
+enum class SpecialFolder { Documents, ApplicationData };
+
 class BaseFileStream {
  public:
 	explicit BaseFileStream(PHYSFS_File* file);
@@ -46,6 +48,8 @@ class Filesystem {
 	static Filesystem* Get() {
 		return _instance;
 	}
+
+	std::filesystem::path GetSpecialFolder(SpecialFolder folder) const;
 
 	void AddSearchPath(const std::string& path);
 	void ClearSearchPaths();

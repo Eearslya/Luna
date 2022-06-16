@@ -1,3 +1,4 @@
+#include <ShlObj.h>
 #include <physfs.h>
 
 #include <Luna/Core/Engine.hpp>
@@ -157,6 +158,24 @@ Filesystem::~Filesystem() noexcept {
 	PHYSFS_deinit();
 
 	_instance = nullptr;
+}
+
+std::filesystem::path Filesystem::GetSpecialFolder(SpecialFolder folder) const {
+	PWSTR resultPath = nullptr;
+	GUID folderId;
+	switch (folder) {
+		case SpecialFolder::Documents:
+			folderId = FOLDERID_Documents;
+			break;
+		case SpecialFolder::ApplicationData:
+			folderId = FOLDERID_AppDataProgramData;
+			break;
+		default:
+			throw std::runtime_error("Invalid SpecialFolder type!");
+	}
+	const HRESULT result = ::SHGetKnownFolderPath(folderId, KF_FLAG_DEFAULT, nullptr, &resultPath);
+
+	return std::filesystem::path(std::wstring(resultPath));
 }
 
 void Filesystem::AddSearchPath(const std::string& path) {

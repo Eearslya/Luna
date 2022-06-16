@@ -118,6 +118,12 @@ void Engine::Shutdown() {
 	_running = false;
 }
 
+void Engine::SetActiveProject(const Ref<Project>& project) {
+	Log::Info("Engine", "Switching to active project: '{}'", project->Name);
+
+	_activeProject = project;
+}
+
 void Engine::SetApp(App* app) {
 	if (_app) {
 		_app->Stop();

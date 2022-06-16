@@ -1,2 +1,3 @@
 target_sources(Luna PRIVATE
-	Memory.cpp)
+	Memory.cpp
+	UUID.cpp)
