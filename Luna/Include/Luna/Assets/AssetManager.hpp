@@ -7,6 +7,7 @@
 #include <Luna/Assets/Material.hpp>
 #include <Luna/Assets/StaticMesh.hpp>
 #include <Luna/Assets/Texture.hpp>
+#include <Luna/Core/Project.hpp>
 #include <Luna/Time/Time.hpp>
 #include <Luna/Utility/IntrusivePtr.hpp>
 #include <Luna/Utility/ObjectPool.hpp>
@@ -36,6 +37,8 @@ class AssetManager {
 		return _instance;
 	}
 
+	void LoadProjectRegistry(const Ref<Project>& project);
+
 	void LoadEnvironment(const std::string& filePath, Scene& scene);
 	void LoadModel(const std::string& gltfFile, Scene& scene, const entt::entity parentEntity);
 
@@ -46,6 +49,9 @@ class AssetManager {
 
  private:
 	static AssetManager* _instance;
+
+	void DiscoverAssets(const std::filesystem::path& assetDirectory);
+	AssetHandle TryRegisterAsset(const std::filesystem::path& path);
 
 	void LoadEnvironmentTask(const std::string& filePath, Scene& scene);
 	void LoadGltfTask(const std::string& gltfFile, Scene& scene, const entt::entity parentEntity);

@@ -125,6 +125,7 @@ void Engine::SetActiveProject(const Ref<Project>& project) {
 	Log::Info("Engine", "Switching to active project: '{}'", project->Name);
 
 	_activeProject = project;
+	OnActiveProjectChanged(_activeProject);
 }
 
 void Engine::SetApp(App* app) {

@@ -2,6 +2,7 @@
 
 #include <Luna/Core/Project.hpp>
 #include <Luna/Time/Time.hpp>
+#include <Luna/Utility/Delegate.hpp>
 #include <Luna/Utility/NonCopyable.hpp>
 #include <map>
 #include <string>
@@ -61,6 +62,8 @@ class Engine final : NonCopyable {
 	void SetApp(App* app);
 	void SetFPSLimit(uint32_t limit);
 	void SetUPSLimit(uint32_t limit);
+
+	Delegate<void(Ref<Project>)> OnActiveProjectChanged;
 
  private:
 	static Engine* _instance;

@@ -6,6 +6,7 @@
 #include <Luna/Assets/AssetManager.hpp>
 #pragma GCC diagnostic pop
 
+#include <Luna/Core/Engine.hpp>
 #include <Luna/Core/Log.hpp>
 #include <Luna/Filesystem/Filesystem.hpp>
 #include <Luna/Graphics/Graphics.hpp>
@@ -57,11 +58,57 @@ constexpr static const tinygltf::FsCallbacks TinyGltfCallbacks{
 
 AssetManager::AssetManager() {
 	_instance = this;
+
+	Engine::Get()->OnActiveProjectChanged += [this](Ref<Project> project) { LoadProjectRegistry(project); };
 }
 
 AssetManager::~AssetManager() noexcept {
 	_registry.Save();
 	_instance = nullptr;
+}
+
+void AssetManager::LoadProjectRegistry(const Ref<Project>& project) {
+	_registry.Save();
+	_registry.Clear();
+
+	const auto& assetRegistryPath  = project->GetAssetRegistryPath();
+	const auto& assetDirectoryPath = project->GetAssetDirectoryPath();
+
+	_registry.Load(assetRegistryPath);
+	DiscoverAssets(assetDirectoryPath);
+	_registry.Save();
+}
+
+void AssetManager::DiscoverAssets(const std::filesystem::path& assetDirectory) {
+	std::function<void(const std::filesystem::path&)> SearchDirectory = [&](const std::filesystem::path& directoryPath) {
+		for (const auto entry : std::filesystem::directory_iterator(directoryPath)) {
+			if (entry.is_directory()) {
+				SearchDirectory(entry.path());
+			} else {
+				TryRegisterAsset(entry.path());
+			}
+		}
+	};
+
+	SearchDirectory(assetDirectory);
+}
+
+AssetHandle AssetManager::TryRegisterAsset(const std::filesystem::path& assetPath) {
+	const auto path = _registry.GetRelativePath(assetPath);
+
+	if (_registry.Contains(path)) { return _registry[path].Handle; }
+
+	AssetType assetType = AssetTypeFromExtension(assetPath.extension().string());
+	if (assetType != AssetType::None) {
+		AssetMetadata metadata{.Handle = AssetHandle::Generate(), .Type = assetType, .Path = path};
+		_registry[path] = metadata;
+
+		Log::Info("AssetManager", "Registered {} asset '{}'.", AssetTypeToString(assetType), path.string());
+
+		return metadata.Handle;
+	}
+
+	return AssetHandle();
 }
 
 void AssetManager::LoadEnvironment(const std::string& filePath, Scene& scene) {
