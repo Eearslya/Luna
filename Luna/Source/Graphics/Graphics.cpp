@@ -521,7 +521,7 @@ void Graphics::Update() {
 			cmd->SetUniformBuffer(0, 0, *cameraBuffer);
 			cmd->SetUniformBuffer(0, 1, *sceneBuffer);
 			cmd->SetUniformBuffer(0, 2, *lightsBuffer);
-			if (worldData->Environment && worldData->Environment->Ready) {
+			if (environmentReady) {
 				cmd->SetTexture(0, 3, *worldData->Environment->Irradiance->GetView(), Vulkan::StockSampler::LinearClamp);
 				cmd->SetTexture(0, 4, *worldData->Environment->Prefiltered->GetView(), Vulkan::StockSampler::LinearClamp);
 				cmd->SetTexture(0, 5, *worldData->Environment->BrdfLut->GetView(), Vulkan::StockSampler::LinearClamp);

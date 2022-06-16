@@ -34,6 +34,7 @@ class EditorApp : public App {
 			},
 			this);
 
+		/*
 		auto& scene = Graphics::Get()->GetScene();
 		scene.LoadEnvironment("Environments/TokyoBigSight.hdr");
 		auto model  = scene.LoadModel("Models/TestScene/TestScene.gltf", scene.GetRoot());
@@ -41,6 +42,7 @@ class EditorApp : public App {
 		light1.SetLocalPosition({0.0f, 1.25f, -1.825f});
 		auto& lightComp1 = light1.AddComponent<Light>();
 		lightComp1.Color = glm::vec3(200.0f, 200.0f, 200.0f);
+		*/
 	}
 
 	virtual void Update() override {}
