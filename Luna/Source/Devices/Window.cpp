@@ -12,6 +12,13 @@ void Window::CallbackError(int32_t error, const char* description) {
 	Log::Error("Window", "GLFW Error {}: {}", error, description);
 }
 
+void Window::CallbackDrop(GLFWwindow* window, int pathCount, const char** paths) {
+	std::vector<std::filesystem::path> filePaths;
+	filePaths.reserve(pathCount);
+	for (int i = 0; i < pathCount; ++i) { filePaths.emplace_back(paths[i]); }
+	Window::Get()->OnFilesDropped(filePaths);
+}
+
 void Window::CallbackMonitor(GLFWmonitor* monitor, int32_t event) {
 	auto window    = Window::Get();
 	auto& monitors = window->_monitors;

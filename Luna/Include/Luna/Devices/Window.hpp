@@ -3,6 +3,7 @@
 #include <Luna/Devices/Monitor.hpp>
 #include <Luna/Utility/Delegate.hpp>
 #include <Luna/Vulkan/Common.hpp>
+#include <filesystem>
 #include <glm/glm.hpp>
 #include <memory>
 #include <string>
@@ -80,6 +81,7 @@ class Window {
 
 	Delegate<void(bool)> OnBorderlessChanged;
 	Delegate<void()> OnClosed;
+	Delegate<void(const std::vector<std::filesystem::path>&)> OnFilesDropped;
 	Delegate<void(bool)> OnFocusChanged;
 	Delegate<void(bool)> OnFloatingChanged;
 	Delegate<void(bool)> OnFullscreenChanged;
@@ -93,6 +95,7 @@ class Window {
  private:
 	static Window* _instance;
 	static void CallbackError(int32_t error, const char* description);
+	static void CallbackDrop(GLFWwindow* window, int pathCount, const char** paths);
 	static void CallbackMonitor(GLFWmonitor* monitor, int32_t event);
 	static void CallbackWindowClose(GLFWwindow* window);
 	static void CallbackWindowFocus(GLFWwindow* window, int32_t focused);
