@@ -165,7 +165,9 @@ Device::~Device() noexcept {
 	vmaDestroyAllocator(_allocator);
 
 	// Clean up our Tracy contexts.
-	for (auto tracing : _queueTracing) { tracy::DestroyVkContext(tracing.second); }
+	for (auto tracing : _queueTracing) {
+		if (tracing.second) { tracy::DestroyVkContext(tracing.second); }
+	}
 	_queueTracing.clear();
 
 	// Destroy our timeline semaphores, if we ever made them.
