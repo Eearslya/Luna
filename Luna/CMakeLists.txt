@@ -15,7 +15,7 @@ target_compile_definitions(Luna
 target_include_directories(Luna
 	PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(Luna
-	PRIVATE spdlog Vulkan::Headers)
+	PRIVATE spdlog vma Vulkan::Headers)
 
 add_subdirectory(Utility)
 add_subdirectory(Vulkan)

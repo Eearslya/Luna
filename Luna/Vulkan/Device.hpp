@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vk_mem_alloc.h>
+
 #include "Common.hpp"
 
 namespace Luna {
@@ -20,6 +22,8 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	const QueueInfo _queues;
 	const vk::PhysicalDevice _gpu;
 	const vk::Device _device;
+
+	VmaAllocator _allocator;
 
 #ifdef LUNA_VULKAN_MT
 	std::atomic_uint64_t _cookie;

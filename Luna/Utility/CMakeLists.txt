@@ -1,2 +1,3 @@
 target_sources(Luna PRIVATE
-	Log.cpp)
+	Log.cpp
+	Memory.cpp)

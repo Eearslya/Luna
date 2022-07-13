@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.hpp>
 
 #include "Utility/IntrusivePtr.hpp"
+#include "Utility/ObjectPool.hpp"
 
 //#define LUNA_VULKAN_DEBUG
 #if defined(LUNA_DEBUG) && !defined(LUNA_VULKAN_DEBUG)
@@ -21,6 +22,12 @@ class Device;
 // Typedefs and usings.
 #ifdef LUNA_VULKAN_MT
 using HandleCounter = MultiThreadCounter;
+template <typename T>
+using VulkanObjectPool = ThreadSafeObjectPool<T>;
+#else
+using HandleCounter = SingleThreadCounter;
+template <typename T>
+using VulkanObjectPool = ObjectPool<T>;
 #endif
 
 // Handle declarations.
@@ -207,6 +214,7 @@ struct ExtensionInfo {
 	bool GetPhysicalDeviceProperties2 = false;
 	bool GetSurfaceCapabilities2      = false;
 	bool Maintenance1                 = false;
+	bool Maintenance4                 = false;
 	bool Synchronization2             = false;
 	bool TimelineSemaphore            = false;
 	bool ValidationFeatures           = false;

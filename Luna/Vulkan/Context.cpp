@@ -344,7 +344,8 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 #endif
 
 		_extensions.CalibratedTimestamps = TryExtension(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
-		_extensions.Maintenance1         = TryExtension(VK_KHR_MAINTENANCE1_EXTENSION_NAME);
+		_extensions.Maintenance1         = TryExtension(VK_KHR_MAINTENANCE_1_EXTENSION_NAME);
+		_extensions.Maintenance4         = TryExtension(VK_KHR_MAINTENANCE_4_EXTENSION_NAME);
 		_extensions.Synchronization2     = TryExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
 		_extensions.TimelineSemaphore    = TryExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
 	}
