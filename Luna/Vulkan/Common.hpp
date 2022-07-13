@@ -3,6 +3,8 @@
 #include <set>
 #include <vulkan/vulkan.hpp>
 
+#include "Utility/IntrusivePtr.hpp"
+
 //#define LUNA_VULKAN_DEBUG
 #if defined(LUNA_DEBUG) && !defined(LUNA_VULKAN_DEBUG)
 #	define LUNA_VULKAN_DEBUG
@@ -15,6 +17,15 @@ namespace Vulkan {
 // Forward declarations.
 class Context;
 class Device;
+
+// Typedefs and usings.
+#ifdef LUNA_VULKAN_MT
+using HandleCounter = MultiThreadCounter;
+#endif
+
+// Handle declarations.
+using ContextHandle = IntrusivePtr<Context>;
+using DeviceHandle  = IntrusivePtr<Device>;
 
 // Enums and constants.
 constexpr static const int DescriptorSetsPerPool      = 16;

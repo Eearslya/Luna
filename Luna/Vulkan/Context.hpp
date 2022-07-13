@@ -4,7 +4,7 @@
 
 namespace Luna {
 namespace Vulkan {
-class Context final {
+class Context : public IntrusivePtrEnabled<Context, std::default_delete<Context>, HandleCounter> {
  public:
 	Context(const std::vector<const char*>& instanceExtensions = {},
 	        const std::vector<const char*>& deviceExtensions   = {});

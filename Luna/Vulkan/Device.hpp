@@ -4,7 +4,7 @@
 
 namespace Luna {
 namespace Vulkan {
-class Device final {
+class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, HandleCounter> {
  public:
 	Device(const Context& context);
 	Device(const Device&)            = delete;
