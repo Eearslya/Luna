@@ -19,6 +19,7 @@ namespace Vulkan {
 class Buffer;
 struct BufferCreateInfo;
 struct BufferDeleter;
+class CommandPool;
 class Context;
 class Device;
 

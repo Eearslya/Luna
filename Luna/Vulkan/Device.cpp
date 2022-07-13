@@ -1,6 +1,7 @@
 #include "Device.hpp"
 
 #include "Buffer.hpp"
+#include "CommandPool.hpp"
 #include "Context.hpp"
 #include "Utility/Log.hpp"
 
@@ -185,7 +186,15 @@ void Device::WaitIdleNoLock() {
 	for (auto& frame : _frameContexts) { frame->Begin(); }
 }
 
-Device::FrameContext::FrameContext(Device& device, uint32_t index) : Parent(device), Index(index) {}
+Device::FrameContext::FrameContext(Device& device, uint32_t index) : Parent(device), Index(index) {
+	const auto threadCount = 1;
+	for (int i = 0; i < QueueTypeCount; ++i) {
+		CommandPools[i].reserve(threadCount);
+		for (int j = 0; j < threadCount; ++j) {
+			CommandPools[i].emplace_back(std::make_unique<CommandPool>(Parent, Parent._queues.Families[i], false));
+		}
+	}
+}
 
 Device::FrameContext::~FrameContext() noexcept {
 	Begin();
@@ -193,6 +202,10 @@ Device::FrameContext::~FrameContext() noexcept {
 
 void Device::FrameContext::Begin() {
 	auto device = Parent._device;
+
+	for (auto& pools : CommandPools) {
+		for (auto& pool : pools) { pool->Reset(); }
+	}
 
 	for (auto& buffer : BuffersToDestroy) { device.destroyBuffer(buffer); }
 	for (auto& allocation : MemoryToFree) { vmaFreeMemory(Parent._allocator, allocation); }

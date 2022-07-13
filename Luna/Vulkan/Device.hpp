@@ -20,6 +20,13 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	Device& operator=(const Device&) = delete;
 	~Device() noexcept;
 
+	const vk::Device& GetDevice() const {
+		return _device;
+	}
+	const ExtensionInfo& GetExtensionInfo() const {
+		return _extensions;
+	}
+
 	BufferHandle CreateBuffer(const BufferCreateInfo& bufferCI);
 
 	uint64_t AllocateCookie();
@@ -36,6 +43,8 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 
 		Device& Parent;
 		uint32_t Index;
+
+		std::array<std::vector<std::unique_ptr<CommandPool>>, QueueTypeCount> CommandPools;
 
 		std::vector<vk::Buffer> BuffersToDestroy;
 		std::vector<VmaAllocation> MemoryToFree;
