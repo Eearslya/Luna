@@ -14,6 +14,7 @@ namespace Luna {
 namespace Vulkan {
 // Forward declarations.
 class Context;
+class Device;
 
 // Enums and constants.
 constexpr static const int DescriptorSetsPerPool      = 16;
