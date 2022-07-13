@@ -19,6 +19,8 @@ namespace Vulkan {
 class Buffer;
 struct BufferCreateInfo;
 struct BufferDeleter;
+class CommandBuffer;
+struct CommandBufferDeleter;
 class CommandPool;
 class Context;
 class Device;
@@ -35,9 +37,10 @@ using VulkanObjectPool = ObjectPool<T>;
 #endif
 
 // Handle declarations.
-using BufferHandle  = IntrusivePtr<Buffer>;
-using ContextHandle = IntrusivePtr<Context>;
-using DeviceHandle  = IntrusivePtr<Device>;
+using BufferHandle        = IntrusivePtr<Buffer>;
+using CommandBufferHandle = IntrusivePtr<CommandBuffer>;
+using ContextHandle       = IntrusivePtr<Context>;
+using DeviceHandle        = IntrusivePtr<Device>;
 
 // Enums and constants.
 constexpr static const int DescriptorSetsPerPool      = 16;

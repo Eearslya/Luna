@@ -29,6 +29,10 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 
 	BufferHandle CreateBuffer(const BufferCreateInfo& bufferCI);
 
+	CommandBufferHandle RequestCommandBuffer(CommandBufferType type = CommandBufferType::Generic);
+	CommandBufferHandle RequestCommandBufferForThread(uint32_t threadIndex,
+	                                                  CommandBufferType type = CommandBufferType::Generic);
+
 	uint64_t AllocateCookie();
 	void WaitIdle();
 
@@ -51,9 +55,12 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	};
 
 	FrameContext& Frame();
+	QueueType GetQueueType(CommandBufferType cbType) const;
 
 	void DestroyBuffer(vk::Buffer buffer);
 	void FreeMemory(const VmaAllocation& allocation);
+
+	CommandBufferHandle RequestCommandBufferNoLock(uint32_t threadIndex, CommandBufferType type);
 
 	void DestroyBufferNoLock(vk::Buffer buffer);
 	void FreeMemoryNoLock(const VmaAllocation& allocation);
@@ -87,6 +94,7 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 #endif
 
 	VulkanObjectPool<Buffer> _bufferPool;
+	VulkanObjectPool<CommandBuffer> _commandBufferPool;
 };
 }  // namespace Vulkan
 }  // namespace Luna

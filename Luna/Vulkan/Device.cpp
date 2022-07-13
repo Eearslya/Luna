@@ -1,11 +1,15 @@
 #include "Device.hpp"
 
 #include "Buffer.hpp"
+#include "CommandBuffer.hpp"
 #include "CommandPool.hpp"
 #include "Context.hpp"
 #include "Utility/Log.hpp"
 
 #ifdef LUNA_VULKAN_MT
+static uint32_t GetThreadIndex() {
+	return 0;
+}
 #	define DeviceLock() std::lock_guard<std::mutex> lock(_lock.Mutex)
 #	define DeviceFlush()                                                 \
 		do {                                                                \
@@ -13,6 +17,9 @@
 			_lock.Condition.wait(lock, [&]() { return _lock.Counter == 0; }); \
 		} while (0)
 #else
+static uint32_t GetThreadIndex() {
+	return 0;
+}
 #	define DeviceLock()  ((void) 0)
 #	define DeviceFlush() assert(_lock.Counter == 0)
 #endif
@@ -144,6 +151,15 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo) {
 	return handle;
 }
 
+CommandBufferHandle Device::RequestCommandBuffer(CommandBufferType type) {
+	return RequestCommandBufferForThread(GetThreadIndex(), type);
+}
+
+CommandBufferHandle Device::RequestCommandBufferForThread(uint32_t threadIndex, CommandBufferType type) {
+	DeviceLock();
+	return RequestCommandBufferNoLock(threadIndex, type);
+}
+
 uint64_t Device::AllocateCookie() {
 #ifdef LUNA_VULKAN_MT
 	return _cookie.fetch_add(16, std::memory_order_relaxed) + 16;
@@ -162,6 +178,19 @@ Device::FrameContext& Device::Frame() {
 	return *_frameContexts[_currentFrameContext];
 }
 
+QueueType Device::GetQueueType(CommandBufferType cbType) const {
+	if (cbType != CommandBufferType::AsyncGraphics) {
+		return static_cast<QueueType>(cbType);
+	} else {
+		if (_queues.SameFamily(QueueType::Graphics, QueueType::Compute) &&
+		    !_queues.SameQueue(QueueType::Graphics, QueueType::Compute)) {
+			return QueueType::Compute;
+		} else {
+			return QueueType::Graphics;
+		}
+	}
+}
+
 void Device::DestroyBuffer(vk::Buffer buffer) {
 	DeviceLock();
 	DestroyBufferNoLock(buffer);
@@ -178,6 +207,20 @@ void Device::DestroyBufferNoLock(vk::Buffer buffer) {
 
 void Device::FreeMemoryNoLock(const VmaAllocation& allocation) {
 	Frame().MemoryToFree.push_back(allocation);
+}
+
+CommandBufferHandle Device::RequestCommandBufferNoLock(uint32_t threadIndex, CommandBufferType type) {
+	const auto queueType = GetQueueType(type);
+	auto& pool           = Frame().CommandPools[int(queueType)][threadIndex];
+	auto cmd             = pool->RequestCommandBuffer();
+
+	const vk::CommandBufferBeginInfo cmdBI(vk::CommandBufferUsageFlagBits::eOneTimeSubmit, nullptr);
+	cmd.begin(cmdBI);
+	++_lock.Counter;
+
+	CommandBufferHandle handle(_commandBufferPool.Allocate(*this, cmd, type, threadIndex));
+
+	return handle;
 }
 
 void Device::WaitIdleNoLock() {
