@@ -16,6 +16,9 @@
 namespace Luna {
 namespace Vulkan {
 // Forward declarations.
+class Buffer;
+struct BufferCreateInfo;
+struct BufferDeleter;
 class Context;
 class Device;
 
@@ -31,6 +34,7 @@ using VulkanObjectPool = ObjectPool<T>;
 #endif
 
 // Handle declarations.
+using BufferHandle  = IntrusivePtr<Buffer>;
 using ContextHandle = IntrusivePtr<Context>;
 using DeviceHandle  = IntrusivePtr<Device>;
 
