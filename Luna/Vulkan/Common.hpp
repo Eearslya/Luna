@@ -24,6 +24,10 @@ struct CommandBufferDeleter;
 class CommandPool;
 class Context;
 class Device;
+class Fence;
+struct FenceDeleter;
+class Semaphore;
+struct SemaphoreDeleter;
 
 // Typedefs and usings.
 #ifdef LUNA_VULKAN_MT
@@ -41,6 +45,8 @@ using BufferHandle        = IntrusivePtr<Buffer>;
 using CommandBufferHandle = IntrusivePtr<CommandBuffer>;
 using ContextHandle       = IntrusivePtr<Context>;
 using DeviceHandle        = IntrusivePtr<Device>;
+using FenceHandle         = IntrusivePtr<Fence>;
+using SemaphoreHandle     = IntrusivePtr<Semaphore>;
 
 // Enums and constants.
 constexpr static const int DescriptorSetsPerPool      = 16;

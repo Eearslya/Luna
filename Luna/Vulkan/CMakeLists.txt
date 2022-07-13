@@ -4,4 +4,6 @@ target_sources(Luna PRIVATE
 	CommandPool.cpp
 	Context.cpp
 	Cookie.cpp
-	Device.cpp)
+	Device.cpp
+	Fence.cpp
+	Semaphore.cpp)

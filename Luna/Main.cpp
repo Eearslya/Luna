@@ -15,8 +15,9 @@ int main(int argc, const char** argv) {
 		Vulkan::Context context;
 		Vulkan::Device device(context);
 
+		const uint8_t bufferData[64] = {0};
 		const Vulkan::BufferCreateInfo bufferCI(Vulkan::BufferDomain::Device, 64, vk::BufferUsageFlagBits::eStorageBuffer);
-		auto buffer = device.CreateBuffer(bufferCI);
+		auto buffer = device.CreateBuffer(bufferCI, bufferData);
 	} catch (const std::exception& e) {
 		std::cerr << "Fatal uncaught exception when initializing Vulkan:\n\t" << e.what() << std::endl;
 		return 1;
