@@ -10,12 +10,22 @@
 
 namespace Luna {
 namespace Vulkan {
+struct ImageInitialData {
+	const void* Data     = nullptr;
+	uint32_t RowLength   = 0;
+	uint32_t ImageHeight = 0;
+};
+
 class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, HandleCounter> {
  public:
 	friend class Buffer;
 	friend struct BufferDeleter;
 	friend class Fence;
 	friend struct FenceDeleter;
+	friend class Image;
+	friend struct ImageDeleter;
+	friend class ImageView;
+	friend struct ImageViewDeleter;
 	friend class Semaphore;
 	friend struct SemaphoreDeleter;
 
@@ -32,6 +42,7 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	}
 
 	BufferHandle CreateBuffer(const BufferCreateInfo& bufferCI, const void* initialData = nullptr);
+	ImageHandle CreateImage(const ImageCreateInfo& imageCI, const ImageInitialData* initialData = nullptr);
 
 	CommandBufferHandle RequestCommandBuffer(CommandBufferType type = CommandBufferType::Generic);
 	CommandBufferHandle RequestCommandBufferForThread(uint32_t threadIndex,
@@ -39,6 +50,9 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 
 	uint64_t AllocateCookie();
 	void AddWaitSemaphore(CommandBufferType cbType, SemaphoreHandle semaphore, vk::PipelineStageFlags stages, bool flush);
+	void Submit(CommandBufferHandle cmd,
+	            FenceHandle* fence                       = nullptr,
+	            std::vector<SemaphoreHandle>* semaphores = nullptr);
 	void WaitIdle();
 
  private:
@@ -60,6 +74,8 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 		std::array<uint64_t, QueueTypeCount> TimelineValues;
 
 		std::vector<vk::Buffer> BuffersToDestroy;
+		std::vector<vk::Image> ImagesToDestroy;
+		std::vector<vk::ImageView> ImageViewsToDestroy;
 		std::vector<vk::Fence> FencesToRecycle;
 		std::vector<VmaAllocation> MemoryToFree;
 		std::vector<vk::Semaphore> SemaphoresToDestroy;
@@ -92,6 +108,8 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	void ReleaseSemaphore(vk::Semaphore semaphore);
 
 	void DestroyBuffer(vk::Buffer buffer);
+	void DestroyImage(vk::Image image);
+	void DestroyImageView(vk::ImageView view);
 	void DestroySemaphore(vk::Semaphore semaphore);
 	void FreeMemory(const VmaAllocation& allocation);
 	void RecycleSemaphore(vk::Semaphore semaphore);
@@ -100,6 +118,8 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	CommandBufferHandle RequestCommandBufferNoLock(uint32_t threadIndex, CommandBufferType type);
 
 	void DestroyBufferNoLock(vk::Buffer buffer);
+	void DestroyImageNoLock(vk::Image image);
+	void DestroyImageViewNoLock(vk::ImageView view);
 	void DestroySemaphoreNoLock(vk::Semaphore semaphore);
 	void FreeMemoryNoLock(const VmaAllocation& allocation);
 	void RecycleSemaphoreNoLock(vk::Semaphore semaphore);
@@ -148,6 +168,8 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	VulkanObjectPool<Buffer> _bufferPool;
 	VulkanObjectPool<CommandBuffer> _commandBufferPool;
 	VulkanObjectPool<Fence> _fencePool;
+	VulkanObjectPool<Image> _imagePool;
+	VulkanObjectPool<ImageView> _imageViewPool;
 	VulkanObjectPool<Semaphore> _semaphorePool;
 };
 }  // namespace Vulkan

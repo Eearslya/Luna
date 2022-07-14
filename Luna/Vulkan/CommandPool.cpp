@@ -54,7 +54,7 @@ void CommandPool::Trim() {
 	if (!_commandBuffers.empty()) { dev.freeCommandBuffers(_pool, _commandBuffers); }
 	_bufferIndex = 0;
 	_commandBuffers.clear();
-	if (extensions.Maintenance1) { dev.trimCommandPoolKHR(_pool, {}); }
+	dev.trimCommandPool(_pool, {});
 }
 }  // namespace Vulkan
 }  // namespace Luna

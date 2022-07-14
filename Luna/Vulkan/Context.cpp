@@ -136,9 +136,11 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 		TryExtension("VK_KHR_portability_enumeration");
 #endif
 
-		_extensions.DebugUtils                   = TryExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-		_extensions.GetPhysicalDeviceProperties2 = TryExtension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-		_extensions.GetSurfaceCapabilities2      = TryExtension(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
+		_extensions.DebugUtils = TryExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+		_extensions.Surface    = TryExtension(VK_KHR_SURFACE_EXTENSION_NAME);
+		if (_extensions.Surface) {
+			_extensions.GetSurfaceCapabilities2 = TryExtension(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
+		}
 
 #ifdef LUNA_VULKAN_DEBUG
 		TryLayer("VK_LAYER_KHRONOS_validation");
@@ -228,59 +230,54 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredDevic
 		};
 
 		// Enumerate all of the properties and features.
-		if (_extensions.GetPhysicalDeviceProperties2) {
-			vk::StructureChain<vk::PhysicalDeviceFeatures2,
+		vk::StructureChain<vk::PhysicalDeviceFeatures2,
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-			                   vk::PhysicalDevicePortabilitySubsetFeaturesKHR,
+		                   vk::PhysicalDevicePortabilitySubsetFeaturesKHR,
 #endif
-			                   vk::PhysicalDeviceSynchronization2FeaturesKHR,
-			                   vk::PhysicalDeviceTimelineSemaphoreFeatures>
-				features;
-			vk::StructureChain<vk::PhysicalDeviceProperties2,
-			                   vk::PhysicalDeviceDriverProperties,
+		                   vk::PhysicalDeviceSynchronization2FeaturesKHR,
+		                   vk::PhysicalDeviceTimelineSemaphoreFeatures>
+			features;
+		vk::StructureChain<vk::PhysicalDeviceProperties2,
+		                   vk::PhysicalDeviceDriverProperties,
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-			                   vk::PhysicalDevicePortabilitySubsetPropertiesKHR,
+		                   vk::PhysicalDevicePortabilitySubsetPropertiesKHR,
 #endif
-			                   vk::PhysicalDeviceTimelineSemaphoreProperties>
-				properties;
+		                   vk::PhysicalDeviceTimelineSemaphoreProperties>
+			properties;
 
-			if (!HasExtension(VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME)) {
-				properties.unlink<vk::PhysicalDeviceDriverProperties>();
-			}
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-			if (!HasExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) {
-				features.unlink<vk::PhysicalDevicePortabilitySubsetFeaturesKHR>();
-				properties.unlink<vk::PhysicalDevicePortabilitySubsetPropertiesKHR>();
-			}
-#endif
-			if (!HasExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)) {
-				features.unlink<vk::PhysicalDeviceSynchronization2FeaturesKHR>();
-			}
-			if (!HasExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME)) {
-				features.unlink<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
-				properties.unlink<vk::PhysicalDeviceTimelineSemaphoreProperties>();
-			}
-
-			gpu.getFeatures2KHR(&features.get());
-			gpu.getProperties2KHR(&properties.get());
-
-			gpuInfo.AvailableFeatures.Features = features.get().features;
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-			gpuInfo.AvailableFeatures.PortabilitySubset = features.get<vk::PhysicalDevicePortabilitySubsetFeaturesKHR>();
-#endif
-			gpuInfo.AvailableFeatures.Synchronization2  = features.get<vk::PhysicalDeviceSynchronization2FeaturesKHR>();
-			gpuInfo.AvailableFeatures.TimelineSemaphore = features.get<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
-
-			gpuInfo.Properties.Properties = properties.get().properties;
-			gpuInfo.Properties.Driver     = properties.get<vk::PhysicalDeviceDriverProperties>();
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-			gpuInfo.Properties.PortabilitySubset = properties.get<vk::PhysicalDevicePortabilitySubsetPropertiesKHR>();
-#endif
-			gpuInfo.Properties.TimelineSemaphore = properties.get<vk::PhysicalDeviceTimelineSemaphoreProperties>();
-		} else {
-			gpuInfo.AvailableFeatures.Features = gpu.getFeatures();
-			gpuInfo.Properties.Properties      = gpu.getProperties();
+		if (!HasExtension(VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME)) {
+			properties.unlink<vk::PhysicalDeviceDriverProperties>();
 		}
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+		if (!HasExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) {
+			features.unlink<vk::PhysicalDevicePortabilitySubsetFeaturesKHR>();
+			properties.unlink<vk::PhysicalDevicePortabilitySubsetPropertiesKHR>();
+		}
+#endif
+		if (!HasExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)) {
+			features.unlink<vk::PhysicalDeviceSynchronization2FeaturesKHR>();
+		}
+		if (!HasExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME)) {
+			features.unlink<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
+			properties.unlink<vk::PhysicalDeviceTimelineSemaphoreProperties>();
+		}
+
+		gpu.getFeatures2(&features.get());
+		gpu.getProperties2(&properties.get());
+
+		gpuInfo.AvailableFeatures.Features = features.get().features;
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+		gpuInfo.AvailableFeatures.PortabilitySubset = features.get<vk::PhysicalDevicePortabilitySubsetFeaturesKHR>();
+#endif
+		gpuInfo.AvailableFeatures.Synchronization2  = features.get<vk::PhysicalDeviceSynchronization2FeaturesKHR>();
+		gpuInfo.AvailableFeatures.TimelineSemaphore = features.get<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
+
+		gpuInfo.Properties.Properties = properties.get().properties;
+		gpuInfo.Properties.Driver     = properties.get<vk::PhysicalDeviceDriverProperties>();
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+		gpuInfo.Properties.PortabilitySubset = properties.get<vk::PhysicalDevicePortabilitySubsetPropertiesKHR>();
+#endif
+		gpuInfo.Properties.TimelineSemaphore = properties.get<vk::PhysicalDeviceTimelineSemaphoreProperties>();
 
 		// Validate that the device meets requirements.
 		bool extensions = true;
@@ -344,7 +341,6 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 #endif
 
 		_extensions.CalibratedTimestamps = TryExtension(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
-		_extensions.Maintenance1         = TryExtension(VK_KHR_MAINTENANCE_1_EXTENSION_NAME);
 		_extensions.Maintenance4         = TryExtension(VK_KHR_MAINTENANCE_4_EXTENSION_NAME);
 		_extensions.Synchronization2     = TryExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
 		_extensions.TimelineSemaphore    = TryExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
@@ -451,14 +447,8 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 	}
 
 	// Create our device.
-	const vk::DeviceCreateInfo deviceCI(
-		{},
-		queueCIs,
-		nullptr,
-		enabledExtensions,
-		_extensions.GetPhysicalDeviceProperties2 ? nullptr : &_gpuInfo.EnabledFeatures.Features);
+	const vk::DeviceCreateInfo deviceCI({}, queueCIs, nullptr, enabledExtensions, nullptr);
 	vk::StructureChain<vk::DeviceCreateInfo, vk::PhysicalDeviceFeatures2> chain(deviceCI, enabledFeaturesChain.get());
-	if (!_extensions.GetPhysicalDeviceProperties2) { chain.unlink<vk::PhysicalDeviceFeatures2>(); }
 
 	_device = _gpu.createDevice(chain.get());
 	VULKAN_HPP_DEFAULT_DISPATCHER.init(_device);

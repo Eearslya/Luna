@@ -6,7 +6,7 @@
 #include "Utility/IntrusivePtr.hpp"
 #include "Utility/ObjectPool.hpp"
 
-//#define LUNA_VULKAN_DEBUG
+#define LUNA_VULKAN_DEBUG
 #if defined(LUNA_DEBUG) && !defined(LUNA_VULKAN_DEBUG)
 #	define LUNA_VULKAN_DEBUG
 #endif
@@ -26,6 +26,12 @@ class Context;
 class Device;
 class Fence;
 struct FenceDeleter;
+class Image;
+struct ImageCreateInfo;
+struct ImageDeleter;
+class ImageView;
+struct ImageViewCreateInfo;
+struct ImageViewDeleter;
 class Semaphore;
 struct SemaphoreDeleter;
 
@@ -46,6 +52,8 @@ using CommandBufferHandle = IntrusivePtr<CommandBuffer>;
 using ContextHandle       = IntrusivePtr<Context>;
 using DeviceHandle        = IntrusivePtr<Device>;
 using FenceHandle         = IntrusivePtr<Fence>;
+using ImageHandle         = IntrusivePtr<Image>;
+using ImageViewHandle     = IntrusivePtr<ImageView>;
 using SemaphoreHandle     = IntrusivePtr<Semaphore>;
 
 // Enums and constants.
@@ -223,15 +231,14 @@ const char* VulkanEnumToString<StockSampler>(const StockSampler value) {
 
 // Structures
 struct ExtensionInfo {
-	bool CalibratedTimestamps         = false;
-	bool DebugUtils                   = false;
-	bool GetPhysicalDeviceProperties2 = false;
-	bool GetSurfaceCapabilities2      = false;
-	bool Maintenance1                 = false;
-	bool Maintenance4                 = false;
-	bool Synchronization2             = false;
-	bool TimelineSemaphore            = false;
-	bool ValidationFeatures           = false;
+	bool CalibratedTimestamps    = false;
+	bool DebugUtils              = false;
+	bool GetSurfaceCapabilities2 = false;
+	bool Maintenance4            = false;
+	bool Surface                 = false;
+	bool Synchronization2        = false;
+	bool TimelineSemaphore       = false;
+	bool ValidationFeatures      = false;
 };
 struct GPUFeatures {
 	vk::PhysicalDeviceFeatures Features;

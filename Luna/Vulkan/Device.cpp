@@ -5,7 +5,10 @@
 #include "CommandPool.hpp"
 #include "Context.hpp"
 #include "Fence.hpp"
+#include "Format.hpp"
+#include "Image.hpp"
 #include "Semaphore.hpp"
+#include "TextureFormat.hpp"
 #include "Utility/Log.hpp"
 
 #ifdef LUNA_VULKAN_MT
@@ -29,6 +32,18 @@ static uint32_t GetThreadIndex() {
 namespace Luna {
 namespace Vulkan {
 constexpr static QueueType QueueFlushOrder[] = {QueueType::Transfer, QueueType::Graphics, QueueType::Compute};
+
+class ImageResourceHolder {
+ public:
+	explicit ImageResourceHolder(Device& device) : _device(device) {}
+	~ImageResourceHolder() noexcept {}
+
+	vk::Image Image;
+	VmaAllocation Allocation;
+
+ private:
+	Device& _device;
+};
 
 Device::Device(const Context& context)
 		: _extensions(context.GetExtensionInfo()),
@@ -179,6 +194,368 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo, const void
 	return handle;
 }
 
+ImageHandle Device::CreateImage(const ImageCreateInfo& imageCI, const ImageInitialData* initialData) {
+	struct ImageInitialBuffer {
+		BufferHandle Buffer;
+		std::vector<vk::BufferImageCopy> Blits;
+	};
+	const bool generateMips = imageCI.MiscFlags & ImageCreateFlagBits::GenerateMipmaps;
+
+	// Create our image staging buffer, if applicable.
+	ImageInitialBuffer initialBuffer;
+	if (initialData) {
+		uint32_t copyLevels;
+		if (generateMips) {
+			copyLevels = 1;
+		} else if (imageCI.MipLevels == 0) {
+			copyLevels = TextureFormatLayout::MipLevels(imageCI.Width, imageCI.Height, imageCI.Depth);
+		} else {
+			copyLevels = imageCI.MipLevels;
+		}
+
+		TextureFormatLayout layout;
+		switch (imageCI.Type) {
+			case vk::ImageType::e1D:
+				layout.Set1D(imageCI.Format, imageCI.Width, imageCI.ArrayLayers, copyLevels);
+				break;
+			case vk::ImageType::e2D:
+				layout.Set2D(imageCI.Format, imageCI.Width, imageCI.Height, imageCI.ArrayLayers, copyLevels);
+				break;
+			case vk::ImageType::e3D:
+				layout.Set3D(imageCI.Format, imageCI.Width, imageCI.Height, imageCI.Depth, copyLevels);
+				break;
+			default:
+				return {};
+		}
+
+		const BufferCreateInfo bufferCI(
+			BufferDomain::Host, layout.GetRequiredSize(), vk::BufferUsageFlagBits::eTransferSrc);
+		initialBuffer.Buffer = CreateBuffer(bufferCI);
+		uint8_t* data        = reinterpret_cast<uint8_t*>(initialBuffer.Buffer->Map());
+
+		uint32_t index = 0;
+		layout.SetBuffer(data, layout.GetRequiredSize());
+		for (uint32_t level = 0; level < copyLevels; ++level) {
+			const auto& mipInfo            = layout.GetMipInfo(level);
+			const uint32_t dstHeightStride = layout.GetLayerSize(level);
+			const size_t rowSize           = layout.GetRowSize(level);
+
+			for (uint32_t layer = 0; layer < imageCI.ArrayLayers; ++layer, ++index) {
+				const uint32_t srcRowLength = initialData[index].RowLength ? initialData[index].RowLength : mipInfo.RowLength;
+				const uint32_t srcArrayHeight =
+					initialData[index].ImageHeight ? initialData[index].ImageHeight : mipInfo.ImageHeight;
+				const uint32_t srcRowStride    = layout.RowByteStride(srcRowLength);
+				const uint32_t srcHeightStride = layout.LayerByteStride(srcArrayHeight, srcRowStride);
+
+				uint8_t* dst       = static_cast<uint8_t*>(layout.Data(layer, level));
+				const uint8_t* src = static_cast<const uint8_t*>(initialData[index].Data);
+
+				for (uint32_t z = 0; z < mipInfo.Depth; ++z) {
+					for (uint32_t y = 0; y < mipInfo.BlockImageHeight; ++y) {
+						memcpy(dst + z * dstHeightStride + y * rowSize, src + z * srcHeightStride + y * srcRowStride, rowSize);
+					}
+				}
+			}
+		}
+		initialBuffer.Blits = layout.BuildBufferImageCopies();
+	}
+
+	vk::ImageCreateInfo imageCreate(imageCI.Flags,
+	                                imageCI.Type,
+	                                imageCI.Format,
+	                                vk::Extent3D(imageCI.Width, imageCI.Height, imageCI.Depth),
+	                                imageCI.MipLevels,
+	                                imageCI.ArrayLayers,
+	                                imageCI.Samples,
+	                                vk::ImageTiling::eOptimal,
+	                                imageCI.Usage,
+	                                vk::SharingMode::eExclusive,
+	                                nullptr,
+	                                vk::ImageLayout::eUndefined);
+	if (imageCI.Domain == ImageDomain::Transient) { imageCreate.usage |= vk::ImageUsageFlagBits::eTransientAttachment; }
+	if (initialData) { imageCreate.usage |= vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst; }
+	if (imageCreate.mipLevels == 0) {
+		imageCreate.mipLevels = TextureFormatLayout::MipLevels(imageCI.Width, imageCI.Height, imageCI.Depth);
+	}
+
+	bool createUnormSrgbViews = false;
+	if (imageCI.MiscFlags & ImageCreateFlagBits::MutableSrgb) {
+		Log::Warning("Vulkan", "ImageCreateFlagBits::MutableSrgb not yet supported!");
+	}
+
+	if ((imageCreate.usage & vk::ImageUsageFlagBits::eStorage) ||
+	    (imageCI.MiscFlags & ImageCreateFlagBits::MutableSrgb)) {
+		imageCreate.flags |= vk::ImageCreateFlagBits::eMutableFormat;
+	}
+
+	ImageCreateFlags queueFlags =
+		imageCI.MiscFlags &
+		(ImageCreateFlagBits::ConcurrentQueueGraphics | ImageCreateFlagBits::ConcurrentQueueAsyncCompute |
+	   ImageCreateFlagBits::ConcurrentQueueAsyncGraphics | ImageCreateFlagBits::ConcurrentQueueAsyncTransfer);
+	bool concurrentQueue(queueFlags);
+	std::vector<uint32_t> families;
+	if (concurrentQueue) {
+		std::set<uint32_t> uniqueFamilies;
+		if (queueFlags &
+		    (ImageCreateFlagBits::ConcurrentQueueGraphics | ImageCreateFlagBits::ConcurrentQueueAsyncGraphics)) {
+			uniqueFamilies.insert(_queues.Family(QueueType::Graphics));
+		}
+		if (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncCompute) {
+			uniqueFamilies.insert(_queues.Family(QueueType::Compute));
+		}
+		if (initialData || (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncTransfer)) {
+			uniqueFamilies.insert(_queues.Family(QueueType::Transfer));
+		}
+		if (initialData) { uniqueFamilies.insert(_queues.Family(QueueType::Graphics)); }
+
+		if (uniqueFamilies.size() > 1) {
+			families = std::vector<uint32_t>(uniqueFamilies.begin(), uniqueFamilies.end());
+
+			imageCreate.sharingMode = vk::SharingMode::eConcurrent;
+			imageCreate.setQueueFamilyIndices(families);
+		}
+	}
+
+	const VmaAllocationCreateInfo imageAI = {.usage = VMA_MEMORY_USAGE_AUTO};
+
+	VkImage image;
+	VmaAllocation allocation;
+	VmaAllocationInfo allocationInfo;
+	const auto result = vmaCreateImage(_allocator,
+	                                   reinterpret_cast<const VkImageCreateInfo*>(&imageCreate),
+	                                   &imageAI,
+	                                   &image,
+	                                   &allocation,
+	                                   &allocationInfo);
+	if (result != VK_SUCCESS) {
+		Log::Error("Vulkan", "Failed to create image: {}", vk::to_string(vk::Result(result)));
+		return ImageHandle();
+	}
+	Log::Trace("Vulkan", "Image created.");
+
+	auto tmpCI      = imageCI;
+	tmpCI.Usage     = imageCreate.usage;
+	tmpCI.MipLevels = imageCreate.mipLevels;
+
+	const bool hasView(imageCreate.usage &
+	                   (vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage |
+	                    vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eDepthStencilAttachment |
+	                    vk::ImageUsageFlagBits::eInputAttachment));
+	vk::ImageViewType viewType = {};
+	vk::ImageView imageView;
+	vk::ImageView depthView;
+	vk::ImageView stencilView;
+	vk::ImageView unormView;
+	vk::ImageView srgbView;
+	std::vector<vk::ImageView> renderTargetViews;
+	if (hasView) {
+		vk::ImageViewCreateInfo defaultViewCI(
+			{},
+			image,
+			tmpCI.GetImageViewType(),
+			imageCI.Format,
+			vk::ComponentMapping(),
+			vk::ImageSubresourceRange(FormatToAspect(tmpCI.Format), 0, tmpCI.MipLevels, 0, tmpCI.ArrayLayers));
+		viewType = defaultViewCI.viewType;
+
+		imageView = _device.createImageView(defaultViewCI);
+		Log::Trace("Vulkan", "Image View created.");
+
+		// Alt views
+		if (defaultViewCI.viewType != vk::ImageViewType::eCube && defaultViewCI.viewType != vk::ImageViewType::eCubeArray &&
+		    defaultViewCI.viewType != vk::ImageViewType::e3D) {
+			if (defaultViewCI.subresourceRange.aspectMask ==
+			    (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil)) {
+				if ((tmpCI.Usage & ~vk::ImageUsageFlagBits::eDepthStencilAttachment)) {
+					auto viewCI = defaultViewCI;
+
+					viewCI.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
+					depthView                          = _device.createImageView(viewCI);
+					Log::Trace("Vulkan", "Image View created.");
+
+					viewCI.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eStencil;
+					stencilView                        = _device.createImageView(viewCI);
+					Log::Trace("Vulkan", "Image View created.");
+				}
+			}
+		}
+
+		// Render target views
+		if (defaultViewCI.viewType != vk::ImageViewType::e3D) {
+			renderTargetViews.reserve(defaultViewCI.subresourceRange.layerCount);
+
+			if ((tmpCI.Usage &
+			     (vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eDepthStencilAttachment)) &&
+			    ((defaultViewCI.subresourceRange.levelCount > 1) || (defaultViewCI.subresourceRange.layerCount > 1))) {
+				auto viewCI                        = defaultViewCI;
+				viewCI.viewType                    = vk::ImageViewType::e2D;
+				viewCI.subresourceRange.levelCount = 1;
+				viewCI.subresourceRange.layerCount = 1;
+
+				for (uint32_t layer = 0; layer < defaultViewCI.subresourceRange.layerCount; ++layer) {
+					viewCI.subresourceRange.baseArrayLayer = layer + defaultViewCI.subresourceRange.baseArrayLayer;
+					renderTargetViews.push_back(_device.createImageView(viewCI));
+					Log::Trace("Vulkan", "Image View created.");
+				}
+			}
+		}
+	}
+
+	ImageHandle handle(_imagePool.Allocate(*this, image, imageView, allocation, tmpCI, viewType));
+	if (handle) {
+		imageView = nullptr;
+		if (hasView) {
+			handle->GetView().SetAltViews(depthView, stencilView);
+			handle->GetView().SetSrgbView(srgbView);
+			handle->GetView().SetUnormView(unormView);
+			handle->GetView().SetRenderTargetViews(renderTargetViews);
+
+			depthView   = nullptr;
+			stencilView = nullptr;
+			unormView   = nullptr;
+			srgbView    = nullptr;
+			renderTargetViews.clear();
+		}
+	}
+
+	for (auto& view : renderTargetViews) { _device.destroyImageView(view); }
+	if (srgbView) { _device.destroyImageView(srgbView); }
+	if (unormView) { _device.destroyImageView(unormView); }
+	if (stencilView) { _device.destroyImageView(stencilView); }
+	if (depthView) { _device.destroyImageView(depthView); }
+	if (imageView) { _device.destroyImageView(imageView); }
+
+	const bool shareCompute = (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncCompute) &&
+	                          !_queues.SameQueue(QueueType::Graphics, QueueType::Compute);
+	const bool shareAsyncGraphics = GetQueueType(CommandBufferType::AsyncGraphics) == QueueType::Compute &&
+	                                (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncGraphics);
+
+	CommandBufferHandle transitionCmd;
+	if (initialData) {
+		vk::AccessFlags finalTransitionSrcAccess = {};
+		if (generateMips) {
+			finalTransitionSrcAccess = vk::AccessFlagBits::eTransferRead;
+		} else if (_queues.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
+			finalTransitionSrcAccess = vk::AccessFlagBits::eTransferWrite;
+		}
+
+		vk::AccessFlags prepareSrcAccess = _queues.SameQueue(QueueType::Graphics, QueueType::Transfer)
+		                                     ? vk::AccessFlagBits::eTransferWrite
+		                                     : vk::AccessFlags{};
+		bool needMipmapBarrier           = true;
+		bool needInitialBarrier          = true;
+
+		auto graphicsCmd = RequestCommandBuffer(CommandBufferType::Generic);
+		CommandBufferHandle transferCmd;
+		if (!_queues.SameQueue(QueueType::Transfer, QueueType::Graphics)) {
+			transferCmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
+		} else {
+			transferCmd = graphicsCmd;
+		}
+
+		transferCmd->ImageBarrier(*handle,
+		                          vk::ImageLayout::eUndefined,
+		                          vk::ImageLayout::eTransferDstOptimal,
+		                          vk::PipelineStageFlagBits::eTopOfPipe,
+		                          {},
+		                          vk::PipelineStageFlagBits::eTransfer,
+		                          vk::AccessFlagBits::eTransferWrite);
+		transferCmd->CopyBufferToImage(*handle, *initialBuffer.Buffer, initialBuffer.Blits);
+
+		if (!_queues.SameQueue(QueueType::Transfer, QueueType::Graphics)) {
+			vk::PipelineStageFlags dstStages = generateMips ? vk::PipelineStageFlagBits::eTransfer : handle->GetStageFlags();
+
+			if (!concurrentQueue && !_queues.SameFamily(QueueType::Transfer, QueueType::Graphics)) {
+				needMipmapBarrier = false;
+
+				vk::ImageMemoryBarrier release(
+					vk::AccessFlagBits::eTransferWrite,
+					{},
+					vk::ImageLayout::eTransferDstOptimal,
+					{},
+					_queues.Family(QueueType::Transfer),
+					_queues.Family(QueueType::Graphics),
+					handle->GetImage(),
+					vk::ImageSubresourceRange(FormatToAspect(imageCreate.format), 0, 0, 0, imageCreate.arrayLayers));
+				if (generateMips) {
+					release.newLayout                   = vk::ImageLayout::eTransferSrcOptimal;
+					release.subresourceRange.levelCount = 1;
+				} else {
+					release.newLayout                   = imageCI.InitialLayout;
+					release.subresourceRange.levelCount = imageCreate.mipLevels;
+					needInitialBarrier                  = false;
+				}
+
+				auto acquire          = release;
+				acquire.srcAccessMask = {};
+				if (generateMips) {
+					acquire.dstAccessMask = vk::AccessFlagBits::eTransferRead;
+				} else {
+					acquire.dstAccessMask = handle->GetAccessFlags() & ImageLayoutToAccess(imageCI.InitialLayout);
+				}
+
+				transferCmd->Barrier(
+					vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {release});
+				graphicsCmd->Barrier(dstStages, dstStages, {}, {}, {acquire});
+			}
+
+			std::vector<SemaphoreHandle> semaphores(1);
+			Submit(transferCmd, nullptr, &semaphores);
+			AddWaitSemaphore(CommandBufferType::Generic, semaphores[0], dstStages, true);
+		}
+
+		if (generateMips) {
+			graphicsCmd->MipmapBarrier(*handle,
+			                           vk::ImageLayout::eTransferDstOptimal,
+			                           vk::PipelineStageFlagBits::eTransfer,
+			                           prepareSrcAccess,
+			                           needMipmapBarrier);
+			graphicsCmd->GenerateMipmaps(*handle);
+		}
+
+		if (needInitialBarrier) {
+			graphicsCmd->ImageBarrier(
+				*handle,
+				generateMips ? vk::ImageLayout::eTransferSrcOptimal : vk::ImageLayout::eTransferDstOptimal,
+				imageCI.InitialLayout,
+				vk::PipelineStageFlagBits::eTransfer,
+				finalTransitionSrcAccess,
+				handle->GetStageFlags(),
+				handle->GetAccessFlags() & ImageLayoutToAccess(imageCI.InitialLayout));
+		}
+
+		transitionCmd = std::move(graphicsCmd);
+	} else if (imageCI.InitialLayout != vk::ImageLayout::eUndefined) {
+		auto cmd = RequestCommandBuffer(CommandBufferType::Generic);
+		cmd->ImageBarrier(*handle,
+		                  imageCreate.initialLayout,
+		                  imageCI.InitialLayout,
+		                  vk::PipelineStageFlagBits::eTopOfPipe,
+		                  {},
+		                  handle->GetStageFlags(),
+		                  handle->GetAccessFlags() & ImageLayoutToAccess(imageCI.InitialLayout));
+		transitionCmd = std::move(cmd);
+	}
+
+	if (transitionCmd) {
+		if (shareCompute || shareAsyncGraphics) {
+			std::vector<SemaphoreHandle> semaphores(1);
+			Submit(transitionCmd, nullptr, &semaphores);
+			auto dstStages = handle->GetStageFlags();
+			if (!_queues.SameFamily(QueueType::Graphics, QueueType::Compute)) {
+				dstStages &= vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eTransfer;
+			}
+			AddWaitSemaphore(CommandBufferType::AsyncCompute, semaphores[0], dstStages, true);
+		} else {
+			DeviceLock();
+			SubmitNoLock(transitionCmd, nullptr, nullptr);
+			if (concurrentQueue) { FlushFrame(QueueType::Graphics); }
+		}
+	}
+
+	return handle;
+}
+
 CommandBufferHandle Device::RequestCommandBuffer(CommandBufferType type) {
 	return RequestCommandBufferForThread(GetThreadIndex(), type);
 }
@@ -203,6 +580,11 @@ void Device::AddWaitSemaphore(CommandBufferType cbType,
                               bool flush) {
 	DeviceLock();
 	AddWaitSemaphoreNoLock(GetQueueType(cbType), std::move(semaphore), stages, flush);
+}
+
+void Device::Submit(CommandBufferHandle cmd, FenceHandle* fence, std::vector<SemaphoreHandle>* semaphores) {
+	DeviceLock();
+	SubmitNoLock(std::move(cmd), fence, semaphores);
 }
 
 void Device::WaitIdle() {
@@ -295,6 +677,16 @@ void Device::DestroyBuffer(vk::Buffer buffer) {
 	DestroyBufferNoLock(buffer);
 }
 
+void Device::DestroyImage(vk::Image image) {
+	DeviceLock();
+	DestroyImageNoLock(image);
+}
+
+void Device::DestroyImageView(vk::ImageView view) {
+	DeviceLock();
+	DestroyImageViewNoLock(view);
+}
+
 void Device::DestroySemaphore(vk::Semaphore semaphore) {
 	DeviceLock();
 	DestroySemaphoreNoLock(semaphore);
@@ -317,6 +709,14 @@ void Device::ResetFence(vk::Fence fence, bool observedWait) {
 
 void Device::DestroyBufferNoLock(vk::Buffer buffer) {
 	Frame().BuffersToDestroy.push_back(buffer);
+}
+
+void Device::DestroyImageNoLock(vk::Image image) {
+	Frame().ImagesToDestroy.push_back(image);
+}
+
+void Device::DestroyImageViewNoLock(vk::ImageView view) {
+	Frame().ImageViewsToDestroy.push_back(view);
 }
 
 void Device::DestroySemaphoreNoLock(vk::Semaphore semaphore) {
@@ -721,10 +1121,14 @@ void Device::FrameContext::Begin() {
 	}
 
 	for (auto& buffer : BuffersToDestroy) { device.destroyBuffer(buffer); }
+	for (auto& image : ImagesToDestroy) { device.destroyImage(image); }
+	for (auto& view : ImageViewsToDestroy) { device.destroyImageView(view); }
 	for (auto& allocation : MemoryToFree) { vmaFreeMemory(Parent._allocator, allocation); }
 	for (auto& semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
 	for (auto& semaphore : SemaphoresToRecycle) { Parent.ReleaseSemaphore(semaphore); }
 	BuffersToDestroy.clear();
+	ImagesToDestroy.clear();
+	ImageViewsToDestroy.clear();
 	MemoryToFree.clear();
 	SemaphoresToDestroy.clear();
 	SemaphoresToRecycle.clear();
