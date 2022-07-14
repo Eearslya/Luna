@@ -582,6 +582,16 @@ void Device::AddWaitSemaphore(CommandBufferType cbType,
 	AddWaitSemaphoreNoLock(GetQueueType(cbType), std::move(semaphore), stages, flush);
 }
 
+void Device::NextFrame() {
+	DeviceFlush();
+
+	EndFrameNoLock();
+	_currentFrameContext++;
+	if (_currentFrameContext >= _frameContexts.size()) { _currentFrameContext = 0; }
+
+	Frame().Begin();
+}
+
 void Device::Submit(CommandBufferHandle cmd, FenceHandle* fence, std::vector<SemaphoreHandle>* semaphores) {
 	DeviceLock();
 	SubmitNoLock(std::move(cmd), fence, semaphores);

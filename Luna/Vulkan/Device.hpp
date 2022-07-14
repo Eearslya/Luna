@@ -50,6 +50,7 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 
 	uint64_t AllocateCookie();
 	void AddWaitSemaphore(CommandBufferType cbType, SemaphoreHandle semaphore, vk::PipelineStageFlags stages, bool flush);
+	void NextFrame();
 	void Submit(CommandBufferHandle cmd,
 	            FenceHandle* fence                       = nullptr,
 	            std::vector<SemaphoreHandle>* semaphores = nullptr);
