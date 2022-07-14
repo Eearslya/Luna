@@ -3,6 +3,7 @@
 #include <set>
 #include <vulkan/vulkan.hpp>
 
+#include "Utility/IntrusiveHashMap.hpp"
 #include "Utility/IntrusivePtr.hpp"
 #include "Utility/ObjectPool.hpp"
 
@@ -45,6 +46,8 @@ using HandleCounter = SingleThreadCounter;
 template <typename T>
 using VulkanObjectPool = ObjectPool<T>;
 #endif
+template <typename T>
+using HashedObject = IntrusiveHashMapEnabled<T>;
 
 // Handle declarations.
 using BufferHandle        = IntrusivePtr<Buffer>;
