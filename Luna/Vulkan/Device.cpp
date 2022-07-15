@@ -127,7 +127,9 @@ Device::Device(const Context& context)
 		}
 	}
 
-	_shaderCompiler = std::make_unique<ShaderCompiler>();
+	_framebufferAllocator         = std::make_unique<FramebufferAllocator>(*this);
+	_shaderCompiler               = std::make_unique<ShaderCompiler>();
+	_transientAttachmentAllocator = std::make_unique<TransientAttachmentAllocator>(*this);
 }
 
 Device::~Device() noexcept {
@@ -136,6 +138,10 @@ Device::~Device() noexcept {
 	_swapchainAcquire.Reset();
 	_swapchainRelease.Reset();
 	_swapchainImages.clear();
+
+	_framebufferAllocator.reset();
+	_shaderCompiler.reset();
+	_transientAttachmentAllocator.reset();
 
 	vmaDestroyAllocator(_allocator);
 
@@ -571,6 +577,72 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& imageCI, const ImageIniti
 	return handle;
 }
 
+vk::Format Device::GetDefaultDepthFormat() const {
+	if (ImageFormatSupported(
+				vk::Format::eD32Sfloat, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eD32Sfloat;
+	}
+	if (ImageFormatSupported(
+				vk::Format::eX8D24UnormPack32, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eX8D24UnormPack32;
+	}
+	if (ImageFormatSupported(
+				vk::Format::eD16Unorm, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eD16Unorm;
+	}
+
+	return vk::Format::eUndefined;
+}
+
+vk::Format Device::GetDefaultDepthStencilFormat() const {
+	if (ImageFormatSupported(
+				vk::Format::eD24UnormS8Uint, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eD24UnormS8Uint;
+	}
+	if (ImageFormatSupported(
+				vk::Format::eD32SfloatS8Uint, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eD32SfloatS8Uint;
+	}
+
+	return vk::Format::eUndefined;
+}
+
+RenderPassInfo Device::GetStockRenderPass(StockRenderPass type) const {
+	RenderPassInfo info{.ColorAttachmentCount = 1, .ClearAttachments = 1, .StoreAttachments = 1};
+	info.ColorAttachments[0] = &_swapchainImages[_swapchainIndex]->GetView();
+
+	switch (type) {
+		case StockRenderPass::Depth: {
+			info.DSOps |= DepthStencilOpBits::ClearDepthStencil;
+			auto depth = RequestTransientAttachment(_swapchainImages[_swapchainIndex]->GetExtent(), GetDefaultDepthFormat());
+			info.DepthStencilAttachment = &(depth->GetView());
+			break;
+		}
+
+		case StockRenderPass::DepthStencil: {
+			info.DSOps |= DepthStencilOpBits::ClearDepthStencil;
+			auto depthStencil =
+				RequestTransientAttachment(_swapchainImages[_swapchainIndex]->GetExtent(), GetDefaultDepthStencilFormat());
+			info.DepthStencilAttachment = &(depthStencil->GetView());
+			break;
+		}
+
+		default:
+			break;
+	}
+
+	return info;
+}
+
+bool Device::ImageFormatSupported(vk::Format format, vk::FormatFeatureFlags features, vk::ImageTiling tiling) const {
+	const auto props = _gpu.getFormatProperties(format);
+	if (tiling == vk::ImageTiling::eOptimal) {
+		return (props.optimalTilingFeatures & features) == features;
+	} else {
+		return (props.linearTilingFeatures & features) == features;
+	}
+}
+
 DescriptorSetAllocator* Device::RequestDescriptorSetAllocator(const DescriptorSetLayout& layout,
                                                               const uint32_t* stagesForBindings) {
 	Hasher h;
@@ -711,6 +783,14 @@ CommandBufferHandle Device::RequestCommandBufferForThread(uint32_t threadIndex, 
 	return RequestCommandBufferNoLock(threadIndex, type);
 }
 
+ImageHandle Device::RequestTransientAttachment(const vk::Extent2D& extent,
+                                               vk::Format format,
+                                               uint32_t index,
+                                               vk::SampleCountFlagBits samples,
+                                               uint32_t layers) const {
+	return _transientAttachmentAllocator->RequestAttachment(extent, format, index, samples, layers);
+}
+
 uint64_t Device::AllocateCookie() {
 #ifdef LUNA_VULKAN_MT
 	return _cookie.fetch_add(16, std::memory_order_relaxed) + 16;
@@ -737,6 +817,10 @@ void Device::NextFrame() {
 	DeviceFlush();
 
 	EndFrameNoLock();
+
+	_framebufferAllocator->BeginFrame();
+	_transientAttachmentAllocator->BeginFrame();
+
 	_currentFrameContext++;
 	if (_currentFrameContext >= _frameContexts.size()) { _currentFrameContext = 0; }
 
@@ -909,6 +993,10 @@ void Device::FreeMemory(const VmaAllocation& allocation) {
 void Device::RecycleSemaphore(vk::Semaphore semaphore) {
 	DeviceLock();
 	RecycleSemaphoreNoLock(semaphore);
+}
+
+Framebuffer& Device::RequestFramebuffer(const RenderPassInfo& info) {
+	return _framebufferAllocator->RequestFramebuffer(info);
 }
 
 void Device::ResetFence(vk::Fence fence, bool observedWait) {
@@ -1297,6 +1385,9 @@ void Device::WaitIdleNoLock() {
 	if (!_frameContexts.empty()) { EndFrameNoLock(); }
 
 	_device.waitIdle();
+
+	if (_framebufferAllocator) { _framebufferAllocator->Clear(); }
+	if (_transientAttachmentAllocator) { _transientAttachmentAllocator->Clear(); }
 
 	for (auto& queue : _queueData) {
 		for (auto& semaphore : queue.WaitSemaphores) { _device.destroySemaphore(semaphore->Consume()); }

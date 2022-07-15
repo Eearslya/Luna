@@ -10,6 +10,7 @@
 #include "Vulkan/Context.hpp"
 #include "Vulkan/Device.hpp"
 #include "Vulkan/Image.hpp"
+#include "Vulkan/RenderPass.hpp"
 #include "Vulkan/Shader.hpp"
 #include "Vulkan/WSI.hpp"
 
@@ -127,6 +128,11 @@ int main(int argc, const char** argv) {
 			wsi.BeginFrame();
 
 			auto cmd = device.RequestCommandBuffer();
+
+			auto rpInfo           = device.GetStockRenderPass();
+			rpInfo.ClearColors[0] = vk::ClearColorValue(std::array<float, 4>{0.1f, 0.2f, 0.3f, 1.0f});
+			cmd->BeginRenderPass(rpInfo);
+			cmd->EndRenderPass();
 
 			device.Submit(cmd);
 

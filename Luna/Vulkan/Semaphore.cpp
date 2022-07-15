@@ -17,17 +17,19 @@ Semaphore::Semaphore(Device& device, vk::Semaphore semaphore, uint64_t value, co
 		: _device(device), _semaphore(semaphore), _value(value) {}
 
 Semaphore::~Semaphore() noexcept {
-	if (_internalSync) {
-		if (_value > 0 || IsSignalled()) {
-			_device.DestroySemaphoreNoLock(_semaphore);
+	if (_semaphore) {
+		if (_internalSync) {
+			if (_value > 0 || IsSignalled()) {
+				_device.DestroySemaphoreNoLock(_semaphore);
+			} else {
+				_device.RecycleSemaphoreNoLock(_semaphore);
+			}
 		} else {
-			_device.RecycleSemaphoreNoLock(_semaphore);
-		}
-	} else {
-		if (_value > 0 || IsSignalled()) {
-			_device.DestroySemaphore(_semaphore);
-		} else {
-			_device.RecycleSemaphore(_semaphore);
+			if (_value > 0 || IsSignalled()) {
+				_device.DestroySemaphore(_semaphore);
+			} else {
+				_device.RecycleSemaphore(_semaphore);
+			}
 		}
 	}
 }

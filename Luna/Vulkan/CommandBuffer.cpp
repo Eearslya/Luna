@@ -206,6 +206,59 @@ void CommandBuffer::GenerateMipmaps(const Image& image) {
 	}
 }
 
+void CommandBuffer::BeginRenderPass(const RenderPassInfo& info) {
+	_framebuffer                              = &_device.RequestFramebuffer(info);
+	_pipelineCompileInfo.CompatibleRenderPass = &_framebuffer->GetCompatibleRenderPass();
+	_pipelineCompileInfo.SubpassIndex         = 0;
+	_actualRenderPass                         = &_device.RequestRenderPass(info, false);
+
+	uint32_t attachment = 0;
+	for (attachment = 0; attachment < info.ColorAttachmentCount; ++attachment) {
+		_framebufferAttachments[attachment] = info.ColorAttachments[attachment];
+	}
+	if (info.DepthStencilAttachment) { _framebufferAttachments[attachment++] = info.DepthStencilAttachment; }
+
+	uint32_t clearValueCount = 0;
+	std::array<vk::ClearValue, MaxColorAttachments + 1> clearValues;
+	for (uint32_t i = 0; i < info.ColorAttachmentCount; ++i) {
+		if (info.ClearAttachments & (1u << i)) {
+			clearValues[i].setColor(info.ClearColors[i]);
+			clearValueCount = i + 1;
+		}
+		if (info.ColorAttachments[i]->GetImage().IsSwapchainImage()) {
+			_swapchainStages |= vk::PipelineStageFlagBits::eColorAttachmentOutput;
+		}
+	}
+	if (info.DepthStencilAttachment && (info.DSOps & DepthStencilOpBits::ClearDepthStencil)) {
+		clearValues[info.ColorAttachmentCount].setDepthStencil(info.ClearDepthStencil);
+		clearValueCount = info.ColorAttachmentCount + 1;
+	}
+
+	SetViewportScissor(info);
+
+	const vk::RenderPassBeginInfo rpBI(
+		_actualRenderPass->GetRenderPass(), _framebuffer->GetFramebuffer(), _scissor, clearValueCount, clearValues.data());
+	_commandBuffer.beginRenderPass(rpBI, vk::SubpassContents::eInline);
+
+	BeginGraphics();
+}
+
+void CommandBuffer::NextSubpass() {
+	_commandBuffer.nextSubpass(vk::SubpassContents::eInline);
+
+	_pipelineCompileInfo.SubpassIndex++;
+	_dirty |= CommandBufferDirtyFlagBits::StaticState;
+	_dirtyDescriptorSets = ~0u;
+}
+
+void CommandBuffer::EndRenderPass() {
+	_commandBuffer.endRenderPass();
+
+	_framebuffer                              = nullptr;
+	_pipelineCompileInfo.CompatibleRenderPass = nullptr;
+	_actualRenderPass                         = nullptr;
+}
+
 /* ==========
  * Static State
  * ========== */

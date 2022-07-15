@@ -51,6 +51,10 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 
 	BufferHandle CreateBuffer(const BufferCreateInfo& bufferCI, const void* initialData = nullptr);
 	ImageHandle CreateImage(const ImageCreateInfo& imageCI, const ImageInitialData* initialData = nullptr);
+	vk::Format GetDefaultDepthFormat() const;
+	vk::Format GetDefaultDepthStencilFormat() const;
+	RenderPassInfo GetStockRenderPass(StockRenderPass type = StockRenderPass::ColorOnly) const;
+	bool ImageFormatSupported(vk::Format format, vk::FormatFeatureFlags features, vk::ImageTiling tiling) const;
 	DescriptorSetAllocator* RequestDescriptorSetAllocator(const DescriptorSetLayout& layout,
 	                                                      const uint32_t* stagesForBindings);
 	PipelineLayout* RequestPipelineLayout(const ProgramResourceLayout& layout);
@@ -65,6 +69,11 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
 	Shader* RequestShader(size_t codeSize, const void* code);
 	Shader* RequestShader(vk::ShaderStageFlagBits stage, const std::string& glsl);
+	ImageHandle RequestTransientAttachment(const vk::Extent2D& extent,
+	                                       vk::Format format,
+	                                       uint32_t index                  = 0,
+	                                       vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1,
+	                                       uint32_t layers                 = 1) const;
 
 	CommandBufferHandle RequestCommandBuffer(CommandBufferType type = CommandBufferType::Generic);
 	CommandBufferHandle RequestCommandBufferForThread(uint32_t threadIndex,
@@ -141,6 +150,7 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	void DestroySemaphore(vk::Semaphore semaphore);
 	void FreeMemory(const VmaAllocation& allocation);
 	void RecycleSemaphore(vk::Semaphore semaphore);
+	Framebuffer& RequestFramebuffer(const RenderPassInfo& info);
 	void ResetFence(vk::Fence fence, bool observedWait);
 
 	CommandBufferHandle RequestCommandBufferNoLock(uint32_t threadIndex, CommandBufferType type);
@@ -179,7 +189,9 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	VmaAllocator _allocator;
 	std::vector<vk::Fence> _availableFences;
 	std::vector<vk::Semaphore> _availableSemaphores;
+	std::unique_ptr<FramebufferAllocator> _framebufferAllocator;
 	std::unique_ptr<ShaderCompiler> _shaderCompiler;
+	std::unique_ptr<TransientAttachmentAllocator> _transientAttachmentAllocator;
 
 #ifdef LUNA_VULKAN_MT
 	std::atomic_uint64_t _cookie;

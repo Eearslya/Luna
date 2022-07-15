@@ -48,6 +48,7 @@ class Semaphore;
 struct SemaphoreDeleter;
 class Shader;
 class ShaderCompiler;
+class TransientAttachmentAllocator;
 class WSI;
 class WSIPlatform;
 

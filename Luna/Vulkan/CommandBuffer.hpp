@@ -199,6 +199,10 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void CopyBufferToImage(const Image& image, const Buffer& buffer, const std::vector<vk::BufferImageCopy>& blits);
 	void GenerateMipmaps(const Image& image);
 
+	void BeginRenderPass(const RenderPassInfo& info);
+	void NextSubpass();
+	void EndRenderPass();
+
 	void ClearRenderState();
 	void SetOpaqueState();
 	void SetTransparentSpriteState();
