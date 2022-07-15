@@ -15,6 +15,7 @@
 #include "ShaderCompiler.hpp"
 #include "TextureFormat.hpp"
 #include "Utility/Log.hpp"
+#include "WSI.hpp"
 
 #ifdef LUNA_VULKAN_MT
 static uint32_t GetThreadIndex() {
@@ -131,6 +132,10 @@ Device::Device(const Context& context)
 
 Device::~Device() noexcept {
 	WaitIdle();
+
+	_swapchainAcquire.Reset();
+	_swapchainRelease.Reset();
+	_swapchainImages.clear();
 
 	vmaDestroyAllocator(_allocator);
 
@@ -670,6 +675,12 @@ Sampler* Device::RequestSampler(StockSampler type) {
 	return _stockSamplers[static_cast<int>(type)];
 }
 
+SemaphoreHandle Device::RequestSemaphore(const std::string& debugName) {
+	DeviceLock();
+	auto semaphore = AllocateSemaphore();
+	return SemaphoreHandle(_semaphorePool.Allocate(*this, semaphore, false, debugName));
+}
+
 Shader* Device::RequestShader(size_t codeSize, const void* code) {
 	Hasher h;
 	h(codeSize);
@@ -715,6 +726,11 @@ void Device::AddWaitSemaphore(CommandBufferType cbType,
                               bool flush) {
 	DeviceLock();
 	AddWaitSemaphoreNoLock(GetQueueType(cbType), std::move(semaphore), stages, flush);
+}
+
+void Device::EndFrame() {
+	DeviceFlush();
+	EndFrameNoLock();
 }
 
 void Device::NextFrame() {
@@ -825,6 +841,10 @@ void Device::CreateTimelineSemaphores() {
 	}
 }
 
+SemaphoreHandle Device::ConsumeReleaseSemaphore() {
+	return std::move(_swapchainRelease);
+}
+
 void Device::DestroyTimelineSemaphores() {
 	if (!_gpuInfo.AvailableFeatures.TimelineSemaphore.timelineSemaphore) { return; }
 
@@ -894,6 +914,49 @@ void Device::RecycleSemaphore(vk::Semaphore semaphore) {
 void Device::ResetFence(vk::Fence fence, bool observedWait) {
 	DeviceLock();
 	ResetFenceNoLock(fence, observedWait);
+}
+
+void Device::SetAcquireSemaphore(uint32_t imageIndex, SemaphoreHandle& semaphore) {
+	_swapchainAcquire         = std::move(semaphore);
+	_swapchainAcquireConsumed = false;
+	_swapchainIndex           = imageIndex;
+
+	if (_swapchainAcquire) { _swapchainAcquire->SetInternalSync(); }
+}
+
+void Device::SetupSwapchain(WSI& wsi) {
+	DeviceFlush();
+	WaitIdleNoLock();
+
+	const auto extent     = wsi.GetExtent();
+	const auto format     = wsi.GetFormat();
+	const auto& images    = wsi.GetImages();
+	const auto createInfo = ImageCreateInfo::RenderTarget(extent.width, extent.height, format);
+	_swapchainImages.clear();
+	_swapchainImages.reserve(images.size());
+
+	for (size_t i = 0; i < images.size(); ++i) {
+		const auto& image = images[i];
+		Image* img        = _imagePool.Allocate(*this, image, createInfo);
+		ImageHandle handle(img);
+		handle->SetInternalSync();
+		handle->SetSwapchainLayout(vk::ImageLayout::ePresentSrcKHR);
+
+		const ImageViewCreateInfo viewInfo{.Image = img, .Format = format, .Type = vk::ImageViewType::e2D};
+		const vk::ImageViewCreateInfo viewCI({},
+		                                     img->GetImage(),
+		                                     vk::ImageViewType::e2D,
+		                                     format,
+		                                     vk::ComponentMapping(),
+		                                     vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+
+		auto imageView = _device.createImageView(viewCI);
+		ImageViewHandle view(_imageViewPool.Allocate(*this, imageView, viewInfo));
+		handle->SetDefaultView(view);
+		view->SetInternalSync();
+
+		_swapchainImages.push_back(handle);
+	}
 }
 
 void Device::DestroyBufferNoLock(vk::Buffer buffer) {
@@ -1060,46 +1123,42 @@ void Device::SubmitQueue(QueueType queueType, InternalFence* submitFence, std::v
 	for (auto& cmdBufHandle : submissions) {
 		const vk::PipelineStageFlags swapchainStages = cmdBufHandle->GetSwapchainStages();
 
-		/*
 		if (swapchainStages && !_swapchainAcquireConsumed) {
-		  if (_swapchainAcquire && _swapchainAcquire->GetSemaphore()) {
-		    if (!batches[batch].CommandBuffers.empty() || !batches[batch].SignalSemaphores.empty()) { ++batch; }
+			if (_swapchainAcquire && _swapchainAcquire->GetSemaphore()) {
+				if (!batches[batch].CommandBuffers.empty() || !batches[batch].SignalSemaphores.empty()) { ++batch; }
 
-		    const auto value = _swapchainAcquire->GetTimelineValue();
-		    batches[batch].WaitSemaphores.push_back(_swapchainAcquire->GetSemaphore());
-		    batches[batch].WaitStages.push_back(swapchainStages);
-		    batches[batch].WaitValues.push_back(value);
+				const auto value = _swapchainAcquire->GetTimelineValue();
+				batches[batch].WaitSemaphores.push_back(_swapchainAcquire->GetSemaphore());
+				batches[batch].WaitStages.push_back(swapchainStages);
+				batches[batch].WaitValues.push_back(value);
 
-		    if (!value) { Frame().SemaphoresToRecycle.push_back(_swapchainAcquire->GetSemaphore()); }
+				if (!value) { Frame().SemaphoresToRecycle.push_back(_swapchainAcquire->GetSemaphore()); }
 
-		    _swapchainAcquire->Consume();
-		    _swapchainAcquireConsumed = true;
-		    _swapchainAcquire.Reset();
-		  }
+				_swapchainAcquire->Consume();
+				_swapchainAcquireConsumed = true;
+				_swapchainAcquire.Reset();
+			}
 
-		  if (!batches[batch].SignalSemaphores.empty()) {
-		    ++batch;
-		    assert(batch < MaxSubmissions);
-		  }
+			if (!batches[batch].SignalSemaphores.empty()) {
+				++batch;
+				assert(batch < MaxSubmissions);
+			}
 
-		  batches[batch].CommandBuffers.push_back(cmdBufHandle->GetCommandBuffer());
+			batches[batch].CommandBuffers.push_back(cmdBufHandle->GetCommandBuffer());
 
-		  vk::Semaphore release            = AllocateSemaphore();
-		  _swapchainRelease                = SemaphoreHandle(_semaphorePool.Allocate(*this, release, true));
-		  _swapchainRelease->_internalSync = true;
-		  batches[batch].SignalSemaphores.push_back(release);
-		  batches[batch].SignalValues.push_back(0);
+			vk::Semaphore release = AllocateSemaphore();
+			_swapchainRelease     = SemaphoreHandle(_semaphorePool.Allocate(*this, release, true));
+			_swapchainRelease->SetInternalSync();
+			batches[batch].SignalSemaphores.push_back(release);
+			batches[batch].SignalValues.push_back(0);
 		} else {
-		*/
-		if (!batches[batch].SignalSemaphores.empty()) {
-			++batch;
-			assert(batch < MaxSubmissions);
-		}
+			if (!batches[batch].SignalSemaphores.empty()) {
+				++batch;
+				assert(batch < MaxSubmissions);
+			}
 
-		batches[batch].CommandBuffers.push_back(cmdBufHandle->GetCommandBuffer());
-		/*
-	}
-	*/
+			batches[batch].CommandBuffers.push_back(cmdBufHandle->GetCommandBuffer());
+		}
 	}
 	submissions.clear();
 

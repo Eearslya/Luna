@@ -13,4 +13,5 @@ target_sources(Luna PRIVATE
 	Semaphore.cpp
 	Shader.cpp
 	ShaderCompiler.cpp
-	TextureFormat.cpp)
+	TextureFormat.cpp
+	WSI.cpp)

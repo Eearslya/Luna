@@ -69,6 +69,18 @@ void ImageDeleter::operator()(Image* image) {
 	image->_device._imagePool.Free(image);
 }
 
+Image::Image(Device& device, vk::Image image, const ImageCreateInfo& imageCI)
+		: Cookie(device),
+			_device(device),
+			_image(image),
+			_allocation(nullptr),
+			_createInfo(imageCI),
+			_imageOwned(false),
+			_memoryOwned(false) {
+	_accessFlags = ImageUsageToAccess(_createInfo.Usage);
+	_stageFlags  = ImageUsageToStages(_createInfo.Usage);
+}
+
 Image::Image(Device& device,
              vk::Image image,
              vk::ImageView defaultView,

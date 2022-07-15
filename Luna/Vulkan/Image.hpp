@@ -128,6 +128,23 @@ struct ImageCreateInfo {
 		                       .MiscFlags     = mipmaps ? ImageCreateFlagBits::GenerateMipmaps : ImageCreateFlags{}};
 	}
 
+	static ImageCreateInfo RenderTarget(uint32_t width, uint32_t height, vk::Format format) {
+		return {.Domain        = ImageDomain::Physical,
+		        .Format        = format,
+		        .InitialLayout = FormatHasDepthOrStencil(format) ? vk::ImageLayout::eDepthStencilAttachmentOptimal
+		                                                         : vk::ImageLayout::eColorAttachmentOptimal,
+		        .Samples       = vk::SampleCountFlagBits::e1,
+		        .Type          = vk::ImageType::e2D,
+		        .Usage         = (FormatHasDepthOrStencil(format) ? vk::ImageUsageFlagBits::eDepthStencilAttachment
+		                                                          : vk::ImageUsageFlagBits::eColorAttachment),
+		        .Width         = width,
+		        .Height        = height,
+		        .Depth         = 1,
+		        .ArrayLayers   = 1,
+		        .MipLevels     = 1,
+		        .Flags         = {}};
+	}
+
 	static ImageCreateInfo TransientRenderTarget(uint32_t width, uint32_t height, vk::Format format) {
 		return {.Domain = ImageDomain::Transient,
 		        .Format = format,
@@ -255,6 +272,9 @@ class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>, pu
 		return _swapchainLayout != vk::ImageLayout::eUndefined;
 	}
 
+	void SetDefaultView(ImageViewHandle view) {
+		_view = view;
+	}
 	void SetSwapchainLayout(vk::ImageLayout layout) {
 		_swapchainLayout = layout;
 	}
@@ -263,6 +283,7 @@ class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>, pu
 	void DisownMemory();
 
  private:
+	Image(Device& device, vk::Image image, const ImageCreateInfo& imageCI);
 	Image(Device& device,
 	      vk::Image image,
 	      vk::ImageView defaultView,

@@ -48,6 +48,8 @@ class Semaphore;
 struct SemaphoreDeleter;
 class Shader;
 class ShaderCompiler;
+class WSI;
+class WSIPlatform;
 
 // Typedefs and usings.
 #ifdef LUNA_VULKAN_MT

@@ -32,6 +32,7 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	friend class RenderPass;
 	friend class Semaphore;
 	friend struct SemaphoreDeleter;
+	friend class WSI;
 
 	Device(const Context& context);
 	Device(const Device&)            = delete;
@@ -61,6 +62,7 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	Program* RequestProgram(const std::string& vertexGlsl, const std::string& fragmentGlsl);
 	Sampler* RequestSampler(const SamplerCreateInfo& createInfo);
 	Sampler* RequestSampler(StockSampler type);
+	SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
 	Shader* RequestShader(size_t codeSize, const void* code);
 	Shader* RequestShader(vk::ShaderStageFlagBits stage, const std::string& glsl);
 
@@ -70,6 +72,7 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 
 	uint64_t AllocateCookie();
 	void AddWaitSemaphore(CommandBufferType cbType, SemaphoreHandle semaphore, vk::PipelineStageFlags stages, bool flush);
+	void EndFrame();
 	void NextFrame();
 	void Submit(CommandBufferHandle cmd,
 	            FenceHandle* fence                       = nullptr,
@@ -123,11 +126,14 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	vk::Semaphore AllocateSemaphore();
 	void CreateStockSamplers();
 	void CreateTimelineSemaphores();
+	SemaphoreHandle ConsumeReleaseSemaphore();
 	void DestroyTimelineSemaphores();
 	FrameContext& Frame();
 	QueueType GetQueueType(CommandBufferType cbType) const;
 	void ReleaseFence(vk::Fence fence);
 	void ReleaseSemaphore(vk::Semaphore semaphore);
+	void SetAcquireSemaphore(uint32_t imageIndex, SemaphoreHandle& semaphore);
+	void SetupSwapchain(WSI& wsi);
 
 	void DestroyBuffer(vk::Buffer buffer);
 	void DestroyImage(vk::Image image);
@@ -188,6 +194,12 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 		uint32_t Counter = 0;
 	} _lock;
 #endif
+
+	SemaphoreHandle _swapchainAcquire;
+	bool _swapchainAcquireConsumed = false;
+	std::vector<ImageHandle> _swapchainImages;
+	uint32_t _swapchainIndex;
+	SemaphoreHandle _swapchainRelease;
 
 	VulkanObjectPool<Buffer> _bufferPool;
 	VulkanObjectPool<CommandBuffer> _commandBufferPool;
