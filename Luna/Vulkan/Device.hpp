@@ -20,12 +20,16 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
  public:
 	friend class Buffer;
 	friend struct BufferDeleter;
+	friend class CommandBuffer;
+	friend struct CommandBufferDeleter;
 	friend class Fence;
 	friend struct FenceDeleter;
+	friend class FramebufferAllocator;
 	friend class Image;
 	friend struct ImageDeleter;
 	friend class ImageView;
 	friend struct ImageViewDeleter;
+	friend class RenderPass;
 	friend class Semaphore;
 	friend struct SemaphoreDeleter;
 
@@ -40,9 +44,25 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	const ExtensionInfo& GetExtensionInfo() const {
 		return _extensions;
 	}
+	const GPUInfo& GetGPUInfo() const {
+		return _gpuInfo;
+	}
 
 	BufferHandle CreateBuffer(const BufferCreateInfo& bufferCI, const void* initialData = nullptr);
 	ImageHandle CreateImage(const ImageCreateInfo& imageCI, const ImageInitialData* initialData = nullptr);
+	DescriptorSetAllocator* RequestDescriptorSetAllocator(const DescriptorSetLayout& layout,
+	                                                      const uint32_t* stagesForBindings);
+	PipelineLayout* RequestPipelineLayout(const ProgramResourceLayout& layout);
+	Program* RequestProgram(size_t compCodeSize, const void* compCode);
+	Program* RequestProgram(size_t vertCodeSize, const void* vertCode, size_t fragCodeSize, const void* fragCode);
+	Program* RequestProgram(Shader* compute);
+	Program* RequestProgram(const std::string& computeGlsl);
+	Program* RequestProgram(Shader* vertex, Shader* fragment);
+	Program* RequestProgram(const std::string& vertexGlsl, const std::string& fragmentGlsl);
+	Sampler* RequestSampler(const SamplerCreateInfo& createInfo);
+	Sampler* RequestSampler(StockSampler type);
+	Shader* RequestShader(size_t codeSize, const void* code);
+	Shader* RequestShader(vk::ShaderStageFlagBits stage, const std::string& glsl);
 
 	CommandBufferHandle RequestCommandBuffer(CommandBufferType type = CommandBufferType::Generic);
 	CommandBufferHandle RequestCommandBufferForThread(uint32_t threadIndex,
@@ -101,6 +121,7 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 
 	vk::Fence AllocateFence();
 	vk::Semaphore AllocateSemaphore();
+	void CreateStockSamplers();
 	void CreateTimelineSemaphores();
 	void DestroyTimelineSemaphores();
 	FrameContext& Frame();
@@ -117,6 +138,7 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	void ResetFence(vk::Fence fence, bool observedWait);
 
 	CommandBufferHandle RequestCommandBufferNoLock(uint32_t threadIndex, CommandBufferType type);
+	RenderPass& RequestRenderPass(const RenderPassInfo& info, bool compatible = false);
 
 	void DestroyBufferNoLock(vk::Buffer buffer);
 	void DestroyImageNoLock(vk::Image image);
@@ -151,6 +173,7 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	VmaAllocator _allocator;
 	std::vector<vk::Fence> _availableFences;
 	std::vector<vk::Semaphore> _availableSemaphores;
+	std::unique_ptr<ShaderCompiler> _shaderCompiler;
 
 #ifdef LUNA_VULKAN_MT
 	std::atomic_uint64_t _cookie;
@@ -172,6 +195,15 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	VulkanObjectPool<Image> _imagePool;
 	VulkanObjectPool<ImageView> _imageViewPool;
 	VulkanObjectPool<Semaphore> _semaphorePool;
+
+	VulkanCache<DescriptorSetAllocator> _descriptorSetAllocators;
+	VulkanCache<PipelineLayout> _pipelineLayouts;
+	VulkanCache<Program> _programs;
+	VulkanCache<RenderPass> _renderPasses;
+	VulkanCache<Sampler> _samplers;
+	VulkanCache<Shader> _shaders;
+
+	std::array<Sampler*, StockSamplerCount> _stockSamplers;
 };
 }  // namespace Vulkan
 }  // namespace Luna

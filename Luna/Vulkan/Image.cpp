@@ -29,6 +29,16 @@ ImageView::~ImageView() noexcept {
 	}
 }
 
+vk::ImageView ImageView::GetRenderTargetView(uint32_t layer) const {
+	if (_createInfo.Image->GetCreateInfo().Domain == ImageDomain::Transient) { return _view; }
+
+	if (_renderTargetViews.empty()) {
+		return _view;
+	} else {
+		return _renderTargetViews[layer];
+	}
+}
+
 vk::ImageViewType ImageCreateInfo::GetImageViewType() const {
 	uint32_t layers    = ArrayLayers;
 	uint32_t baseLayer = 0;

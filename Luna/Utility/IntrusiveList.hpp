@@ -76,6 +76,11 @@ class IntrusiveList {
 		return _head == nullptr;
 	}
 
+	void Clear() {
+		_head = nullptr;
+		_tail = nullptr;
+	}
+
 	Iterator Erase(Iterator it) {
 		auto* node = it.Get();
 		auto* next = node->Next;

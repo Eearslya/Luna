@@ -4,6 +4,7 @@
 
 #include "Common.hpp"
 #include "Cookie.hpp"
+#include "Format.hpp"
 #include "InternalSync.hpp"
 #include "Utility/EnumClass.hpp"
 
@@ -126,6 +127,20 @@ struct ImageCreateInfo {
 		                       .MipLevels     = mipmaps ? 0u : 1u,
 		                       .MiscFlags     = mipmaps ? ImageCreateFlagBits::GenerateMipmaps : ImageCreateFlags{}};
 	}
+
+	static ImageCreateInfo TransientRenderTarget(uint32_t width, uint32_t height, vk::Format format) {
+		return {.Domain = ImageDomain::Transient,
+		        .Format = format,
+		        .Type   = vk::ImageType::e2D,
+		        .Usage  = (FormatHasDepthOrStencil(format) ? vk::ImageUsageFlagBits::eDepthStencilAttachment
+		                                                   : vk::ImageUsageFlagBits::eColorAttachment) |
+		                 vk::ImageUsageFlagBits::eInputAttachment,
+		        .Width       = width,
+		        .Height      = height,
+		        .Depth       = 1,
+		        .ArrayLayers = 1,
+		        .MipLevels   = 1};
+	}
 };
 
 struct ImageViewCreateInfo {
@@ -150,6 +165,24 @@ class ImageView : public IntrusivePtrEnabled<ImageView, ImageViewDeleter, Handle
 
 	ImageView(Device& device, vk::ImageView view, const ImageViewCreateInfo& viewCI);
 	~ImageView() noexcept;
+
+	const ImageViewCreateInfo& GetCreateInfo() const {
+		return _createInfo;
+	}
+	vk::ImageView GetFloatView() const {
+		return _depthView ? _depthView : _view;
+	}
+	const Image& GetImage() const {
+		return *_createInfo.Image;
+	}
+	vk::ImageView GetImageView() const {
+		return _view;
+	}
+	vk::ImageView GetIntegerView() const {
+		return _stencilView ? _stencilView : _view;
+	}
+
+	vk::ImageView GetRenderTargetView(uint32_t layer) const;
 
 	void SetAltViews(vk::ImageView depth, vk::ImageView stencil) {
 		_depthView   = depth;
@@ -194,20 +227,36 @@ class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>, pu
 	const ImageCreateInfo& GetCreateInfo() const {
 		return _createInfo;
 	}
+	vk::Extent2D GetExtent(uint32_t mip = 0) const {
+		return vk::Extent2D(std::max(1u, _createInfo.Width >> mip), std::max(1u, _createInfo.Height >> mip));
+	}
 	vk::Image GetImage() const {
 		return _image;
 	}
 	vk::ImageLayout GetLayout(vk::ImageLayout optimal) const {
 		return _layoutType == ImageLayoutType::Optimal ? optimal : vk::ImageLayout::eGeneral;
 	}
+	ImageLayoutType GetLayoutType() const {
+		return _layoutType;
+	}
 	vk::PipelineStageFlags GetStageFlags() const {
 		return _stageFlags;
+	}
+	vk::ImageLayout GetSwapchainLayout() const {
+		return _swapchainLayout;
 	}
 	ImageView& GetView() {
 		return *_view;
 	}
 	const ImageView& GetView() const {
 		return *_view;
+	}
+	bool IsSwapchainImage() const {
+		return _swapchainLayout != vk::ImageLayout::eUndefined;
+	}
+
+	void SetSwapchainLayout(vk::ImageLayout layout) {
+		_swapchainLayout = layout;
 	}
 
 	void DisownImage();
@@ -232,6 +281,7 @@ class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>, pu
 	vk::PipelineStageFlags _stageFlags = {};
 	bool _imageOwned                   = true;
 	bool _memoryOwned                  = true;
+	vk::ImageLayout _swapchainLayout   = vk::ImageLayout::eUndefined;
 };
 }  // namespace Vulkan
 }  // namespace Luna

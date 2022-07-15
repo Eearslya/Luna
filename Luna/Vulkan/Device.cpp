@@ -4,10 +4,15 @@
 #include "CommandBuffer.hpp"
 #include "CommandPool.hpp"
 #include "Context.hpp"
+#include "DescriptorSet.hpp"
 #include "Fence.hpp"
 #include "Format.hpp"
 #include "Image.hpp"
+#include "RenderPass.hpp"
+#include "Sampler.hpp"
 #include "Semaphore.hpp"
+#include "Shader.hpp"
+#include "ShaderCompiler.hpp"
 #include "TextureFormat.hpp"
 #include "Utility/Log.hpp"
 
@@ -106,6 +111,7 @@ Device::Device(const Context& context)
 		}
 	}
 
+	CreateStockSamplers();
 	CreateTimelineSemaphores();
 
 	// Create our frame contexts.
@@ -119,6 +125,8 @@ Device::Device(const Context& context)
 			_frameContexts.emplace_back(std::move(frame));
 		}
 	}
+
+	_shaderCompiler = std::make_unique<ShaderCompiler>();
 }
 
 Device::~Device() noexcept {
@@ -558,6 +566,131 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& imageCI, const ImageIniti
 	return handle;
 }
 
+DescriptorSetAllocator* Device::RequestDescriptorSetAllocator(const DescriptorSetLayout& layout,
+                                                              const uint32_t* stagesForBindings) {
+	Hasher h;
+	h.Data(sizeof(DescriptorSetLayout), &layout);
+	h.Data(sizeof(uint32_t) * MaxDescriptorBindings, stagesForBindings);
+	const auto hash = h.Get();
+
+	auto* ret = _descriptorSetAllocators.Find(hash);
+	if (!ret) { ret = _descriptorSetAllocators.EmplaceYield(hash, hash, *this, layout, stagesForBindings); }
+
+	return ret;
+}
+
+PipelineLayout* Device::RequestPipelineLayout(const ProgramResourceLayout& layout) {
+	const auto hash = Hasher(layout).Get();
+
+	auto* ret = _pipelineLayouts.Find(hash);
+	if (!ret) { ret = _pipelineLayouts.EmplaceYield(hash, hash, *this, layout); }
+
+	return ret;
+}
+
+Program* Device::RequestProgram(size_t compCodeSize, const void* compCode) {
+	auto comp = RequestShader(compCodeSize, compCode);
+
+	return RequestProgram(comp);
+}
+
+Program* Device::RequestProgram(size_t vertCodeSize, const void* vertCode, size_t fragCodeSize, const void* fragCode) {
+	auto vert = RequestShader(vertCodeSize, vertCode);
+	auto frag = RequestShader(fragCodeSize, fragCode);
+
+	return RequestProgram(vert, frag);
+}
+
+Program* Device::RequestProgram(Shader* compute) {
+	Hasher h;
+	h(compute->GetHash());
+	const auto hash = h.Get();
+
+	Program* ret = _programs.Find(hash);
+	if (!ret) {
+		try {
+			ret = _programs.EmplaceYield(hash, hash, *this, compute);
+		} catch (const std::exception& e) {
+			Log::Error("Vulkan", "Failed to create compute program: {}", e.what());
+			return nullptr;
+		}
+	}
+
+	return ret;
+}
+
+Program* Device::RequestProgram(const std::string& computeGlsl) {
+	auto comp = RequestShader(vk::ShaderStageFlagBits::eCompute, computeGlsl);
+	if (comp) {
+		return RequestProgram(comp);
+	} else {
+		return nullptr;
+	}
+}
+
+Program* Device::RequestProgram(Shader* vertex, Shader* fragment) {
+	Hasher h;
+	h(vertex->GetHash());
+	h(fragment->GetHash());
+	const auto hash = h.Get();
+
+	Program* ret = _programs.Find(hash);
+	if (!ret) {
+		try {
+			ret = _programs.EmplaceYield(hash, hash, *this, vertex, fragment);
+		} catch (const std::exception& e) {
+			Log::Error("Vulkan::Device", "Failed to create program: {}", e.what());
+			return nullptr;
+		}
+	}
+
+	return ret;
+}
+
+Program* Device::RequestProgram(const std::string& vertexGlsl, const std::string& fragmentGlsl) {
+	auto vert = RequestShader(vk::ShaderStageFlagBits::eVertex, vertexGlsl);
+	auto frag = RequestShader(vk::ShaderStageFlagBits::eFragment, fragmentGlsl);
+	if (vert && frag) {
+		return RequestProgram(vert, frag);
+	} else {
+		return nullptr;
+	}
+}
+
+Sampler* Device::RequestSampler(const SamplerCreateInfo& createInfo) {
+	Hasher h(createInfo);
+	const auto hash = h.Get();
+	auto* ret       = _samplers.Find(hash);
+	if (!ret) { ret = _samplers.EmplaceYield(hash, hash, *this, createInfo); }
+
+	return ret;
+}
+
+Sampler* Device::RequestSampler(StockSampler type) {
+	return _stockSamplers[static_cast<int>(type)];
+}
+
+Shader* Device::RequestShader(size_t codeSize, const void* code) {
+	Hasher h;
+	h(codeSize);
+	h.Data(codeSize, code);
+	const auto hash = h.Get();
+
+	auto* ret = _shaders.Find(hash);
+	if (!ret) { ret = _shaders.EmplaceYield(hash, hash, *this, codeSize, code); }
+
+	return ret;
+}
+
+Shader* Device::RequestShader(vk::ShaderStageFlagBits stage, const std::string& glsl) {
+	auto spirv = _shaderCompiler->Compile(stage, glsl);
+	if (spirv.has_value()) {
+		return RequestShader(spirv.value().size() * sizeof(uint32_t), spirv.value().data());
+	} else {
+		return nullptr;
+	}
+}
+
 CommandBufferHandle Device::RequestCommandBuffer(CommandBufferType type) {
 	return RequestCommandBufferForThread(GetThreadIndex(), type);
 }
@@ -634,6 +767,50 @@ vk::Semaphore Device::AllocateSemaphore() {
 	_availableSemaphores.pop_back();
 
 	return semaphore;
+}
+
+void Device::CreateStockSamplers() {
+	for (int i = 0; i < StockSamplerCount; ++i) {
+		const auto type = static_cast<StockSampler>(i);
+		SamplerCreateInfo info{};
+		info.MinLod = 0.0f;
+		info.MaxLod = 8.0f;
+
+		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::DefaultGeometryFilterWrap ||
+		    type == StockSampler::LinearClamp || type == StockSampler::LinearShadow || type == StockSampler::LinearWrap ||
+		    type == StockSampler::TrilinearClamp || type == StockSampler::TrilinearWrap) {
+			info.MagFilter = vk::Filter::eLinear;
+			info.MinFilter = vk::Filter::eLinear;
+		}
+
+		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::DefaultGeometryFilterWrap ||
+		    type == StockSampler::LinearClamp || type == StockSampler::TrilinearClamp ||
+		    type == StockSampler::TrilinearWrap) {
+			info.MipmapMode = vk::SamplerMipmapMode::eLinear;
+		}
+
+		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::LinearClamp ||
+		    type == StockSampler::LinearShadow || type == StockSampler::NearestClamp ||
+		    type == StockSampler::NearestShadow || type == StockSampler::TrilinearClamp) {
+			info.AddressModeU = vk::SamplerAddressMode::eClampToEdge;
+			info.AddressModeV = vk::SamplerAddressMode::eClampToEdge;
+			info.AddressModeW = vk::SamplerAddressMode::eClampToEdge;
+		}
+
+		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::DefaultGeometryFilterWrap) {
+			if (_gpuInfo.EnabledFeatures.Features.samplerAnisotropy) {
+				info.AnisotropyEnable = VK_TRUE;
+				info.MaxAnisotropy    = std::min(_gpuInfo.Properties.Properties.limits.maxSamplerAnisotropy, 16.0f);
+			}
+		}
+
+		if (type == StockSampler::LinearShadow || type == StockSampler::NearestShadow) {
+			info.CompareEnable = VK_TRUE;
+			info.CompareOp     = vk::CompareOp::eLessOrEqual;
+		}
+
+		_stockSamplers[i] = RequestSampler(info);
+	}
 }
 
 void Device::CreateTimelineSemaphores() {
@@ -750,6 +927,14 @@ void Device::ResetFenceNoLock(vk::Fence fence, bool observedWait) {
 	} else {
 		Frame().FencesToRecycle.push_back(fence);
 	}
+}
+
+RenderPass& Device::RequestRenderPass(const RenderPassInfo& info, bool compatible) {
+	const auto hash = HashRenderPassInfo(info, compatible);
+	auto* ret       = _renderPasses.Find(hash);
+	if (!ret) { ret = _renderPasses.EmplaceYield(hash, hash, *this, info); }
+
+	return *ret;
 }
 
 CommandBufferHandle Device::RequestCommandBufferNoLock(uint32_t threadIndex, CommandBufferType type) {

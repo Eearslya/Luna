@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <memory>
+#include <type_traits>
 
 namespace Luna {
 class SingleThreadCounter {
@@ -15,7 +16,7 @@ class SingleThreadCounter {
 	}
 
  private:
-	size_t _count = 1;
+	std::size_t _count = 1;
 };
 
 class MultiThreadCounter {
@@ -42,14 +43,13 @@ class IntrusivePtr;
 template <typename T, typename Deleter = std::default_delete<T>, typename ReferenceOps = SingleThreadCounter>
 class IntrusivePtrEnabled {
  public:
-	using IntrusivePtrT        = IntrusivePtr<T>;
 	using EnabledBaseT         = T;
 	using EnabledDeleterT      = Deleter;
 	using EnabledReferenceOpsT = ReferenceOps;
+	using IntrusivePtrT        = IntrusivePtr<T>;
 
-	IntrusivePtrEnabled()                                      = default;
-	IntrusivePtrEnabled(const IntrusivePtrEnabled&)            = delete;
-	IntrusivePtrEnabled& operator=(const IntrusivePtrEnabled&) = delete;
+	IntrusivePtrEnabled()                   = default;
+	virtual ~IntrusivePtrEnabled() noexcept = default;
 
 	void AddReference() {
 		_refCount.AddReference();
@@ -60,7 +60,7 @@ class IntrusivePtrEnabled {
 	}
 
  protected:
-	IntrusivePtr<T> ReferenceFromThis();
+	IntrusivePtrT ReferenceFromThis();
 
  private:
 	ReferenceOps _refCount;
@@ -68,10 +68,10 @@ class IntrusivePtrEnabled {
 
 template <typename T>
 class IntrusivePtr {
- public:
 	template <typename U>
 	friend class IntrusivePtr;
 
+ public:
 	IntrusivePtr() = default;
 	explicit IntrusivePtr(T* ptr) : _data(ptr) {}
 	IntrusivePtr(const IntrusivePtr& other) {
@@ -88,11 +88,17 @@ class IntrusivePtr {
 	IntrusivePtr(IntrusivePtr<U>&& other) {
 		*this = std::move(other);
 	}
+	~IntrusivePtr() noexcept {
+		Reset();
+	}
+
 	IntrusivePtr& operator=(const IntrusivePtr& other) {
+		using RefBaseT =
+			IntrusivePtrEnabled<typename T::EnabledBaseT, typename T::EnabledDeleterT, typename T::EnabledReferenceOpsT>;
 		if (this != &other) {
 			Reset();
-			_data = static_cast<T*>(other._data);
-			if (_data) { static_cast<ReferenceBaseT*>(_data)->AddReference(); }
+			_data = other._data;
+			if (_data) { static_cast<RefBaseT*>(_data)->AddReference(); }
 		}
 
 		return *this;
@@ -101,11 +107,11 @@ class IntrusivePtr {
 	IntrusivePtr& operator=(const IntrusivePtr<U>& other) {
 		static_assert(std::is_base_of_v<T, U>, "Cannot safely assign downcasted intrusive pointers.");
 
-		if (this != &other) {
-			Reset();
-			_data = static_cast<T*>(other._data);
-			if (_data) { static_cast<ReferenceBaseT*>(_data)->AddReference(); }
-		}
+		using RefBaseT =
+			IntrusivePtrEnabled<typename T::EnabledBaseT, typename T::EnabledDeleterT, typename T::EnabledReferenceOpsT>;
+		Reset();
+		_data = other._data;
+		if (_data) { static_cast<RefBaseT*>(_data)->AddReference(); }
 
 		return *this;
 	}
@@ -120,16 +126,11 @@ class IntrusivePtr {
 	}
 	template <typename U>
 	IntrusivePtr& operator=(IntrusivePtr<U>&& other) noexcept {
-		if (this != &other) {
-			Reset();
-			_data       = other._data;
-			other._data = nullptr;
-		}
+		Reset();
+		_data       = other._data;
+		other._data = nullptr;
 
 		return *this;
-	}
-	~IntrusivePtr() noexcept {
-		Reset();
 	}
 
 	T* Get() {
@@ -138,33 +139,16 @@ class IntrusivePtr {
 	const T* Get() const {
 		return _data;
 	}
-
-	T* Release() {
-		T* ret = _data;
-		_data  = nullptr;
-		return ret;
-	}
 	void Reset() {
-		if (_data) { static_cast<ReferenceBaseT*>(_data)->ReleaseReference(); }
+		using RefBaseT =
+			IntrusivePtrEnabled<typename T::EnabledBaseT, typename T::EnabledDeleterT, typename T::EnabledReferenceOpsT>;
+		if (_data) { static_cast<RefBaseT*>(_data)->ReleaseReference(); }
 		_data = nullptr;
 	}
 
 	explicit operator bool() const {
 		return _data != nullptr;
 	}
-	T* operator->() {
-		return _data;
-	}
-	const T* operator->() const {
-		return _data;
-	}
-	T& operator*() {
-		return *_data;
-	}
-	const T& operator*() const {
-		return *_data;
-	}
-
 	bool operator==(const IntrusivePtr& other) const {
 		return _data == other._data;
 	}
@@ -172,16 +156,43 @@ class IntrusivePtr {
 		return _data != other._data;
 	}
 
- private:
-	using ReferenceBaseT =
-		IntrusivePtrEnabled<typename T::EnabledBaseT, typename T::EnabledDeleterT, typename T::EnabledReferenceOpsT>;
+	T& operator*() {
+		return *_data;
+	}
+	const T& operator*() const {
+		return *_data;
+	}
+	T* operator->() {
+		return _data;
+	}
+	const T* operator->() const {
+		return _data;
+	}
 
+ private:
 	T* _data = nullptr;
 };
 
 template <typename T, typename Deleter, typename ReferenceOps>
 IntrusivePtr<T> IntrusivePtrEnabled<T, Deleter, ReferenceOps>::ReferenceFromThis() {
 	AddReference();
+
 	return IntrusivePtr<T>(static_cast<T*>(this));
 }
+
+template <typename Derived>
+using DerivedIntrusivePtrT = IntrusivePtr<Derived>;
+
+template <typename T, typename... Args>
+DerivedIntrusivePtrT<T> MakeHandle(Args&&... args) {
+	return DerivedIntrusivePtrT<T>(new T(std::forward<Args>(args)...));
+}
+
+template <typename Base, typename Derived, typename... Args>
+typename Base::IntrusivePtrT MakeDerivedHandle(Args&&... args) {
+	return typename Base::IntrusivePtrT(new Derived(std::forward<Args>(args)...));
+}
+
+template <typename T, typename Deleter = std::default_delete<T>>
+using ThreadSafeIntrusivePtr = IntrusivePtrEnabled<T, Deleter, MultiThreadCounter>;
 }  // namespace Luna

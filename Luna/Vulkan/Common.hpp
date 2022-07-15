@@ -6,6 +6,7 @@
 #include "Utility/IntrusiveHashMap.hpp"
 #include "Utility/IntrusivePtr.hpp"
 #include "Utility/ObjectPool.hpp"
+#include "Utility/TemporaryHashMap.hpp"
 
 #define LUNA_VULKAN_DEBUG
 #if defined(LUNA_DEBUG) && !defined(LUNA_VULKAN_DEBUG)
@@ -24,25 +25,45 @@ class CommandBuffer;
 struct CommandBufferDeleter;
 class CommandPool;
 class Context;
+class DescriptorSetAllocator;
+struct DescriptorSetLayout;
 class Device;
 class Fence;
 struct FenceDeleter;
+class Framebuffer;
 class Image;
 struct ImageCreateInfo;
 struct ImageDeleter;
 class ImageView;
 struct ImageViewCreateInfo;
 struct ImageViewDeleter;
+class PipelineLayout;
+class Program;
+struct ProgramResourceLayout;
+class RenderPass;
+struct RenderPassInfo;
+class Sampler;
+struct SamplerCreateInfo;
 class Semaphore;
 struct SemaphoreDeleter;
+class Shader;
+class ShaderCompiler;
 
 // Typedefs and usings.
 #ifdef LUNA_VULKAN_MT
 using HandleCounter = MultiThreadCounter;
 template <typename T>
+using VulkanCache = ThreadSafeIntrusiveHashMapReadCached<T>;
+template <typename T>
+using VulkanCacheReadWrite = ThreadSafeIntrusiveHashMap<T>;
+template <typename T>
 using VulkanObjectPool = ThreadSafeObjectPool<T>;
 #else
 using HandleCounter = SingleThreadCounter;
+template <typename T>
+using VulkanCache = IntrusiveHashMap<T>;
+template <typename T>
+using VulkanCacheReadWrite = IntrusiveHashMap<T>;
 template <typename T>
 using VulkanObjectPool = ObjectPool<T>;
 #endif
