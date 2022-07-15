@@ -86,12 +86,14 @@ Device::Device(const Context& context)
 		FN(vkBindImageMemory2);
 		FN(vkGetPhysicalDeviceMemoryProperties2);
 #undef FN
+#ifdef VK_API_VERSION_1_3
 		if (_extensions.Maintenance4) {
 			vmaFunctions.vkGetDeviceBufferMemoryRequirements =
 				VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceBufferMemoryRequirementsKHR;
 			vmaFunctions.vkGetDeviceImageMemoryRequirements =
 				VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceImageMemoryRequirementsKHR;
 		}
+#endif
 
 		const VmaAllocatorCreateInfo allocatorCI = {.physicalDevice   = _gpu,
 		                                            .device           = _device,

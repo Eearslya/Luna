@@ -26,7 +26,7 @@ void* AlignedAlloc(size_t size, size_t align, bool zero) {
 
 	if (ptr == nullptr) { return nullptr; }
 
-	addr      = (static_cast<uintptr_t>(ptr) + sizeof(uintptr_t) + align) & ~(align - 1);
+	addr      = (reinterpret_cast<uintptr_t>(ptr) + sizeof(uintptr_t) + align) & ~(align - 1);
 	place     = reinterpret_cast<void**>(addr);
 	place[-1] = ptr;
 

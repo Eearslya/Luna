@@ -74,13 +74,28 @@ class IntrusivePtr {
 
 	IntrusivePtr() = default;
 	explicit IntrusivePtr(T* ptr) : _data(ptr) {}
+	IntrusivePtr(const IntrusivePtr& other) {
+		*this = other;
+	}
 	template <typename U>
 	IntrusivePtr(const IntrusivePtr<U>& other) {
 		*this = other;
 	}
+	IntrusivePtr(IntrusivePtr&& other) {
+		*this = std::move(other);
+	}
 	template <typename U>
 	IntrusivePtr(IntrusivePtr<U>&& other) {
 		*this = std::move(other);
+	}
+	IntrusivePtr& operator=(const IntrusivePtr& other) {
+		if (this != &other) {
+			Reset();
+			_data = static_cast<T*>(other._data);
+			if (_data) { static_cast<ReferenceBaseT*>(_data)->AddReference(); }
+		}
+
+		return *this;
 	}
 	template <typename U>
 	IntrusivePtr& operator=(const IntrusivePtr<U>& other) {
@@ -90,6 +105,15 @@ class IntrusivePtr {
 			Reset();
 			_data = static_cast<T*>(other._data);
 			if (_data) { static_cast<ReferenceBaseT*>(_data)->AddReference(); }
+		}
+
+		return *this;
+	}
+	IntrusivePtr& operator=(IntrusivePtr&& other) noexcept {
+		if (this != &other) {
+			Reset();
+			_data       = other._data;
+			other._data = nullptr;
 		}
 
 		return *this;
