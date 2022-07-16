@@ -40,6 +40,12 @@ int main(int argc, const char** argv) {
 			cmd->EndRenderPass();
 
 			ImGui::ShowDemoWindow();
+
+			ImGui::Begin("Demo");
+			ImGui::Button(ICON_FA_MAGNIFYING_GLASS " Search");
+			ImGui::Text("Hello, こんにちは");
+			ImGui::End();
+
 			imguiRenderer->Render(cmd, device.GetFrameIndex());
 
 			device.Submit(cmd);

@@ -30,14 +30,25 @@ ImGuiRenderer::ImGuiRenderer(Vulkan::WSI& wsi) : _wsi(wsi) {
 	// Basic config flags.
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-	// io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;  // TODO
 
 	// Fonts
-	ImFontConfig fontConfig;
-	fontConfig.MergeMode = true;
-	io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-SemiMedium.ttf", 15.0f);
-	io.Fonts->AddFontFromFileTTF(
-		"Assets/Fonts/NotoSansJP-Medium.otf", 16.0f, &fontConfig, io.Fonts->GetGlyphRangesJapanese());
+	{
+		io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-SemiMedium.ttf", 16.0f);
+
+		ImFontConfig jpConfig;
+		jpConfig.MergeMode = true;
+		io.Fonts->AddFontFromFileTTF(
+			"Assets/Fonts/NotoSansJP-Medium.otf", 18.0f, &jpConfig, io.Fonts->GetGlyphRangesJapanese());
+
+		ImFontConfig faConfig;
+		faConfig.MergeMode                 = true;
+		faConfig.PixelSnapH                = true;
+		static const ImWchar fontAwesome[] = {ICON_MIN_FA, ICON_MAX_16_FA, 0};
+		io.Fonts->AddFontFromFileTTF("Assets/Fonts/FontAwesome6Free-Regular-400.otf", 16.0f, &faConfig, fontAwesome);
+		io.Fonts->AddFontFromFileTTF("Assets/Fonts/FontAwesome6Free-Solid-900.otf", 16.0f, &faConfig, fontAwesome);
+
+		io.Fonts->Build();
+	}
 
 	// Custom theming
 	{
@@ -49,7 +60,7 @@ ImGuiRenderer::ImGuiRenderer(Vulkan::WSI& wsi) : _wsi(wsi) {
 		colors[ImGuiCol_WindowBg]              = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
 		colors[ImGuiCol_ChildBg]               = ImVec4(0.06f, 0.06f, 0.06f, 0.00f);
 		colors[ImGuiCol_PopupBg]               = ImVec4(0.08f, 0.08f, 0.08f, 1.00f);
-		colors[ImGuiCol_Border]                = ImVec4(0.05f, 0.05f, 0.05f, 1.00f);
+		colors[ImGuiCol_Border]                = ImVec4(0.11f, 0.09f, 0.15f, 1.00f);
 		colors[ImGuiCol_BorderShadow]          = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
 		colors[ImGuiCol_FrameBg]               = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
 		colors[ImGuiCol_FrameBgHovered]        = ImVec4(0.03f, 0.03f, 0.03f, 1.00f);
@@ -59,7 +70,7 @@ ImGuiRenderer::ImGuiRenderer(Vulkan::WSI& wsi) : _wsi(wsi) {
 		colors[ImGuiCol_TitleBgCollapsed]      = ImVec4(0.07f, 0.03f, 0.14f, 1.00f);
 		colors[ImGuiCol_MenuBarBg]             = ImVec4(0.03f, 0.03f, 0.03f, 1.00f);
 		colors[ImGuiCol_ScrollbarBg]           = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
-		colors[ImGuiCol_ScrollbarGrab]         = ImVec4(0.06f, 0.06f, 0.06f, 1.00f);
+		colors[ImGuiCol_ScrollbarGrab]         = ImVec4(0.09f, 0.06f, 0.14f, 1.00f);
 		colors[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(0.07f, 0.03f, 0.14f, 1.00f);
 		colors[ImGuiCol_ScrollbarGrabActive]   = ImVec4(0.08f, 0.00f, 0.20f, 1.00f);
 		colors[ImGuiCol_CheckMark]             = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
@@ -71,12 +82,12 @@ ImGuiRenderer::ImGuiRenderer(Vulkan::WSI& wsi) : _wsi(wsi) {
 		colors[ImGuiCol_Header]                = ImVec4(0.08f, 0.08f, 0.08f, 1.00f);
 		colors[ImGuiCol_HeaderHovered]         = ImVec4(0.19f, 0.19f, 0.19f, 1.00f);
 		colors[ImGuiCol_HeaderActive]          = ImVec4(0.19f, 0.19f, 0.19f, 1.00f);
-		colors[ImGuiCol_Separator]             = ImVec4(0.05f, 0.05f, 0.05f, 1.00f);
-		colors[ImGuiCol_SeparatorHovered]      = ImVec4(0.13f, 0.13f, 0.13f, 1.00f);
-		colors[ImGuiCol_SeparatorActive]       = ImVec4(1.00f, 0.13f, 0.00f, 1.00f);
-		colors[ImGuiCol_ResizeGrip]            = ImVec4(1.00f, 1.00f, 1.00f, 0.25f);
-		colors[ImGuiCol_ResizeGripHovered]     = ImVec4(1.00f, 1.00f, 1.00f, 0.67f);
-		colors[ImGuiCol_ResizeGripActive]      = ImVec4(1.00f, 0.13f, 0.00f, 1.00f);
+		colors[ImGuiCol_Separator]             = ImVec4(0.09f, 0.06f, 0.14f, 1.00f);
+		colors[ImGuiCol_SeparatorHovered]      = ImVec4(0.07f, 0.03f, 0.14f, 1.00f);
+		colors[ImGuiCol_SeparatorActive]       = ImVec4(0.08f, 0.00f, 0.20f, 1.00f);
+		colors[ImGuiCol_ResizeGrip]            = ImVec4(0.09f, 0.06f, 0.14f, 1.00f);
+		colors[ImGuiCol_ResizeGripHovered]     = ImVec4(0.07f, 0.03f, 0.14f, 1.00f);
+		colors[ImGuiCol_ResizeGripActive]      = ImVec4(0.08f, 0.00f, 0.20f, 1.00f);
 		colors[ImGuiCol_Tab]                   = ImVec4(0.01f, 0.01f, 0.01f, 1.00f);
 		colors[ImGuiCol_TabHovered]            = ImVec4(0.10f, 0.10f, 0.10f, 1.00f);
 		colors[ImGuiCol_TabActive]             = ImVec4(0.03f, 0.03f, 0.03f, 1.00f);
@@ -85,9 +96,9 @@ ImGuiRenderer::ImGuiRenderer(Vulkan::WSI& wsi) : _wsi(wsi) {
 		colors[ImGuiCol_DockingPreview]        = ImVec4(0.18f, 0.00f, 0.49f, 1.00f);
 		colors[ImGuiCol_DockingEmptyBg]        = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
 		colors[ImGuiCol_PlotLines]             = ImVec4(0.19f, 0.19f, 0.19f, 1.00f);
-		colors[ImGuiCol_PlotLinesHovered]      = ImVec4(1.00f, 0.13f, 0.00f, 1.00f);
+		colors[ImGuiCol_PlotLinesHovered]      = ImVec4(0.18f, 0.00f, 0.49f, 1.00f);
 		colors[ImGuiCol_PlotHistogram]         = ImVec4(0.31f, 0.31f, 0.31f, 1.00f);
-		colors[ImGuiCol_PlotHistogramHovered]  = ImVec4(1.00f, 0.13f, 0.00f, 1.00f);
+		colors[ImGuiCol_PlotHistogramHovered]  = ImVec4(0.18f, 0.00f, 0.49f, 1.00f);
 		colors[ImGuiCol_TableHeaderBg]         = ImVec4(0.19f, 0.19f, 0.20f, 1.00f);
 		colors[ImGuiCol_TableBorderStrong]     = ImVec4(0.31f, 0.31f, 0.35f, 1.00f);
 		colors[ImGuiCol_TableBorderLight]      = ImVec4(0.23f, 0.23f, 0.25f, 1.00f);
@@ -147,7 +158,7 @@ ImGuiRenderer::ImGuiRenderer(Vulkan::WSI& wsi) : _wsi(wsi) {
 layout(location = 0) in vec2 inPosition;
 layout(location = 1) in vec2 inUV0;
 layout(location = 2) in vec4 inColor;
-layout(push_constant) uniform PushConstant { vec2 Scale; vec2 Translate; float ColorCorrect; } PC;
+layout(push_constant) uniform PushConstant { vec2 Scale; vec2 Translate; } PC;
 layout(location = 0) out struct { vec4 Color; vec2 UV; } Out;
 void main() {
     Out.Color = inColor;

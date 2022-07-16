@@ -2,6 +2,7 @@
 
 #include <imgui.h>
 
+#include "IconsFontAwesome6.h"
 #include "Vulkan/Common.hpp"
 
 class ImGuiRenderer {
