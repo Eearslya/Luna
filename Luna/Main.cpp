@@ -6,6 +6,7 @@
 
 #include "GlfwPlatform.hpp"
 #include "ImGuiRenderer.hpp"
+#include "Scene/Scene.hpp"
 #include "Utility/Log.hpp"
 #include "Vulkan/Buffer.hpp"
 #include "Vulkan/CommandBuffer.hpp"
@@ -27,6 +28,7 @@ int main(int argc, const char** argv) {
 		Vulkan::WSI wsi(std::move(platform));
 		auto& device       = wsi.GetDevice();
 		auto imguiRenderer = std::make_unique<ImGuiRenderer>(wsi);
+		auto scene         = std::make_unique<Scene>();
 
 		while (wsi.IsAlive()) {
 			wsi.BeginFrame();
