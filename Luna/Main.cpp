@@ -4,6 +4,8 @@
 #include <glm/glm.hpp>
 #include <iostream>
 
+#include "GlfwPlatform.hpp"
+#include "ImGuiRenderer.hpp"
 #include "Utility/Log.hpp"
 #include "Vulkan/Buffer.hpp"
 #include "Vulkan/CommandBuffer.hpp"
@@ -16,92 +18,6 @@
 
 using namespace Luna;
 
-static constexpr const char* VertexShader = R"GLSL(
-#version 460 core
-
-const vec2 Vertices[3] = vec2[3](
-  vec2(1.0f, 1.0f),
-  vec2(-1.0f, 1.0f),
-  vec2(0.0f, -1.0f)
-);
-
-void main() {
-  gl_Position = vec4(Vertices[gl_VertexIndex], 0.0f, 1.0f);
-}
-)GLSL";
-
-static constexpr const char* FragmentShader = R"GLSL(
-#version 460 core
-
-layout(location = 0) out vec4 outColor;
-
-void main() {
-  outColor = vec4(1, 1, 1, 1);
-}
-)GLSL";
-
-class GlfwPlatform : public Vulkan::WSIPlatform {
- public:
-	GlfwPlatform() {
-		glfwInit();
-		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-		glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-
-		_window = glfwCreateWindow(1600, 900, "Luna", nullptr, nullptr);
-		glfwGetWindowSize(_window, &_windowSize.x, &_windowSize.y);
-		glfwGetFramebufferSize(_window, &_framebufferSize.x, &_framebufferSize.y);
-		GLFWmonitor* monitor         = glfwGetPrimaryMonitor();
-		const GLFWvidmode* videoMode = glfwGetVideoMode(monitor);
-		glfwSetWindowPos(_window, (videoMode->width - _windowSize.x) / 2, (videoMode->height - _windowSize.y) / 2);
-
-		glfwShowWindow(_window);
-	}
-
-	virtual vk::SurfaceKHR CreateSurface(vk::Instance instance, vk::PhysicalDevice gpu) override {
-		VkSurfaceKHR surface = VK_NULL_HANDLE;
-		glfwCreateWindowSurface(instance, _window, nullptr, &surface);
-
-		return surface;
-	}
-
-	virtual void DestroySurface(vk::Instance instance, vk::SurfaceKHR surface) override {
-		instance.destroySurfaceKHR(surface);
-	}
-
-	virtual std::vector<const char*> GetInstanceExtensions() override {
-		uint32_t extensionCount = 0;
-		const char** extensions = glfwGetRequiredInstanceExtensions(&extensionCount);
-
-		return {extensions, extensions + extensionCount};
-	}
-
-	virtual std::vector<const char*> GetDeviceExtensions() override {
-		return {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-	}
-
-	virtual uint32_t GetSurfaceHeight() override {
-		return _framebufferSize.y;
-	}
-
-	virtual uint32_t GetSurfaceWidth() override {
-		return _framebufferSize.x;
-	}
-
-	virtual bool IsAlive() override {
-		return !glfwWindowShouldClose(_window);
-	}
-
-	virtual void Update() override {
-		glfwPollEvents();
-	}
-
- private:
-	GLFWwindow* _window = nullptr;
-
-	glm::ivec2 _framebufferSize = glm::ivec2(0, 0);
-	glm::ivec2 _windowSize      = glm::ivec2(1600, 900);
-};
-
 int main(int argc, const char** argv) {
 	Log::Initialize();
 	Log::SetLevel(Log::Level::Trace);
@@ -109,21 +25,22 @@ int main(int argc, const char** argv) {
 	try {
 		auto platform = std::make_unique<GlfwPlatform>();
 		Vulkan::WSI wsi(std::move(platform));
-		auto& device = wsi.GetDevice();
-
-		auto* program = device.RequestProgram(VertexShader, FragmentShader);
+		auto& device       = wsi.GetDevice();
+		auto imguiRenderer = std::make_unique<ImGuiRenderer>(wsi);
 
 		while (wsi.IsAlive()) {
 			wsi.BeginFrame();
+			imguiRenderer->BeginFrame();
 
 			auto cmd = device.RequestCommandBuffer();
 
 			auto rpInfo           = device.GetStockRenderPass();
-			rpInfo.ClearColors[0] = vk::ClearColorValue(std::array<float, 4>{0.1f, 0.2f, 0.3f, 1.0f});
+			rpInfo.ClearColors[0] = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f});
 			cmd->BeginRenderPass(rpInfo);
-			cmd->SetProgram(program);
-			cmd->Draw(3);
 			cmd->EndRenderPass();
+
+			ImGui::ShowDemoWindow();
+			imguiRenderer->Render(cmd, device.GetFrameIndex());
 
 			device.Submit(cmd);
 

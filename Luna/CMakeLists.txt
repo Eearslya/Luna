@@ -38,12 +38,13 @@ target_compile_definitions(Luna
 target_include_directories(Luna
 	PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(Luna
-	PRIVATE glfw glm glslang spdlog SPIRV spirv-cross-cpp vma Vulkan::Headers)
+	PRIVATE glfw glm glslang imgui spdlog SPIRV spirv-cross-cpp vma Vulkan::Headers)
 
 add_subdirectory(Utility)
 add_subdirectory(Vulkan)
 
 target_sources(Luna PRIVATE
+	ImGuiRenderer.cpp
 	Main.cpp)
 
 add_custom_target(Run

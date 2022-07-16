@@ -35,7 +35,7 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	friend class WSI;
 
 	Device(const Context& context);
-	Device(const Device&)            = delete;
+	Device(const Device&) = delete;
 	Device& operator=(const Device&) = delete;
 	~Device() noexcept;
 
@@ -44,6 +44,9 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	}
 	const ExtensionInfo& GetExtensionInfo() const {
 		return _extensions;
+	}
+	uint32_t GetFrameIndex() const {
+		return _currentFrameContext;
 	}
 	const GPUInfo& GetGPUInfo() const {
 		return _gpuInfo;
@@ -91,7 +94,7 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
  private:
 	struct FrameContext {
 		FrameContext(Device& device, uint32_t index);
-		FrameContext(const FrameContext&)            = delete;
+		FrameContext(const FrameContext&) = delete;
 		FrameContext& operator=(const FrameContext&) = delete;
 		~FrameContext() noexcept;
 

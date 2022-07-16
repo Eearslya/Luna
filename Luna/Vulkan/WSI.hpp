@@ -1,5 +1,7 @@
 #pragma once
 
+#include <glm/glm.hpp>
+
 #include "Common.hpp"
 
 namespace Luna {
@@ -14,6 +16,8 @@ class WSIPlatform {
 	virtual std::vector<const char*> GetDeviceExtensions()                              = 0;
 	virtual uint32_t GetSurfaceHeight()                                                 = 0;
 	virtual uint32_t GetSurfaceWidth()                                                  = 0;
+	virtual uint32_t GetWindowHeight()                                                  = 0;
+	virtual uint32_t GetWindowWidth()                                                   = 0;
 	virtual bool IsAlive()                                                              = 0;
 	virtual void Update()                                                               = 0;
 };
@@ -38,11 +42,17 @@ class WSI {
 	vk::Format GetFormat() const {
 		return _format.format;
 	}
+	glm::uvec2 GetFramebufferSize() const {
+		return {_platform->GetSurfaceWidth(), _platform->GetSurfaceHeight()};
+	}
 	const std::vector<vk::Image>& GetImages() const {
 		return _images;
 	}
 	vk::Image GetImage(uint32_t index) const {
 		return _images[index];
+	}
+	glm::uvec2 GetWindowSize() const {
+		return {_platform->GetWindowWidth(), _platform->GetWindowHeight()};
 	}
 	bool IsAlive() {
 		return _platform->IsAlive();
