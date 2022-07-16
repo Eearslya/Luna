@@ -13,11 +13,14 @@
 
 using namespace Luna;
 
+enum class ImGuiSampleMode : uint32_t { Standard = 0, ImGuiFont = 1, Grayscale = 2 };
+
 struct PushConstant {
 	float ScaleX;
 	float ScaleY;
 	float TranslateX;
 	float TranslateY;
+	ImGuiSampleMode SampleMode;
 };
 
 ImGuiRenderer::ImGuiRenderer(Vulkan::WSI& wsi) : _wsi(wsi) {
@@ -158,7 +161,7 @@ ImGuiRenderer::ImGuiRenderer(Vulkan::WSI& wsi) : _wsi(wsi) {
 layout(location = 0) in vec2 inPosition;
 layout(location = 1) in vec2 inUV0;
 layout(location = 2) in vec4 inColor;
-layout(push_constant) uniform PushConstant { vec2 Scale; vec2 Translate; } PC;
+layout(push_constant) uniform PushConstant { vec2 Scale; vec2 Translate; uint SampleMode; } PC;
 layout(location = 0) out struct { vec4 Color; vec2 UV; } Out;
 void main() {
     Out.Color = inColor;
@@ -169,10 +172,24 @@ void main() {
 		constexpr static const char* fragGlsl = R"GLSL(
 #version 450 core
 layout(location = 0) in struct { vec4 Color; vec2 UV; } In;
+layout(push_constant) uniform PushConstant { vec2 Scale; vec2 Translate; uint SampleMode; } PC;
 layout(set=0, binding=0) uniform sampler2D Texture;
 layout(location = 0) out vec4 outColor;
 void main() {
-    outColor = In.Color * texture(Texture, In.UV.st);
+  vec4 texColor;
+  switch(PC.SampleMode) {
+   case 1: // ImGui Font
+    texColor = vec4(1.0f, 1.0f, 1.0f, texture(Texture, In.UV.st).r);
+    break;
+   case 2: // Grayscale
+    texColor.r = texture(Texture, In.UV.st).r;
+    texColor = vec4(texColor.rrr, 1.0f);
+    break;
+   default: // Standard
+    texColor = texture(Texture, In.UV.st);
+    break;
+  }
+  outColor = In.Color * texColor;
 }
 )GLSL";
 
@@ -180,10 +197,10 @@ void main() {
 
 		unsigned char* pixels = nullptr;
 		int width, height;
-		io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+		io.Fonts->GetTexDataAsAlpha8(&pixels, &width, &height);
 		const Vulkan::ImageInitialData data{.Data = pixels};
 		const auto imageCI = Vulkan::ImageCreateInfo::Immutable2D(
-			static_cast<uint32_t>(width), static_cast<uint32_t>(height), vk::Format::eR8G8B8A8Unorm, false);
+			static_cast<uint32_t>(width), static_cast<uint32_t>(height), vk::Format::eR8Unorm, false);
 		_fontTexture = device.CreateImage(imageCI, &data);
 
 		const Vulkan::SamplerCreateInfo samplerCI{.MagFilter        = vk::Filter::eLinear,
@@ -197,8 +214,6 @@ void main() {
 		                                          .MinLod           = -1000.0f,
 		                                          .MaxLod           = 1000.0f};
 		_fontSampler = device.RequestSampler(samplerCI);
-
-		io.Fonts->SetTexID((reinterpret_cast<ImTextureID>(&_fontTexture->GetView())));
 	}
 
 	Input::OnChar += [this](char c) {
@@ -349,11 +364,17 @@ void ImGuiRenderer::Render(Vulkan::CommandBufferHandle& cmd, uint32_t frameIndex
 						{static_cast<uint32_t>(clipMax.x - clipMin.x), static_cast<uint32_t>(clipMax.y - clipMin.y)});
 					cmd->SetScissor(scissor);
 
+					ImGuiSampleMode sampleMode = ImGuiSampleMode::Standard;
 					if (drawCmd.TextureId == 0) {
 						cmd->SetTexture(0, 0, _fontTexture->GetView(), _fontSampler);
+						sampleMode = ImGuiSampleMode::ImGuiFont;
 					} else {
 						Vulkan::ImageView* view = reinterpret_cast<Vulkan::ImageView*>(drawCmd.TextureId);
 						cmd->SetTexture(0, 0, *view, Vulkan::StockSampler::LinearClamp);
+
+						if (Vulkan::FormatChannelCount(view->GetCreateInfo().Format) == 1) {
+							sampleMode = ImGuiSampleMode::Grayscale;
+						}
 					}
 
 					const float scaleX    = 2.0f / drawData->DisplaySize.x;
@@ -361,7 +382,8 @@ void ImGuiRenderer::Render(Vulkan::CommandBufferHandle& cmd, uint32_t frameIndex
 					const PushConstant pc = {.ScaleX     = scaleX,
 					                         .ScaleY     = scaleY,
 					                         .TranslateX = -1.0f - drawData->DisplayPos.x * scaleX,
-					                         .TranslateY = -1.0f - drawData->DisplayPos.y * scaleY};
+					                         .TranslateY = -1.0f - drawData->DisplayPos.y * scaleY,
+					                         .SampleMode = sampleMode};
 					cmd->PushConstants(&pc, 0, sizeof(pc));
 
 					cmd->DrawIndexed(

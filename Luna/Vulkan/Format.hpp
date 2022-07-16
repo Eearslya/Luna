@@ -51,6 +51,110 @@ inline FormatCompressionType GetFormatCompressionType(vk::Format format) {
 	}
 }
 
+inline int FormatChannelCount(vk::Format format) {
+	switch (format) {
+		case vk::Format::eR8Unorm:
+		case vk::Format::eR8Snorm:
+		case vk::Format::eR8Uscaled:
+		case vk::Format::eR8Sscaled:
+		case vk::Format::eR8Uint:
+		case vk::Format::eR8Sint:
+		case vk::Format::eR8Srgb:
+		case vk::Format::eR16Unorm:
+		case vk::Format::eR16Snorm:
+		case vk::Format::eR16Uscaled:
+		case vk::Format::eR16Sscaled:
+		case vk::Format::eR16Uint:
+		case vk::Format::eR16Sint:
+		case vk::Format::eR16Sfloat:
+		case vk::Format::eR32Uint:
+		case vk::Format::eR32Sint:
+		case vk::Format::eR32Sfloat:
+		case vk::Format::eR64Uint:
+		case vk::Format::eR64Sint:
+		case vk::Format::eR64Sfloat:
+		case vk::Format::eD16Unorm:
+		case vk::Format::eD32Sfloat:
+		case vk::Format::eX8D24UnormPack32:
+		case vk::Format::eD16UnormS8Uint:
+		case vk::Format::eD24UnormS8Uint:
+		case vk::Format::eD32SfloatS8Uint:
+		case vk::Format::eS8Uint:
+			return 1;
+
+		case vk::Format::eR8G8Unorm:
+		case vk::Format::eR8G8Snorm:
+		case vk::Format::eR8G8Uscaled:
+		case vk::Format::eR8G8Sscaled:
+		case vk::Format::eR8G8Uint:
+		case vk::Format::eR8G8Sint:
+		case vk::Format::eR8G8Srgb:
+		case vk::Format::eR16G16Unorm:
+		case vk::Format::eR16G16Snorm:
+		case vk::Format::eR16G16Uscaled:
+		case vk::Format::eR16G16Sscaled:
+		case vk::Format::eR16G16Uint:
+		case vk::Format::eR16G16Sint:
+		case vk::Format::eR16G16Sfloat:
+		case vk::Format::eR32G32Uint:
+		case vk::Format::eR32G32Sint:
+		case vk::Format::eR32G32Sfloat:
+		case vk::Format::eR64G64Uint:
+		case vk::Format::eR64G64Sint:
+		case vk::Format::eR64G64Sfloat:
+			return 2;
+
+		case vk::Format::eR8G8B8Unorm:
+		case vk::Format::eR8G8B8Snorm:
+		case vk::Format::eR8G8B8Uscaled:
+		case vk::Format::eR8G8B8Sscaled:
+		case vk::Format::eR8G8B8Uint:
+		case vk::Format::eR8G8B8Sint:
+		case vk::Format::eR8G8B8Srgb:
+		case vk::Format::eR16G16B16Unorm:
+		case vk::Format::eR16G16B16Snorm:
+		case vk::Format::eR16G16B16Uscaled:
+		case vk::Format::eR16G16B16Sscaled:
+		case vk::Format::eR16G16B16Uint:
+		case vk::Format::eR16G16B16Sint:
+		case vk::Format::eR16G16B16Sfloat:
+		case vk::Format::eR32G32B32Uint:
+		case vk::Format::eR32G32B32Sint:
+		case vk::Format::eR32G32B32Sfloat:
+		case vk::Format::eR64G64B64Uint:
+		case vk::Format::eR64G64B64Sint:
+		case vk::Format::eR64G64B64Sfloat:
+			return 3;
+
+		case vk::Format::eR8G8B8A8Unorm:
+		case vk::Format::eR8G8B8A8Snorm:
+		case vk::Format::eR8G8B8A8Uscaled:
+		case vk::Format::eR8G8B8A8Sscaled:
+		case vk::Format::eR8G8B8A8Uint:
+		case vk::Format::eR8G8B8A8Sint:
+		case vk::Format::eR8G8B8A8Srgb:
+		case vk::Format::eR16G16B16A16Unorm:
+		case vk::Format::eR16G16B16A16Snorm:
+		case vk::Format::eR16G16B16A16Uscaled:
+		case vk::Format::eR16G16B16A16Sscaled:
+		case vk::Format::eR16G16B16A16Uint:
+		case vk::Format::eR16G16B16A16Sint:
+		case vk::Format::eR16G16B16A16Sfloat:
+		case vk::Format::eR32G32B32A32Uint:
+		case vk::Format::eR32G32B32A32Sint:
+		case vk::Format::eR32G32B32A32Sfloat:
+		case vk::Format::eR64G64B64A64Uint:
+		case vk::Format::eR64G64B64A64Sint:
+		case vk::Format::eR64G64B64A64Sfloat:
+			return 4;
+
+		default:
+			return 0;
+	}
+
+#undef Fmt
+}
+
 inline bool FormatIsCompressedHDR(vk::Format format) {
 	switch (format) {
 #define AstcFmt(w, h) case vk::Format::eAstc##w##x##h##SfloatBlockEXT
