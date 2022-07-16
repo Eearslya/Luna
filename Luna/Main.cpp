@@ -53,7 +53,7 @@ int main(int argc, const char** argv) {
 			wsi.EndFrame();
 		}
 	} catch (const std::exception& e) {
-		std::cerr << "Fatal uncaught exception when initializing Vulkan:\n\t" << e.what() << std::endl;
+		std::cerr << "Fatal uncaught exception:\n\t" << e.what() << std::endl;
 		return 1;
 	}
 
