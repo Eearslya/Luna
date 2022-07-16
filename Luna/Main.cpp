@@ -19,7 +19,15 @@ using namespace Luna;
 static constexpr const char* VertexShader = R"GLSL(
 #version 460 core
 
-void main() {}
+const vec2 Vertices[3] = vec2[3](
+  vec2(1.0f, 1.0f),
+  vec2(-1.0f, 1.0f),
+  vec2(0.0f, -1.0f)
+);
+
+void main() {
+  gl_Position = vec4(Vertices[gl_VertexIndex], 0.0f, 1.0f);
+}
 )GLSL";
 
 static constexpr const char* FragmentShader = R"GLSL(
@@ -29,27 +37,6 @@ layout(location = 0) out vec4 outColor;
 
 void main() {
   outColor = vec4(1, 1, 1, 1);
-}
-)GLSL";
-
-static constexpr const char* ComputeShader = R"GLSL(
-#version 460 core
-
-layout(local_size_x = 64) in;
-
-layout(std430, set = 0, binding = 0) readonly buffer BufferA {
-  float InputA[];
-};
-layout(std430, set = 0, binding = 1) readonly buffer BufferB {
-  float InputB[];
-};
-layout(std430, set = 1, binding = 0) writeonly buffer BufferC {
-  float Output[];
-};
-
-void main() {
-  uint ident = gl_GlobalInvocationID.x;
-  Output[ident] = InputA[ident] * InputB[ident];
 }
 )GLSL";
 
@@ -124,6 +111,8 @@ int main(int argc, const char** argv) {
 		Vulkan::WSI wsi(std::move(platform));
 		auto& device = wsi.GetDevice();
 
+		auto* program = device.RequestProgram(VertexShader, FragmentShader);
+
 		while (wsi.IsAlive()) {
 			wsi.BeginFrame();
 
@@ -132,6 +121,8 @@ int main(int argc, const char** argv) {
 			auto rpInfo           = device.GetStockRenderPass();
 			rpInfo.ClearColors[0] = vk::ClearColorValue(std::array<float, 4>{0.1f, 0.2f, 0.3f, 1.0f});
 			cmd->BeginRenderPass(rpInfo);
+			cmd->SetProgram(program);
+			cmd->Draw(3);
 			cmd->EndRenderPass();
 
 			device.Submit(cmd);
