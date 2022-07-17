@@ -1,18 +1,28 @@
+#include "SceneHierarchyPanel.hpp"
+
 #include <imgui.h>
 #include <imgui_internal.h>
 
 #include <optional>
 
 #include "../ImGuiRenderer.hpp"
+#include "CameraComponent.hpp"
 #include "Entity.hpp"
 #include "NameComponent.hpp"
 #include "RelationshipComponent.hpp"
 #include "Scene.hpp"
-#include "SceneHierarchyPanel.hpp"
 #include "TransformComponent.hpp"
 
 namespace Luna {
 SceneHierarchyPanel::SceneHierarchyPanel(const std::shared_ptr<Scene>& scene) : _scene(scene) {}
+
+template <typename T, typename... Args>
+static bool AddComponentMenu(Entity entity, const char* label, Args&&... args) {
+	const bool showItem = !entity.HasComponent<T>();
+	if (showItem && ImGui::MenuItem(label)) { entity.AddComponent<T>(std::forward<Args>(args)...); }
+
+	return showItem;
+}
 
 void SceneHierarchyPanel::Render() {
 	auto scene = _scene.lock();
@@ -48,7 +58,19 @@ void SceneHierarchyPanel::Render() {
 		DrawComponents(_selected);
 		ImGui::Separator();
 		ImGui::Button(ICON_FA_PLUS " Add Component");
-		if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) { ImGui::EndPopup(); }
+		if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+			bool anyShown = false;
+
+			anyShown |= AddComponentMenu<CameraComponent>(_selected, ICON_FA_CAMERA " Camera");
+
+			if (!anyShown) {
+				ImGui::BeginDisabled();
+				ImGui::MenuItem(ICON_FA_X " No Components Available");
+				ImGui::EndDisabled();
+			}
+
+			ImGui::EndPopup();
+		}
 	}
 	ImGui::End();
 }
@@ -110,29 +132,35 @@ static bool CollapsingHeader(const char* label, bool* specialClick, ImGuiTreeNod
 template <typename T>
 static void DrawComponent(Entity entity,
                           const std::string& label,
-                          std::function<void(Entity, T&)> drawFn,
-                          std::optional<std::function<void(Entity, T&)>> propsFn = std::nullopt) {
+                          std::function<bool(Entity, T&)> drawFn,
+                          std::optional<std::function<bool(Entity, T&)>> propsFn = std::nullopt) {
 	bool hasPropertyMenu = propsFn.has_value();
 	bool propertyMenu    = false;
+	bool deleted         = false;
 
 	if (entity.HasComponent<T>()) {
+		const std::string compId = label + "##Properties";
+		ImGui::PushID(compId.c_str());
 		if (hasPropertyMenu &&
 		    CollapsingHeader(
 					label.c_str(), hasPropertyMenu ? &propertyMenu : nullptr, ImGuiTreeNodeFlags_DefaultOpen, ICON_FA_WRENCH)) {
-			const std::string popupId = label + "##Properties";
-			auto& component           = entity.GetComponent<T>();
-			drawFn(entity, component);
+			auto& component = entity.GetComponent<T>();
+			deleted |= drawFn(entity, component);
 
-			if (propertyMenu) { ImGui::OpenPopup(popupId.c_str()); }
+			if (propertyMenu) { ImGui::OpenPopup(compId.c_str()); }
 
-			if (ImGui::BeginPopup(popupId.c_str())) {
-				propsFn.value()(entity, component);
+			if (ImGui::BeginPopup(compId.c_str())) {
+				deleted |= propsFn.value()(entity, component);
 				ImGui::EndPopup();
 			}
 		} else if (ImGui::CollapsingHeader(label.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
 			auto& component = entity.GetComponent<T>();
-			drawFn(entity, component);
+			deleted |= drawFn(entity, component);
 		}
+
+		if (deleted) { entity.RemoveComponent<T>(); }
+
+		ImGui::PopID();
 	}
 }
 
@@ -224,6 +252,8 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 			EditVec3("Rotation", cTransform.Rotation, 0.5f);
 			EditVec3("Scale", cTransform.Scale, 0.1f, 1.0f);
 			ImGui::Spacing();
+
+			return false;
 		},
 		[](Entity entity, auto& cTransform) {
 			if (ImGui::MenuItem(ICON_FA_ARROW_ROTATE_LEFT " Reset to Identity")) {
@@ -231,6 +261,53 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 				cTransform.Rotation    = glm::vec3(0.0f);
 				cTransform.Scale       = glm::vec3(1.0f);
 			}
+
+			return false;
+		});
+
+	// Camera
+	DrawComponent<CameraComponent>(
+		entity,
+		ICON_FA_CAMERA " Camera",
+		[](Entity entity, auto& cCamera) {
+			auto& camera     = cCamera.Camera;
+			float fovDegrees = camera.GetFovDegrees();
+			float zNear      = camera.GetZNear();
+			float zFar       = camera.GetZFar();
+
+			ImGui::Columns(2);
+			ImGui::SetColumnWidth(0, 125.0f);
+
+			ImGui::Text("Primary Camera");
+			ImGui::NextColumn();
+			ImGui::Checkbox("##PrimaryCamera", &cCamera.Primary);
+			ImGui::NextColumn();
+
+			ImGui::Text("Field of View");
+			ImGui::NextColumn();
+			ImGui::DragFloat("##FieldOfView", &fovDegrees, 0.5f, 30.0f, 90.0f, "%.1f deg");
+			ImGui::NextColumn();
+
+			ImGui::Text("Near Plane");
+			ImGui::NextColumn();
+			ImGui::DragFloat("##NearPlane", &zNear, 0.01f, 0.001f, 10.0f, "%.3f");
+			ImGui::NextColumn();
+
+			ImGui::Text("Far Plane");
+			ImGui::NextColumn();
+			ImGui::DragFloat("##FarPlane", &zFar, 1.0f, 1.0f, 100'000.0f, "%.2f");
+
+			camera.SetPerspective(fovDegrees, zNear, zFar);
+
+			ImGui::Columns(1);
+
+			return false;
+		},
+		[](Entity entity, auto& cCamera) {
+			bool deleted = false;
+			if (ImGui::MenuItem(ICON_FA_TRASH_CAN " Remove Component")) { deleted = true; }
+
+			return deleted;
 		});
 }
 }  // namespace Luna

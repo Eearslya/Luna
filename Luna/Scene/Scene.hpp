@@ -17,6 +17,8 @@ class Scene {
 	Entity CreateChildEntity(Entity parent, const std::string& name = "");
 	void DestroyEntity(Entity entity);
 
+	Entity GetMainCamera();
+
  private:
 	entt::registry _registry;
 };

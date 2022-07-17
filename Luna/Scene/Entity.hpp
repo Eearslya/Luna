@@ -1,6 +1,7 @@
 #pragma once
 
 #include <entt/entt.hpp>
+#include <glm/glm.hpp>
 
 #include "Scene.hpp"
 
@@ -37,6 +38,9 @@ class Entity {
 		_scene->_registry.remove<T>(_handle);
 	}
 
+	glm::mat4 GetGlobalTransform() const;
+	glm::mat4 GetLocalTransform() const;
+	Entity GetParent() const;
 	void SetParent(Entity newParent);
 
 	TransformComponent& Transform();

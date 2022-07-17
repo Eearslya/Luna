@@ -1,5 +1,6 @@
 #include "Scene.hpp"
 
+#include "CameraComponent.hpp"
 #include "Entity.hpp"
 #include "NameComponent.hpp"
 #include "RelationshipComponent.hpp"
@@ -31,5 +32,15 @@ Entity Scene::CreateChildEntity(Entity parent, const std::string& name) {
 
 void Scene::DestroyEntity(Entity entity) {
 	if (entity) { _registry.destroy(entity); }
+}
+
+Entity Scene::GetMainCamera() {
+	auto view = _registry.view<CameraComponent>();
+	for (auto entity : view) {
+		auto& cCamera = view.get<CameraComponent>(entity);
+		if (cCamera.Primary) { return Entity(entity, *this); }
+	}
+
+	return {};
 }
 }  // namespace Luna

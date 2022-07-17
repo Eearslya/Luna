@@ -6,6 +6,7 @@
 
 #include "GlfwPlatform.hpp"
 #include "ImGuiRenderer.hpp"
+#include "Scene/CameraComponent.hpp"
 #include "Scene/Entity.hpp"
 #include "Scene/Scene.hpp"
 #include "Scene/SceneHierarchyPanel.hpp"
@@ -35,7 +36,8 @@ int main(int argc, const char** argv) {
 		auto sceneRenderer = std::make_unique<SceneRenderer>(wsi);
 		auto scenePanel    = std::make_unique<SceneHierarchyPanel>(scene);
 
-		scene->CreateEntity("Camera");
+		auto camera   = scene->CreateEntity("Camera");
+		auto& cCamera = camera.AddComponent<CameraComponent>();
 		scene->CreateEntity("Light");
 		scene->CreateEntity("Mesh");
 

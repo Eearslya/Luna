@@ -1,5 +1,9 @@
 #include "SceneRenderer.hpp"
 
+#include "Scene/CameraComponent.hpp"
+#include "Scene/Entity.hpp"
+#include "Scene/Scene.hpp"
+#include "Scene/TransformComponent.hpp"
 #include "Vulkan/CommandBuffer.hpp"
 #include "Vulkan/Device.hpp"
 #include "Vulkan/Image.hpp"
@@ -35,6 +39,17 @@ void SceneRenderer::Render(Vulkan::CommandBufferHandle& cmd, Luna::Scene& scene,
 	rpInfo.ColorAttachments[0] = &image->GetView();
 	rpInfo.ClearColors[0]      = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f});
 	cmd->BeginRenderPass(rpInfo);
+
+	auto cameraEntity = scene.GetMainCamera();
+	if (cameraEntity) {
+		auto& cCameraTransform = cameraEntity.Transform();
+		auto& cCamera          = cameraEntity.GetComponent<Luna::CameraComponent>();
+		cCamera.Camera.SetViewport(_imageSize);
+
+		const auto& cameraProj = cCamera.Camera.GetProjection();
+		const auto& cameraView = glm::inverse(cameraEntity.GetGlobalTransform());
+	}
+
 	cmd->EndRenderPass();
 
 	cmd->ImageBarrier(*image,

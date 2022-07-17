@@ -14,6 +14,28 @@ const TransformComponent& Entity::Transform() const {
 	return GetComponent<TransformComponent>();
 }
 
+glm::mat4 Entity::GetGlobalTransform() const {
+	Entity parent = GetParent();
+
+	if (parent) {
+		return parent.GetGlobalTransform() * GetLocalTransform();
+	} else {
+		return GetLocalTransform();
+	}
+}
+
+glm::mat4 Entity::GetLocalTransform() const {
+	auto& cTransform = GetComponent<TransformComponent>();
+
+	return cTransform.GetTransform();
+}
+
+Entity Entity::GetParent() const {
+	auto& cRelationship = GetComponent<RelationshipComponent>();
+
+	return Entity(cRelationship.Parent, *_scene);
+}
+
 void Entity::SetParent(Entity newParent) {
 	auto& cRelationship = GetComponent<RelationshipComponent>();
 
