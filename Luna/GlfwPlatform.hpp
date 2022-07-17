@@ -13,6 +13,7 @@ class GlfwPlatform : public Luna::Vulkan::WSIPlatform {
 	GlfwPlatform() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+		glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
 		glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
 		_window = glfwCreateWindow(1600, 900, "Luna", nullptr, nullptr);
@@ -21,12 +22,15 @@ class GlfwPlatform : public Luna::Vulkan::WSIPlatform {
 		GLFWmonitor* monitor         = glfwGetPrimaryMonitor();
 		const GLFWvidmode* videoMode = glfwGetVideoMode(monitor);
 		glfwSetWindowPos(_window, (videoMode->width - _windowSize.x) / 2, (videoMode->height - _windowSize.y) / 2);
+		glfwSetWindowUserPointer(_window, this);
 
 		glfwSetKeyCallback(_window, CallbackKey);
 		glfwSetCharCallback(_window, CallbackChar);
 		glfwSetMouseButtonCallback(_window, CallbackButton);
 		glfwSetCursorPosCallback(_window, CallbackPosition);
 		glfwSetScrollCallback(_window, CallbackScroll);
+		glfwSetFramebufferSizeCallback(_window, CallbackFramebufferSize);
+		glfwSetWindowSizeCallback(_window, CallbackWindowSize);
 		Input::AttachWindow(_window);
 
 		glfwShowWindow(_window);
@@ -74,6 +78,10 @@ class GlfwPlatform : public Luna::Vulkan::WSIPlatform {
 		return !glfwWindowShouldClose(_window);
 	}
 
+	virtual void RequestShutdown() override {
+		glfwSetWindowShouldClose(_window, GLFW_TRUE);
+	}
+
 	virtual void Update() override {
 		glfwPollEvents();
 	}
@@ -97,6 +105,16 @@ class GlfwPlatform : public Luna::Vulkan::WSIPlatform {
 
 	static void CallbackScroll(GLFWwindow* window, double xOffset, double yOffset) {
 		Input::OnScroll({xOffset, yOffset});
+	}
+
+	static void CallbackFramebufferSize(GLFWwindow* window, int width, int height) {
+		GlfwPlatform* platform = reinterpret_cast<GlfwPlatform*>(glfwGetWindowUserPointer(window));
+		if (platform) { platform->_framebufferSize = {width, height}; }
+	}
+
+	static void CallbackWindowSize(GLFWwindow* window, int width, int height) {
+		GlfwPlatform* platform = reinterpret_cast<GlfwPlatform*>(glfwGetWindowUserPointer(window));
+		if (platform) { platform->_windowSize = {width, height}; }
 	}
 
 	GLFWwindow* _window = nullptr;

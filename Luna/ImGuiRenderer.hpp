@@ -11,7 +11,10 @@ class ImGuiRenderer {
 	~ImGuiRenderer() noexcept;
 
 	void BeginFrame();
-	void Render(Luna::Vulkan::CommandBufferHandle& cmd, uint32_t frameIndex);
+	void Render(Luna::Vulkan::CommandBufferHandle& cmd, uint32_t frameIndex, bool clear = false);
+
+	void BeginDockspace();
+	void EndDockspace();
 
  private:
 	void SetRenderState(Luna::Vulkan::CommandBufferHandle& cmd, ImDrawData* drawData, uint32_t frameIndex) const;

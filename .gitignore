@@ -3,6 +3,7 @@
 .vs/
 .vscode/
 [Bb]uild/
+Examples/
 
 *~
 .dir-locals.el

@@ -19,6 +19,7 @@ class WSIPlatform {
 	virtual uint32_t GetWindowHeight()                                                  = 0;
 	virtual uint32_t GetWindowWidth()                                                   = 0;
 	virtual bool IsAlive()                                                              = 0;
+	virtual void RequestShutdown()                                                      = 0;
 	virtual void Update()                                                               = 0;
 };
 
@@ -45,6 +46,9 @@ class WSI {
 	glm::uvec2 GetFramebufferSize() const {
 		return {_platform->GetSurfaceWidth(), _platform->GetSurfaceHeight()};
 	}
+	size_t GetImageCount() const {
+		return _images.size();
+	}
 	const std::vector<vk::Image>& GetImages() const {
 		return _images;
 	}
@@ -60,6 +64,7 @@ class WSI {
 
 	void BeginFrame();
 	void EndFrame();
+	void RequestShutdown();
 
  private:
 	void RecreateSwapchain();
