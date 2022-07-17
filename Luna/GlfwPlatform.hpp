@@ -84,7 +84,7 @@ class GlfwPlatform : public Luna::Vulkan::WSIPlatform {
 	}
 
 	static void CallbackChar(GLFWwindow* window, uint32_t codepoint) {
-		Input::OnChar(static_cast<char>(codepoint));
+		Input::OnChar(codepoint);
 	}
 
 	static void CallbackButton(GLFWwindow* window, int32_t button, int32_t action, int32_t mods) {

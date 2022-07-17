@@ -161,7 +161,7 @@ class Input {
 	}
 
 	inline static Luna::Delegate<void(MouseButton, InputAction, InputMods)> OnButton;
-	inline static Luna::Delegate<void(char)> OnChar;
+	inline static Luna::Delegate<void(int)> OnChar;
 	inline static Luna::Delegate<void(Key, InputAction, InputMods)> OnKey;
 	inline static Luna::Delegate<void(glm::dvec2)> OnMoved;
 	inline static Luna::Delegate<void(glm::dvec2)> OnScroll;
