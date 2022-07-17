@@ -8,6 +8,7 @@
 #include "ImGuiRenderer.hpp"
 #include "Scene/CameraComponent.hpp"
 #include "Scene/Entity.hpp"
+#include "Scene/MeshComponent.hpp"
 #include "Scene/Scene.hpp"
 #include "Scene/SceneHierarchyPanel.hpp"
 #include "SceneRenderer.hpp"
@@ -39,7 +40,9 @@ int main(int argc, const char** argv) {
 		auto camera   = scene->CreateEntity("Camera");
 		auto& cCamera = camera.AddComponent<CameraComponent>();
 		scene->CreateEntity("Light");
-		scene->CreateEntity("Mesh");
+		auto mesh   = scene->CreateEntity("Mesh");
+		auto& cMesh = mesh.AddComponent<MeshComponent>();
+		mesh.SetTranslation(glm::vec3(0.0f, 0.0f, -2.0f));
 
 		while (wsi.IsAlive()) {
 			wsi.BeginFrame();

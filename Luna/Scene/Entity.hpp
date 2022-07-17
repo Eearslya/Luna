@@ -42,6 +42,7 @@ class Entity {
 	glm::mat4 GetLocalTransform() const;
 	Entity GetParent() const;
 	void SetParent(Entity newParent);
+	void SetTranslation(const glm::vec3& translation);
 
 	TransformComponent& Transform();
 	const TransformComponent& Transform() const;

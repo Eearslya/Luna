@@ -13,6 +13,7 @@ void Camera::SetPerspective(float fovDegrees, float zNear, float zFar) {
 
 void Camera::SetViewport(const glm::uvec2& viewportSize) {
 	_projection =
-		glm::perspective(glm::radians(_fovDegrees), float(viewportSize.x) / float(viewportSize.y), _zNear, _zFar);
+		glm::perspectiveFov(glm::radians(_fovDegrees), float(viewportSize.x), float(viewportSize.y), _zNear, _zFar);
+	_projection[1][1] *= -1.0f;
 }
 }  // namespace Luna

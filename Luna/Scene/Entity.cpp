@@ -74,4 +74,8 @@ void Entity::SetParent(Entity newParent) {
 		}
 	}
 }
+
+void Entity::SetTranslation(const glm::vec3& translation) {
+	Transform().Translation = translation;
+}
 }  // namespace Luna

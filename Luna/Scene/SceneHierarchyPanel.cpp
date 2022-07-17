@@ -8,6 +8,7 @@
 #include "../ImGuiRenderer.hpp"
 #include "CameraComponent.hpp"
 #include "Entity.hpp"
+#include "MeshComponent.hpp"
 #include "NameComponent.hpp"
 #include "RelationshipComponent.hpp"
 #include "Scene.hpp"
@@ -62,6 +63,7 @@ void SceneHierarchyPanel::Render() {
 			bool anyShown = false;
 
 			anyShown |= AddComponentMenu<CameraComponent>(_selected, ICON_FA_CAMERA " Camera");
+			anyShown |= AddComponentMenu<MeshComponent>(_selected, ICON_FA_CIRCLE_NODES " Mesh");
 
 			if (!anyShown) {
 				ImGui::BeginDisabled();
@@ -304,6 +306,18 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 			return false;
 		},
 		[](Entity entity, auto& cCamera) {
+			bool deleted = false;
+			if (ImGui::MenuItem(ICON_FA_TRASH_CAN " Remove Component")) { deleted = true; }
+
+			return deleted;
+		});
+
+	// Mesh
+	DrawComponent<MeshComponent>(
+		entity,
+		ICON_FA_CIRCLE_NODES " Mesh",
+		[](Entity entity, auto& cMesh) { return false; },
+		[](Entity entity, auto& cMesh) {
 			bool deleted = false;
 			if (ImGui::MenuItem(ICON_FA_TRASH_CAN " Remove Component")) { deleted = true; }
 
