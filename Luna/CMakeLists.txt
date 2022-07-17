@@ -24,6 +24,9 @@ FetchContent_Declare(spirv-cross
 FetchContent_Declare(tinygltf
 	GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
 	GIT_TAG master)
+FetchContent_Declare(yaml
+	GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+	GIT_TAG master)
 
 set(ENABLE_GLSLANG_BINARIES Off CACHE BOOL "" FORCE)
 set(GLFW_BUILD_DOCS Off CACHE BOOL "" FORCE)
@@ -37,7 +40,7 @@ set(SPIRV_CROSS_ENABLE_MSL Off CACHE BOOL "" FORCE)
 set(SPIRV_CROSS_ENABLE_TESTS Off CACHE BOOL "" FORCE)
 set(TINYGLTF_BUILD_LOADER_EXAMPLE Off CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(entt glfw glm glslang spdlog spirv-cross tinygltf)
+FetchContent_MakeAvailable(entt glfw glm glslang spdlog spirv-cross tinygltf yaml)
 
 add_executable(Luna)
 target_compile_definitions(Luna
@@ -45,7 +48,7 @@ target_compile_definitions(Luna
 target_include_directories(Luna
 	PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(Luna
-	PRIVATE EnTT::EnTT glfw glm glslang imgui spdlog SPIRV spirv-cross-cpp tinygltf vma Vulkan::Headers)
+	PRIVATE EnTT::EnTT glfw glm glslang imgui spdlog SPIRV spirv-cross-cpp tinygltf vma Vulkan::Headers yaml-cpp)
 
 add_subdirectory(Scene)
 add_subdirectory(Utility)
