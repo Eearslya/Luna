@@ -53,7 +53,8 @@ add_subdirectory(Vulkan)
 
 target_sources(Luna PRIVATE
 	ImGuiRenderer.cpp
-	Main.cpp)
+	Main.cpp
+	SceneRenderer.cpp)
 
 add_custom_target(Run
 	COMMAND Luna

@@ -9,6 +9,7 @@
 #include "Scene/Entity.hpp"
 #include "Scene/Scene.hpp"
 #include "Scene/SceneHierarchyPanel.hpp"
+#include "SceneRenderer.hpp"
 #include "Utility/Log.hpp"
 #include "Vulkan/Buffer.hpp"
 #include "Vulkan/CommandBuffer.hpp"
@@ -29,8 +30,9 @@ int main(int argc, const char** argv) {
 		auto platform = std::make_unique<GlfwPlatform>();
 		Vulkan::WSI wsi(std::move(platform));
 		auto& device       = wsi.GetDevice();
-		auto imguiRenderer = std::make_unique<ImGuiRenderer>(wsi);
 		auto scene         = std::make_shared<Scene>();
+		auto imguiRenderer = std::make_unique<ImGuiRenderer>(wsi);
+		auto sceneRenderer = std::make_unique<SceneRenderer>(wsi);
 		auto scenePanel    = std::make_unique<SceneHierarchyPanel>(scene);
 
 		scene->CreateEntity("Camera");
@@ -41,28 +43,41 @@ int main(int argc, const char** argv) {
 			wsi.BeginFrame();
 			imguiRenderer->BeginFrame();
 
+			const auto frameIndex = wsi.GetAcquiredIndex();
+
 			auto cmd = device.RequestCommandBuffer();
 
-			auto rpInfo           = device.GetStockRenderPass();
-			rpInfo.ClearColors[0] = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f});
-			cmd->BeginRenderPass(rpInfo);
-			cmd->EndRenderPass();
-
+			ImVec2 viewportSize(0.0f, 0.0f);
 			imguiRenderer->BeginDockspace();
-			{
-				if (ImGui::BeginMainMenuBar()) {
-					if (ImGui::BeginMenu("File")) {
-						if (ImGui::MenuItem(ICON_FA_POWER_OFF " Exit")) { wsi.RequestShutdown(); }
-						ImGui::EndMenu();
-					}
-					ImGui::EndMainMenuBar();
+			if (ImGui::BeginMainMenuBar()) {
+				if (ImGui::BeginMenu("File")) {
+					if (ImGui::MenuItem(ICON_FA_POWER_OFF " Exit")) { wsi.RequestShutdown(); }
+					ImGui::EndMenu();
 				}
-
-				ImGui::ShowDemoWindow();
-				scenePanel->Render();
+				ImGui::EndMainMenuBar();
 			}
+
+			ImGui::ShowDemoWindow();
+
+			scenePanel->Render();
+
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+			ImGui::SetNextWindowSizeConstraints(
+				ImVec2(256.0f, 256.0f), ImVec2(std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity()));
+			if (ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoCollapse)) {
+				const ImVec2 windowMin = ImGui::GetWindowContentRegionMin();
+				const ImVec2 windowMax = ImGui::GetWindowContentRegionMax();
+				viewportSize           = ImVec2(windowMax.x - windowMin.x, windowMax.y - windowMin.y);
+
+				sceneRenderer->SetImageSize(glm::uvec2(viewportSize.x, viewportSize.y));
+				sceneRenderer->Render(cmd, *scene, frameIndex);
+				auto& sceneImage = sceneRenderer->GetImage(frameIndex);
+				if (sceneImage) { ImGui::Image(reinterpret_cast<ImTextureID>(&sceneImage->GetView()), viewportSize); }
+			}
+			ImGui::End();
+			ImGui::PopStyleVar();
 			imguiRenderer->EndDockspace();
-			imguiRenderer->Render(cmd, device.GetFrameIndex());
+			imguiRenderer->Render(cmd, frameIndex, true);
 
 			device.Submit(cmd);
 

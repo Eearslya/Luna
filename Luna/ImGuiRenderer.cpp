@@ -280,7 +280,7 @@ void ImGuiRenderer::BeginFrame() {
 	ImGui::NewFrame();
 }
 
-void ImGuiRenderer::Render(Vulkan::CommandBufferHandle& cmd, uint32_t frameIndex) {
+void ImGuiRenderer::Render(Vulkan::CommandBufferHandle& cmd, uint32_t frameIndex, bool clear) {
 	ImGui::EndFrame();
 
 	auto& device = _wsi.GetDevice();
@@ -327,8 +327,10 @@ void ImGuiRenderer::Render(Vulkan::CommandBufferHandle& cmd, uint32_t frameIndex
 	// Set up our render state.
 	{
 		Vulkan::RenderPassInfo rp = device.GetStockRenderPass(Vulkan::StockRenderPass::ColorOnly);
-		rp.ClearAttachments       = 0;
-		rp.LoadAttachments        = 1 << 0;
+		if (!clear) {
+			rp.ClearAttachments = 0;
+			rp.LoadAttachments  = 1 << 0;
+		}
 		cmd->BeginRenderPass(rp);
 		SetRenderState(cmd, drawData, frameIndex);
 	}
@@ -431,7 +433,7 @@ void ImGuiRenderer::BeginDockspace() {
 	ImGui::Begin("Dockspace", nullptr, windowFlags);
 	ImGui::PopStyleVar(3);
 
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(370.0f, style.WindowMinSize.y));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(370.0f, 64.0f));
 	ImGuiID dockspaceId = ImGui::GetID("Dockspace");
 	ImGui::DockSpace(dockspaceId, ImVec2(0.0f, 0.0f), dockspaceFlags);
 	ImGui::PopStyleVar();

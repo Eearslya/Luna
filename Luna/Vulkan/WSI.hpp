@@ -46,6 +46,9 @@ class WSI {
 	glm::uvec2 GetFramebufferSize() const {
 		return {_platform->GetSurfaceWidth(), _platform->GetSurfaceHeight()};
 	}
+	size_t GetImageCount() const {
+		return _images.size();
+	}
 	const std::vector<vk::Image>& GetImages() const {
 		return _images;
 	}
