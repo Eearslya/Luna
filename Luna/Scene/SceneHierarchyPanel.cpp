@@ -143,17 +143,18 @@ static void DrawComponent(Entity entity,
 	if (entity.HasComponent<T>()) {
 		const std::string compId = label + "##Properties";
 		ImGui::PushID(compId.c_str());
-		if (hasPropertyMenu &&
-		    CollapsingHeader(
-					label.c_str(), hasPropertyMenu ? &propertyMenu : nullptr, ImGuiTreeNodeFlags_DefaultOpen, ICON_FA_WRENCH)) {
-			auto& component = entity.GetComponent<T>();
-			deleted |= drawFn(entity, component);
+		if (hasPropertyMenu) {
+			if (CollapsingHeader(
+						label.c_str(), hasPropertyMenu ? &propertyMenu : nullptr, ImGuiTreeNodeFlags_DefaultOpen, ICON_FA_WRENCH)) {
+				auto& component = entity.GetComponent<T>();
+				deleted |= drawFn(entity, component);
 
-			if (propertyMenu) { ImGui::OpenPopup(compId.c_str()); }
+				if (propertyMenu) { ImGui::OpenPopup(compId.c_str()); }
 
-			if (ImGui::BeginPopup(compId.c_str())) {
-				deleted |= propsFn.value()(entity, component);
-				ImGui::EndPopup();
+				if (ImGui::BeginPopup(compId.c_str())) {
+					deleted |= propsFn.value()(entity, component);
+					ImGui::EndPopup();
+				}
 			}
 		} else if (ImGui::CollapsingHeader(label.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
 			auto& component = entity.GetComponent<T>();
@@ -173,9 +174,14 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 		char nameBuffer[256];
 		strcpy_s(nameBuffer, cName.Name.data());
 
-		if (ImGui::InputText("Name", nameBuffer, sizeof(nameBuffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
+		ImGui::Columns(2);
+		ImGui::SetColumnWidth(0, 100.0f);
+		ImGui::Text("Name");
+		ImGui::NextColumn();
+		if (ImGui::InputText("##Name", nameBuffer, sizeof(nameBuffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
 			if (strlen(nameBuffer) > 0) { cName.Name = nameBuffer; }
 		}
+		ImGui::Columns(1);
 
 		ImGui::Separator();
 	}
