@@ -6,7 +6,9 @@
 
 #include "GlfwPlatform.hpp"
 #include "ImGuiRenderer.hpp"
+#include "Scene/Entity.hpp"
 #include "Scene/Scene.hpp"
+#include "Scene/SceneHeirarchyPanel.hpp"
 #include "Utility/Log.hpp"
 #include "Vulkan/Buffer.hpp"
 #include "Vulkan/CommandBuffer.hpp"
@@ -28,7 +30,12 @@ int main(int argc, const char** argv) {
 		Vulkan::WSI wsi(std::move(platform));
 		auto& device       = wsi.GetDevice();
 		auto imguiRenderer = std::make_unique<ImGuiRenderer>(wsi);
-		auto scene         = std::make_unique<Scene>();
+		auto scene         = std::make_shared<Scene>();
+		auto scenePanel    = std::make_unique<SceneHeirarchyPanel>(scene);
+
+		scene->CreateEntity("Camera");
+		scene->CreateEntity("Light");
+		scene->CreateEntity("Mesh");
 
 		while (wsi.IsAlive()) {
 			wsi.BeginFrame();
@@ -47,6 +54,8 @@ int main(int argc, const char** argv) {
 			ImGui::Button(ICON_FA_MAGNIFYING_GLASS " Search");
 			ImGui::Text("Hello, こんにちは");
 			ImGui::End();
+
+			scenePanel->Render();
 
 			imguiRenderer->Render(cmd, device.GetFrameIndex());
 
