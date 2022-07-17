@@ -4,6 +4,7 @@
 #include <glm/glm.hpp>
 #include <iostream>
 
+#include "ContentBrowserPanel.hpp"
 #include "GlfwPlatform.hpp"
 #include "ImGuiRenderer.hpp"
 #include "Scene/CameraComponent.hpp"
@@ -11,6 +12,7 @@
 #include "Scene/MeshComponent.hpp"
 #include "Scene/Scene.hpp"
 #include "Scene/SceneHierarchyPanel.hpp"
+#include "Scene/SceneSerializer.hpp"
 #include "SceneRenderer.hpp"
 #include "Utility/Log.hpp"
 #include "Vulkan/Buffer.hpp"
@@ -31,18 +33,12 @@ int main(int argc, const char** argv) {
 	try {
 		auto platform = std::make_unique<GlfwPlatform>();
 		Vulkan::WSI wsi(std::move(platform));
-		auto& device       = wsi.GetDevice();
-		auto scene         = std::make_shared<Scene>();
-		auto imguiRenderer = std::make_unique<ImGuiRenderer>(wsi);
-		auto sceneRenderer = std::make_unique<SceneRenderer>(wsi);
-		auto scenePanel    = std::make_unique<SceneHierarchyPanel>(scene);
-
-		auto camera   = scene->CreateEntity("Camera");
-		auto& cCamera = camera.AddComponent<CameraComponent>();
-		scene->CreateEntity("Light");
-		auto mesh   = scene->CreateEntity("Mesh");
-		auto& cMesh = mesh.AddComponent<MeshComponent>();
-		mesh.SetTranslation(glm::vec3(0.0f, 0.0f, -2.0f));
+		auto& device             = wsi.GetDevice();
+		auto scene               = std::make_shared<Scene>();
+		auto imguiRenderer       = std::make_unique<ImGuiRenderer>(wsi);
+		auto sceneRenderer       = std::make_unique<SceneRenderer>(wsi);
+		auto contentBrowserPanel = std::make_unique<ContentBrowserPanel>();
+		auto scenePanel          = std::make_unique<SceneHierarchyPanel>(scene);
 
 		while (wsi.IsAlive()) {
 			wsi.BeginFrame();
@@ -56,6 +52,14 @@ int main(int argc, const char** argv) {
 			imguiRenderer->BeginDockspace();
 			if (ImGui::BeginMainMenuBar()) {
 				if (ImGui::BeginMenu("File")) {
+					if (ImGui::MenuItem(ICON_FA_DOWNLOAD " Serialize")) {
+						SceneSerializer serializer(*scene);
+						serializer.Serialize("Examples/TestScene.scene");
+					}
+					if (ImGui::MenuItem(ICON_FA_UPLOAD " Deserialize")) {
+						SceneSerializer serializer(*scene);
+						serializer.Deserialize("Examples/TestScene.scene");
+					}
 					if (ImGui::MenuItem(ICON_FA_POWER_OFF " Exit")) { wsi.RequestShutdown(); }
 					ImGui::EndMenu();
 				}
@@ -64,6 +68,7 @@ int main(int argc, const char** argv) {
 
 			ImGui::ShowDemoWindow();
 
+			contentBrowserPanel->Render();
 			scenePanel->Render();
 
 			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));

@@ -9,6 +9,7 @@ class Scene {
  public:
 	friend class Entity;
 	friend class SceneHierarchyPanel;
+	friend class SceneSerializer;
 
 	Scene();
 	~Scene() noexcept;
@@ -20,6 +21,7 @@ class Scene {
 		return _registry;
 	}
 
+	void Clear();
 	Entity CreateEntity(const std::string& name = "");
 	Entity CreateChildEntity(Entity parent, const std::string& name = "");
 	void DestroyEntity(Entity entity);

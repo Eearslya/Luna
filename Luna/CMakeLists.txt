@@ -39,12 +39,15 @@ set(SPIRV_CROSS_ENABLE_HLSL Off CACHE BOOL "" FORCE)
 set(SPIRV_CROSS_ENABLE_MSL Off CACHE BOOL "" FORCE)
 set(SPIRV_CROSS_ENABLE_TESTS Off CACHE BOOL "" FORCE)
 set(TINYGLTF_BUILD_LOADER_EXAMPLE Off CACHE BOOL "" FORCE)
+set(YAML_BUILD_SHARED_LIBS Off CACHE BOOL "" FORCE)
+set(YAML_CPP_BUILD_TESTS Off CACHE BOOL "" FORCE)
+set(YAML_CPP_BUILD_TOOLS Off CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(entt glfw glm glslang spdlog spirv-cross tinygltf yaml)
 
 add_executable(Luna)
 target_compile_definitions(Luna
-	PRIVATE VK_ENABLE_BETA_EXTENSIONS VK_NO_PROTOTYPES VULKAN_HPP_DISPATCH_LOADER_DYNAMIC)
+	PRIVATE VK_ENABLE_BETA_EXTENSIONS VK_NO_PROTOTYPES VULKAN_HPP_DISPATCH_LOADER_DYNAMIC YAML_CPP_STATIC_DEFINE)
 target_include_directories(Luna
 	PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(Luna
@@ -55,6 +58,7 @@ add_subdirectory(Utility)
 add_subdirectory(Vulkan)
 
 target_sources(Luna PRIVATE
+	ContentBrowserPanel.cpp
 	ImGuiRenderer.cpp
 	Main.cpp
 	SceneRenderer.cpp)

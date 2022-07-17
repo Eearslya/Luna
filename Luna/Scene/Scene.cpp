@@ -11,6 +11,10 @@ Scene::Scene() {}
 
 Scene::~Scene() noexcept {}
 
+void Scene::Clear() {
+	_registry.clear();
+}
+
 Entity Scene::CreateEntity(const std::string& name) {
 	return CreateChildEntity({}, name);
 }
