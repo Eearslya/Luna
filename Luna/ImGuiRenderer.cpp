@@ -410,3 +410,33 @@ void ImGuiRenderer::SetRenderState(Vulkan::CommandBufferHandle& cmd, ImDrawData*
 	cmd->SetIndexBuffer(
 		*_indexBuffers[frameIndex], 0, sizeof(ImDrawIdx) == 2 ? vk::IndexType::eUint16 : vk::IndexType::eUint32);
 }
+
+void ImGuiRenderer::BeginDockspace() {
+	ImGuiIO& io       = ImGui::GetIO();
+	ImGuiStyle& style = ImGui::GetStyle();
+
+	ImGuiDockNodeFlags dockspaceFlags = ImGuiDockNodeFlags_None;
+	ImGuiWindowFlags windowFlags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
+	                               ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+	                               ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+
+	ImGuiViewport* viewport = ImGui::GetMainViewport();
+	ImGui::SetNextWindowPos(viewport->Pos);
+	ImGui::SetNextWindowSize(viewport->Size);
+	ImGui::SetNextWindowViewport(viewport->ID);
+
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+	ImGui::Begin("Dockspace", nullptr, windowFlags);
+	ImGui::PopStyleVar(3);
+
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(370.0f, style.WindowMinSize.y));
+	ImGuiID dockspaceId = ImGui::GetID("Dockspace");
+	ImGui::DockSpace(dockspaceId, ImVec2(0.0f, 0.0f), dockspaceFlags);
+	ImGui::PopStyleVar();
+}
+
+void ImGuiRenderer::EndDockspace() {
+	ImGui::End();
+}

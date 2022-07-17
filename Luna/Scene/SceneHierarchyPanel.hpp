@@ -5,9 +5,9 @@
 #include "Entity.hpp"
 
 namespace Luna {
-class SceneHeirarchyPanel {
+class SceneHierarchyPanel {
  public:
-	SceneHeirarchyPanel(const std::shared_ptr<Scene>& scene);
+	SceneHierarchyPanel(const std::shared_ptr<Scene>& scene);
 
 	void Render();
 

@@ -19,6 +19,7 @@ class WSIPlatform {
 	virtual uint32_t GetWindowHeight()                                                  = 0;
 	virtual uint32_t GetWindowWidth()                                                   = 0;
 	virtual bool IsAlive()                                                              = 0;
+	virtual void RequestShutdown()                                                      = 0;
 	virtual void Update()                                                               = 0;
 };
 
@@ -60,6 +61,7 @@ class WSI {
 
 	void BeginFrame();
 	void EndFrame();
+	void RequestShutdown();
 
  private:
 	void RecreateSwapchain();

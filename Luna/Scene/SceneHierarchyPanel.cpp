@@ -1,5 +1,3 @@
-#include "SceneHeirarchyPanel.hpp"
-
 #include <imgui.h>
 #include <imgui_internal.h>
 
@@ -10,12 +8,13 @@
 #include "NameComponent.hpp"
 #include "RelationshipComponent.hpp"
 #include "Scene.hpp"
+#include "SceneHierarchyPanel.hpp"
 #include "TransformComponent.hpp"
 
 namespace Luna {
-SceneHeirarchyPanel::SceneHeirarchyPanel(const std::shared_ptr<Scene>& scene) : _scene(scene) {}
+SceneHierarchyPanel::SceneHierarchyPanel(const std::shared_ptr<Scene>& scene) : _scene(scene) {}
 
-void SceneHeirarchyPanel::Render() {
+void SceneHierarchyPanel::Render() {
 	auto scene = _scene.lock();
 	if (!scene) {
 		_scene.reset();
@@ -24,7 +23,7 @@ void SceneHeirarchyPanel::Render() {
 
 	auto& registry = scene->_registry;
 
-	if (ImGui::Begin("Heirarchy")) {
+	if (ImGui::Begin("Hierarchy")) {
 		if (!_selected) { _selected = {}; }
 
 		registry.each([&](auto entityId) {
@@ -54,7 +53,7 @@ void SceneHeirarchyPanel::Render() {
 	ImGui::End();
 }
 
-void SceneHeirarchyPanel::DrawEntity(Entity entity) {
+void SceneHierarchyPanel::DrawEntity(Entity entity) {
 	auto scene = _scene.lock();
 	if (!scene) {
 		_scene.reset();
@@ -100,8 +99,7 @@ static bool CollapsingHeader(const char* label, bool* specialClick, ImGuiTreeNod
 
 	ImGuiID id  = window->GetID(label);
 	bool isOpen = ImGui::TreeNodeBehavior(id, flags, label);
-	ImGui::SameLine();
-	ImGui::SetCursorPosX(ImGui::GetItemRectSize().x - buttonSize.x);
+	ImGui::SameLine(ImGui::GetItemRectSize().x - buttonSize.x);
 	ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 	if (ImGui::Button(buttonLabel, buttonSize)) { *specialClick = true; }
 	ImGui::PopStyleColor();
@@ -138,7 +136,7 @@ static void DrawComponent(Entity entity,
 	}
 }
 
-void SceneHeirarchyPanel::DrawComponents(Entity entity) {
+void SceneHierarchyPanel::DrawComponents(Entity entity) {
 	// Name
 	if (entity.HasComponent<NameComponent>()) {
 		auto& cName = entity.GetComponent<NameComponent>();
@@ -154,7 +152,9 @@ void SceneHeirarchyPanel::DrawComponents(Entity entity) {
 
 	// Transform
 	DrawComponent<TransformComponent>(
-		entity, ICON_FA_ARROWS_UP_DOWN_LEFT_RIGHT " Transform", [](Entity entity, TransformComponent& cTransform) {
+		entity,
+		ICON_FA_ARROWS_UP_DOWN_LEFT_RIGHT " Transform",
+		[](Entity entity, TransformComponent& cTransform) {
 			const auto EditVec3 = [](const std::string& label,
 		                           glm::vec3& value,
 		                           float speed       = 0.1f,
@@ -224,6 +224,13 @@ void SceneHeirarchyPanel::DrawComponents(Entity entity) {
 			EditVec3("Rotation", cTransform.Rotation, 0.5f);
 			EditVec3("Scale", cTransform.Scale, 0.1f, 1.0f);
 			ImGui::Spacing();
+		},
+		[](Entity entity, auto& cTransform) {
+			if (ImGui::MenuItem(ICON_FA_ARROW_ROTATE_LEFT " Reset to Identity")) {
+				cTransform.Translation = glm::vec3(0.0f);
+				cTransform.Rotation    = glm::vec3(0.0f);
+				cTransform.Scale       = glm::vec3(1.0f);
+			}
 		});
 }
 }  // namespace Luna

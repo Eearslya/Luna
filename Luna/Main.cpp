@@ -8,7 +8,7 @@
 #include "ImGuiRenderer.hpp"
 #include "Scene/Entity.hpp"
 #include "Scene/Scene.hpp"
-#include "Scene/SceneHeirarchyPanel.hpp"
+#include "Scene/SceneHierarchyPanel.hpp"
 #include "Utility/Log.hpp"
 #include "Vulkan/Buffer.hpp"
 #include "Vulkan/CommandBuffer.hpp"
@@ -31,7 +31,7 @@ int main(int argc, const char** argv) {
 		auto& device       = wsi.GetDevice();
 		auto imguiRenderer = std::make_unique<ImGuiRenderer>(wsi);
 		auto scene         = std::make_shared<Scene>();
-		auto scenePanel    = std::make_unique<SceneHeirarchyPanel>(scene);
+		auto scenePanel    = std::make_unique<SceneHierarchyPanel>(scene);
 
 		scene->CreateEntity("Camera");
 		scene->CreateEntity("Light");
@@ -48,15 +48,20 @@ int main(int argc, const char** argv) {
 			cmd->BeginRenderPass(rpInfo);
 			cmd->EndRenderPass();
 
-			ImGui::ShowDemoWindow();
+			imguiRenderer->BeginDockspace();
+			{
+				if (ImGui::BeginMainMenuBar()) {
+					if (ImGui::BeginMenu("File")) {
+						if (ImGui::MenuItem(ICON_FA_POWER_OFF " Exit")) { wsi.RequestShutdown(); }
+						ImGui::EndMenu();
+					}
+					ImGui::EndMainMenuBar();
+				}
 
-			ImGui::Begin("Demo");
-			ImGui::Button(ICON_FA_MAGNIFYING_GLASS " Search");
-			ImGui::Text("Hello, こんにちは");
-			ImGui::End();
-
-			scenePanel->Render();
-
+				ImGui::ShowDemoWindow();
+				scenePanel->Render();
+			}
+			imguiRenderer->EndDockspace();
 			imguiRenderer->Render(cmd, device.GetFrameIndex());
 
 			device.Submit(cmd);

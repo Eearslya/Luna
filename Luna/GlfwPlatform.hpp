@@ -13,6 +13,7 @@ class GlfwPlatform : public Luna::Vulkan::WSIPlatform {
 	GlfwPlatform() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+		glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
 		glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
 		_window = glfwCreateWindow(1600, 900, "Luna", nullptr, nullptr);
@@ -75,6 +76,10 @@ class GlfwPlatform : public Luna::Vulkan::WSIPlatform {
 
 	virtual bool IsAlive() override {
 		return !glfwWindowShouldClose(_window);
+	}
+
+	virtual void RequestShutdown() override {
+		glfwSetWindowShouldClose(_window, GLFW_TRUE);
 	}
 
 	virtual void Update() override {

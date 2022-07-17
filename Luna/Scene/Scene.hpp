@@ -8,7 +8,7 @@ class Entity;
 class Scene {
  public:
 	friend class Entity;
-	friend class SceneHeirarchyPanel;
+	friend class SceneHierarchyPanel;
 
 	Scene();
 	~Scene() noexcept;

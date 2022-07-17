@@ -128,6 +128,10 @@ void WSI::EndFrame() {
 	_acquiredImage = std::numeric_limits<uint32_t>::max();
 }
 
+void WSI::RequestShutdown() {
+	_platform->RequestShutdown();
+}
+
 void WSI::RecreateSwapchain() {
 	auto gpu    = _context->GetGPU();
 	auto device = _context->GetDevice();
