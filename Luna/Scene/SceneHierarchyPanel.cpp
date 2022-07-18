@@ -193,7 +193,7 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 	if (entity.HasComponent<NameComponent>()) {
 		auto& cName = entity.GetComponent<NameComponent>();
 		char nameBuffer[256];
-#ifdef MSVC
+#ifdef _MSC_VER
 		strcpy_s(nameBuffer, cName.Name.data());
 #else
 		strcpy(nameBuffer, cName.Name.data());
