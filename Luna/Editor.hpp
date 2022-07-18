@@ -7,6 +7,7 @@
 
 struct ContentBrowserItem;
 class ContentBrowserPanel;
+class MeshImportPanel;
 class ImGuiRenderer;
 class SceneRenderer;
 namespace Luna {
@@ -53,6 +54,7 @@ class Editor {
 	std::unique_ptr<SceneRenderer> _sceneRenderer;
 	std::unique_ptr<ContentBrowserPanel> _contentBrowserPanel;
 	std::unique_ptr<Luna::SceneHierarchyPanel> _scenePanel;
+	std::unique_ptr<MeshImportPanel> _meshImportPanel;
 
 	bool _showContentBrowser = true;
 	bool _showDemoWindow     = false;

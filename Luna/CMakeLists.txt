@@ -64,6 +64,7 @@ target_sources(Luna PRIVATE
 	Editor.cpp
 	ImGuiRenderer.cpp
 	Main.cpp
+	MeshImportPanel.cpp
 	SceneRenderer.cpp
 	UI.cpp)
 

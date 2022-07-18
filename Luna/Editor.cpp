@@ -9,6 +9,7 @@
 #include "ContentBrowserPanel.hpp"
 #include "GlfwPlatform.hpp"
 #include "ImGuiRenderer.hpp"
+#include "MeshImportPanel.hpp"
 #include "Scene/CameraComponent.hpp"
 #include "Scene/Entity.hpp"
 #include "Scene/MeshComponent.hpp"
@@ -87,6 +88,9 @@ void Editor::Run() {
 		if (_showDemoWindow) { ImGui::ShowDemoWindow(&_showDemoWindow); }
 		if (_showContentBrowser) { _contentBrowserPanel->Render(&_showContentBrowser); }
 		_scenePanel->Render();
+		if (_meshImportPanel) {
+			if (!_meshImportPanel->Render(cmd)) { _meshImportPanel.reset(); }
+		}
 		RenderViewport(cmd);
 
 		_imguiRenderer->EndDockspace();
@@ -194,6 +198,8 @@ void Editor::RequestContent(const ContentBrowserItem& item) {
 		if (extension.string() == ".scene") {
 			SceneSerializer serializer(*_scene);
 			serializer.Deserialize(AssetsDirectory / item.FilePath);
+		} else if (extension.string() == ".gltf") {
+			if (!_meshImportPanel) { _meshImportPanel = std::make_unique<MeshImportPanel>(*_wsi, item.FilePath); }
 		}
 	}
 }
