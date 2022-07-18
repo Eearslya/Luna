@@ -1,6 +1,7 @@
 #pragma once
 
 #include <entt/entt.hpp>
+#include <filesystem>
 
 namespace Luna {
 class Entity;
@@ -28,7 +29,12 @@ class Scene {
 
 	Entity GetMainCamera();
 
+	const std::filesystem::path& GetSceneAssetPath() const {
+		return _sceneAssetPath;
+	}
+
  private:
+	std::filesystem::path _sceneAssetPath;
 	entt::registry _registry;
 };
 }  // namespace Luna

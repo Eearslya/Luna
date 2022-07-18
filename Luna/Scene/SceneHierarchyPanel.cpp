@@ -171,6 +171,8 @@ static void DrawComponent(Entity entity,
 }
 
 void SceneHierarchyPanel::DrawComponents(Entity entity) {
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
+
 	// Id
 	if (entity.HasComponent<IdComponent>()) {
 		auto& cId = entity.GetComponent<IdComponent>();
@@ -211,6 +213,7 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 		}
 	}
 
+	ImGui::PopStyleVar();
 	ImGui::Spacing();
 	ImGui::Separator();
 

@@ -47,7 +47,8 @@ FetchContent_MakeAvailable(entt glfw glm glslang spdlog spirv-cross tinygltf yam
 
 add_executable(Luna)
 target_compile_definitions(Luna
-	PRIVATE VK_ENABLE_BETA_EXTENSIONS VK_NO_PROTOTYPES VULKAN_HPP_DISPATCH_LOADER_DYNAMIC YAML_CPP_STATIC_DEFINE)
+	PRIVATE
+	IMGUI_DEFINE_MATH_OPERATORS VK_ENABLE_BETA_EXTENSIONS VK_NO_PROTOTYPES VULKAN_HPP_DISPATCH_LOADER_DYNAMIC YAML_CPP_STATIC_DEFINE)
 target_include_directories(Luna
 	PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(Luna
@@ -62,7 +63,8 @@ target_sources(Luna PRIVATE
 	Editor.cpp
 	ImGuiRenderer.cpp
 	Main.cpp
-	SceneRenderer.cpp)
+	SceneRenderer.cpp
+	UI.cpp)
 
 add_custom_target(Run
 	COMMAND Luna

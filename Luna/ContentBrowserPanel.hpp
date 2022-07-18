@@ -2,12 +2,20 @@
 
 #include <filesystem>
 
+enum class ContentBrowserItemType { Directory = 0, File = 1 };
+
+struct ContentBrowserItem {
+	ContentBrowserItemType Type;
+	std::filesystem::path FilePath;
+};
+
 class ContentBrowserPanel {
  public:
-	ContentBrowserPanel() = default;
+	ContentBrowserPanel();
 
 	void Render(bool* show);
 
  private:
-	const std::filesystem::path _assetsDirectory = "Assets";
+	std::filesystem::path _currentDirectory;
+	ContentBrowserItem _currentDragDropItem;
 };

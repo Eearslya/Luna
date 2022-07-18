@@ -1,5 +1,8 @@
 #include "Editor.hpp"
 
+#include <imgui_internal.h>
+#include <stb_image.h>
+
 #include <glm/glm.hpp>
 
 #include "ContentBrowserPanel.hpp"
@@ -24,12 +27,19 @@
 
 using namespace Luna;
 
+Editor* Editor::_instance = nullptr;
+
 Editor::Editor() {
+	_instance = this;
+
 	Log::Initialize();
 	Log::SetLevel(Log::Level::Trace);
 
-	auto platform        = std::make_unique<GlfwPlatform>();
-	_wsi                 = std::make_unique<Vulkan::WSI>(std::move(platform));
+	auto platform = std::make_unique<GlfwPlatform>();
+	_wsi          = std::make_unique<Vulkan::WSI>(std::move(platform));
+
+	LoadResources();
+
 	_scene               = std::make_shared<Scene>();
 	_imguiRenderer       = std::make_unique<ImGuiRenderer>(*_wsi);
 	_sceneRenderer       = std::make_unique<SceneRenderer>(*_wsi);
@@ -52,18 +62,10 @@ void Editor::Run() {
 
 		auto cmd = device.RequestCommandBuffer();
 
-		ImVec2 viewportSize(0.0f, 0.0f);
 		_imguiRenderer->BeginDockspace();
 		if (ImGui::BeginMainMenuBar()) {
 			if (ImGui::BeginMenu("File")) {
-				if (ImGui::MenuItem(ICON_FA_DOWNLOAD " Serialize")) {
-					SceneSerializer serializer(*_scene);
-					serializer.Serialize("Examples/TestScene.scene");
-				}
-				if (ImGui::MenuItem(ICON_FA_UPLOAD " Deserialize")) {
-					SceneSerializer serializer(*_scene);
-					serializer.Deserialize("Examples/TestScene.scene");
-				}
+				if (ImGui::MenuItem(ICON_FA_DOWNLOAD " Save Scene")) { SaveScene(); }
 				if (ImGui::MenuItem(ICON_FA_POWER_OFF " Exit")) { _wsi->RequestShutdown(); }
 				ImGui::EndMenu();
 			}
@@ -82,27 +84,111 @@ void Editor::Run() {
 		if (_showDemoWindow) { ImGui::ShowDemoWindow(&_showDemoWindow); }
 		if (_showContentBrowser) { _contentBrowserPanel->Render(&_showContentBrowser); }
 		_scenePanel->Render();
+		RenderViewport(cmd);
 
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-		ImGui::SetNextWindowSizeConstraints(
-			ImVec2(256.0f, 256.0f), ImVec2(std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity()));
-		if (ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoCollapse)) {
-			const ImVec2 windowMin = ImGui::GetWindowContentRegionMin();
-			const ImVec2 windowMax = ImGui::GetWindowContentRegionMax();
-			viewportSize           = ImVec2(windowMax.x - windowMin.x, windowMax.y - windowMin.y);
-
-			_sceneRenderer->SetImageSize(glm::uvec2(viewportSize.x, viewportSize.y));
-			_sceneRenderer->Render(cmd, *_scene, frameIndex);
-			auto& sceneImage = _sceneRenderer->GetImage(frameIndex);
-			if (sceneImage) { ImGui::Image(reinterpret_cast<ImTextureID>(&sceneImage->GetView()), viewportSize); }
-		}
-		ImGui::End();
-		ImGui::PopStyleVar();
 		_imguiRenderer->EndDockspace();
 		_imguiRenderer->Render(cmd, frameIndex, true);
 
 		device.Submit(cmd);
 
 		_wsi->EndFrame();
+	}
+}
+
+void Editor::AcceptContent(const ContentBrowserItem& item) {
+	if (!IsContentAccepted(item)) { return; }
+
+	if (item.Type == ContentBrowserItemType::File) {
+		const auto extension = item.FilePath.extension();
+		if (extension.string() == ".scene") {
+			SceneSerializer serializer(*_scene);
+			serializer.Deserialize(AssetsDirectory / item.FilePath);
+		}
+	}
+}
+
+bool Editor::IsContentAccepted(const ContentBrowserItem& item) {
+	if (item.Type == ContentBrowserItemType::Directory) { return false; }
+
+	const auto extension = item.FilePath.extension().string();
+	if (extension == ".scene") { return true; }
+
+	return false;
+}
+
+void Editor::LoadResources() {
+	const auto LoadTexture = [&](const std::filesystem::path& imageFile) -> Vulkan::ImageHandle {
+		int width, height, components;
+		const auto imageFileStr = imageFile.string();
+		stbi_uc* pixels         = stbi_load(imageFileStr.c_str(), &width, &height, &components, STBI_rgb_alpha);
+		if (!pixels) { return {}; }
+
+		const Vulkan::ImageInitialData initialData{.Data = pixels};
+		const Vulkan::ImageCreateInfo imageCI =
+			Vulkan::ImageCreateInfo::Immutable2D(width, height, vk::Format::eR8G8B8A8Unorm, true);
+		auto handle = _wsi->GetDevice().CreateImage(imageCI, &initialData);
+
+		stbi_image_free(pixels);
+
+		return handle;
+	};
+
+	_resources.DirectoryIcon = LoadTexture("Resources/Icons/Directory.png");
+	_resources.FileIcon      = LoadTexture("Resources/Icons/File.png");
+}
+
+void Editor::RenderViewport(Vulkan::CommandBufferHandle& cmd) {
+	ImVec2 viewportSize(0.0f, 0.0f);
+	const auto frameIndex = _wsi->GetAcquiredIndex();
+
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+	ImGui::SetNextWindowSizeConstraints(
+		ImVec2(256.0f, 256.0f), ImVec2(std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity()));
+
+	if (ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoCollapse)) {
+		const ImVec2 windowMin = ImGui::GetWindowContentRegionMin();
+		const ImVec2 windowMax = ImGui::GetWindowContentRegionMax();
+		viewportSize           = ImVec2(windowMax.x - windowMin.x, windowMax.y - windowMin.y);
+
+		_sceneRenderer->SetImageSize(glm::uvec2(viewportSize.x, viewportSize.y));
+		_sceneRenderer->Render(cmd, *_scene, frameIndex);
+		auto& sceneImage = _sceneRenderer->GetImage(frameIndex);
+		if (sceneImage) {
+			ImGui::Image(reinterpret_cast<ImTextureID>(&sceneImage->GetView()), viewportSize);
+
+			if (ImGui::BeginDragDropTarget()) {
+				if (const ImGuiPayload* payload =
+				      ImGui::AcceptDragDropPayload("ContentBrowserItem", ImGuiDragDropFlags_AcceptNoDrawDefaultRect)) {
+					const ContentBrowserItem* item = reinterpret_cast<const ContentBrowserItem*>(payload->Data);
+					AcceptContent(*item);
+				}
+
+				// The default drag-drop rect is outside of the window's clip rect, so we have to draw our own inside of the
+				// clip rect instead.
+				const ImGuiPayload* payload = ImGui::GetDragDropPayload();
+				if (payload && payload->Preview &&
+				    IsContentAccepted(*reinterpret_cast<const ContentBrowserItem*>(payload->Data))) {
+					ImGuiWindow* window = ImGui::GetCurrentWindow();
+					window->DrawList->AddRect(window->ClipRect.Min + ImVec2(1.0f, 1.0f),
+					                          window->ClipRect.Max - ImVec2(1.0f, 1.0f),
+					                          ImGui::GetColorU32(ImGuiCol_DragDropTarget),
+					                          0.0f,
+					                          0,
+					                          2.0f);
+				}
+
+				ImGui::EndDragDropTarget();
+			}
+		}
+	}
+	ImGui::End();
+	ImGui::PopStyleVar();
+}
+
+void Editor::SaveScene() {
+	const auto scenePath = _scene->GetSceneAssetPath();
+	if (!scenePath.empty()) {
+		SceneSerializer serializer(*_scene);
+		serializer.Serialize(scenePath);
 	}
 }

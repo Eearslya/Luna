@@ -130,7 +130,8 @@ bool SceneSerializer::Deserialize(const std::filesystem::path& filePath) {
 	if (!data["Scene"]) { return false; }
 
 	_scene.Clear();
-	auto entities = data["Entities"];
+	_scene._sceneAssetPath = filePath;
+	auto entities          = data["Entities"];
 	if (entities) {
 		for (auto entity : entities) {
 			std::string name;
