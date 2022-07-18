@@ -25,11 +25,25 @@ void ContentBrowserPanel::Render(bool* show) {
 		if (ImGui::BeginTable("ContentBrowser_Contents", columns)) {
 			ImGuiWindow* window = ImGui::GetCurrentWindow();
 
+			std::vector<std::filesystem::path> directories;
+			std::vector<std::filesystem::path> files;
 			for (auto entry : std::filesystem::directory_iterator(_currentDirectory)) {
 				const auto relativePath = std::filesystem::relative(entry.path(), Editor::AssetsDirectory);
-				const auto path         = entry.path().filename();
-				const auto pathStr      = path.string();
 				const bool directory    = entry.is_directory();
+				if (directory) {
+					directories.push_back(relativePath);
+				} else {
+					files.push_back(relativePath);
+				}
+			}
+
+			std::sort(
+				directories.begin(), directories.end(), [](const auto& a, const auto& b) { return a.string() < b.string(); });
+			std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) { return a.string() < b.string(); });
+
+			const auto RenderItem = [&](const std::filesystem::path& relativePath, bool directory) {
+				const auto path    = relativePath.filename();
+				const auto pathStr = path.string();
 
 				auto& icon = directory ? Editor::Get()->GetResources().DirectoryIcon : Editor::Get()->GetResources().FileIcon;
 
@@ -62,7 +76,10 @@ void ContentBrowserPanel::Render(bool* show) {
 
 				ImGui::PopStyleColor();
 				ImGui::PopID();
-			}
+			};
+
+			for (const auto& directory : directories) { RenderItem(directory, true); }
+			for (const auto& file : files) { RenderItem(file, false); }
 
 			ImGui::EndTable();
 		}
