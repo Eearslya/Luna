@@ -8,11 +8,13 @@
 #include "../ImGuiRenderer.hpp"
 #include "CameraComponent.hpp"
 #include "Entity.hpp"
+#include "IdComponent.hpp"
 #include "MeshComponent.hpp"
 #include "NameComponent.hpp"
 #include "RelationshipComponent.hpp"
 #include "Scene.hpp"
 #include "TransformComponent.hpp"
+#include "Utility/Log.hpp"
 
 namespace Luna {
 SceneHierarchyPanel::SceneHierarchyPanel(const std::shared_ptr<Scene>& scene) : _scene(scene) {}
@@ -169,6 +171,24 @@ static void DrawComponent(Entity entity,
 }
 
 void SceneHierarchyPanel::DrawComponents(Entity entity) {
+	// Id
+	if (entity.HasComponent<IdComponent>()) {
+		auto& cId = entity.GetComponent<IdComponent>();
+
+		if (ImGui::BeginTable("IdComponent_Properties", 2, ImGuiTableFlags_BordersInnerV)) {
+			const std::string idString = fmt::format("{:x}", cId.Id);
+			const char* idCString      = idString.c_str();
+			const size_t idCStringLen  = strlen(idCString);
+
+			ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_NoResize | ImGuiTableColumnFlags_WidthFixed, 85.0f);
+			ImGui::TableNextColumn();
+			ImGui::Text("ID");
+			ImGui::TableNextColumn();
+			ImGui::InputText("##ID", const_cast<char*>(idCString), idCStringLen, ImGuiInputTextFlags_ReadOnly);
+			ImGui::EndTable();
+		}
+	}
+
 	// Name
 	if (entity.HasComponent<NameComponent>()) {
 		auto& cName = entity.GetComponent<NameComponent>();
@@ -189,11 +209,10 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 			}
 			ImGui::EndTable();
 		}
-
-		ImGui::Spacing();
-
-		ImGui::Separator();
 	}
+
+	ImGui::Spacing();
+	ImGui::Separator();
 
 	// Transform
 	DrawComponent<TransformComponent>(

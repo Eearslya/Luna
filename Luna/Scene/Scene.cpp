@@ -2,6 +2,7 @@
 
 #include "CameraComponent.hpp"
 #include "Entity.hpp"
+#include "IdComponent.hpp"
 #include "NameComponent.hpp"
 #include "RelationshipComponent.hpp"
 #include "TransformComponent.hpp"
@@ -26,6 +27,7 @@ Entity Scene::CreateChildEntity(Entity parent, const std::string& name) {
 	std::string entityName = name.empty() ? "Entity" : name;
 	entity.AddComponent<NameComponent>(entityName);
 
+	entity.AddComponent<IdComponent>();
 	entity.AddComponent<RelationshipComponent>();
 	entity.AddComponent<TransformComponent>();
 

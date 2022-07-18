@@ -6,6 +6,7 @@
 
 #include "CameraComponent.hpp"
 #include "Entity.hpp"
+#include "IdComponent.hpp"
 #include "MeshComponent.hpp"
 #include "NameComponent.hpp"
 #include "RelationshipComponent.hpp"
@@ -55,6 +56,15 @@ static void SerializeEntity(YAML::Emitter& out, Entity entity) {
 		out << YAML::Key << "NameComponent";
 		out << YAML::BeginMap;
 		out << YAML::Key << "Name" << YAML::Value << cName.Name;
+		out << YAML::EndMap;
+	}
+
+	if (entity.HasComponent<IdComponent>()) {
+		auto& cId = entity.GetComponent<IdComponent>();
+
+		out << YAML::Key << "IdComponent";
+		out << YAML::BeginMap;
+		out << YAML::Key << "Id" << YAML::Value << uint64_t(cId.Id);
 		out << YAML::EndMap;
 	}
 
@@ -128,6 +138,12 @@ bool SceneSerializer::Deserialize(const std::filesystem::path& filePath) {
 			if (nameComponent) { name = nameComponent["Name"].as<std::string>(); }
 
 			Entity e = _scene.CreateEntity(name);
+
+			auto idComponent = entity["IdComponent"];
+			if (idComponent) {
+				auto& cId = e.GetComponent<IdComponent>();
+				cId.Id    = idComponent["Id"].as<uint64_t>();
+			}
 
 			auto transformComponent = entity["TransformComponent"];
 			if (transformComponent) {
