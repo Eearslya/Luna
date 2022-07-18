@@ -97,6 +97,8 @@ static void SerializeEntity(YAML::Emitter& out, Entity entity) {
 
 		out << YAML::Key << "MeshComponent";
 		out << YAML::BeginMap;
+		out << YAML::Key << "MeshAssetPath" << YAML::Value << cMesh.MeshAssetPath.string();
+		out << YAML::Key << "SubmeshIndex" << YAML::Value << cMesh.SubmeshIndex;
 		out << YAML::EndMap;
 	}
 
@@ -168,7 +170,11 @@ bool SceneSerializer::Deserialize(const std::filesystem::path& filePath) {
 			}
 
 			auto meshComponent = entity["MeshComponent"];
-			if (meshComponent) { auto& cMesh = e.AddComponent<MeshComponent>(); }
+			if (meshComponent) {
+				auto& cMesh = e.AddComponent<MeshComponent>();
+				if (meshComponent["MeshAssetPath"]) { cMesh.MeshAssetPath = meshComponent["MeshAssetPath"].as<std::string>(); }
+				if (meshComponent["SubmeshIndex"]) { cMesh.SubmeshIndex = meshComponent["SubmeshIndex"].as<uint32_t>(); }
+			}
 		}
 	}
 

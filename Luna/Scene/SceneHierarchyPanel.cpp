@@ -5,7 +5,9 @@
 
 #include <optional>
 
+#include "../ContentBrowserPanel.hpp"
 #include "../ImGuiRenderer.hpp"
+#include "AssetManager.hpp"
 #include "CameraComponent.hpp"
 #include "Entity.hpp"
 #include "IdComponent.hpp"
@@ -224,14 +226,15 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 		[](Entity entity, TransformComponent& cTransform) {
 			const auto EditVec3 = [](const std::string& label,
 		                           glm::vec3& value,
-		                           float speed       = 0.1f,
-		                           float resetValue  = 0.0f,
-		                           float columnWidth = 100.0f) {
+		                           float speed      = 0.1f,
+		                           float resetValue = 0.0f,
+		                           bool* lock       = nullptr) {
 				auto& io    = ImGui::GetIO();
 				auto& style = ImGui::GetStyle();
 
 				const float lineHeight = io.Fonts->Fonts[0]->FontSize + style.FramePadding.y * 2.0f;
 				const ImVec2 buttonSize(lineHeight + 3.0f, lineHeight);
+				const bool locked = lock && *lock;
 
 				ImGui::TableNextColumn();
 				ImGui::Text("%s", label.c_str());
@@ -244,12 +247,20 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 				ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.61f, 0.006f, 0.015f, 1.0f));
 				ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.79f, 0.03f, 0.03f, 1.0f));
 				ImGui::PushStyleColor(ImGuiCol_ButtonActive, style.Colors[ImGuiCol_Button]);
-				if (ImGui::Button("X", buttonSize)) { value.x = resetValue; }
+				if (ImGui::Button("X", buttonSize)) {
+					if (locked) {
+						value = glm::vec3(resetValue);
+					} else {
+						value.x = resetValue;
+					}
+				}
 				if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
 					value = glm::vec3(resetValue);
 				}
 				ImGui::SameLine();
-				ImGui::DragFloat("##XValue", &value.x, speed, 0.0f, 0.0f, "%.2f");
+				if (ImGui::DragFloat("##XValue", &value.x, speed, 0.0f, 0.0f, "%.2f")) {
+					if (locked) { value = glm::vec3(value.x); }
+				}
 				ImGui::PopItemWidth();
 				ImGui::SameLine();
 				ImGui::PopStyleColor(3);
@@ -257,12 +268,20 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 				ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.03f, 0.45f, 0.03f, 1.0f));
 				ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.1f, 0.55f, 0.1f, 1.0f));
 				ImGui::PushStyleColor(ImGuiCol_ButtonActive, style.Colors[ImGuiCol_Button]);
-				if (ImGui::Button("Y", buttonSize)) { value.y = resetValue; }
+				if (ImGui::Button("Y", buttonSize)) {
+					if (locked) {
+						value = glm::vec3(resetValue);
+					} else {
+						value.y = resetValue;
+					}
+				}
 				if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
 					value = glm::vec3(resetValue);
 				}
 				ImGui::SameLine();
-				ImGui::DragFloat("##YValue", &value.y, speed, 0.0f, 0.0f, "%.2f");
+				if (ImGui::DragFloat("##YValue", &value.y, speed, 0.0f, 0.0f, "%.2f")) {
+					if (locked) { value = glm::vec3(value.y); }
+				}
 				ImGui::PopItemWidth();
 				ImGui::SameLine();
 				ImGui::PopStyleColor(3);
@@ -270,27 +289,42 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 				ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.006f, 0.25f, 0.61f, 1.0f));
 				ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.03f, 0.35f, 0.79f, 1.0f));
 				ImGui::PushStyleColor(ImGuiCol_ButtonActive, style.Colors[ImGuiCol_Button]);
-				if (ImGui::Button("Z", buttonSize)) { value.z = resetValue; }
+				if (ImGui::Button("Z", buttonSize)) {
+					if (locked) {
+						value = glm::vec3(resetValue);
+					} else {
+						value.z = resetValue;
+					}
+				}
 				if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
 					value = glm::vec3(resetValue);
 				}
 				ImGui::SameLine();
-				ImGui::DragFloat("##ZValue", &value.z, speed, 0.0f, 0.0f, "%.2f");
+				if (ImGui::DragFloat("##ZValue", &value.z, speed, 0.0f, 0.0f, "%.2f")) {
+					if (locked) { value = glm::vec3(value.z); }
+				}
 				ImGui::PopItemWidth();
 				ImGui::PopStyleColor(3);
+
+				if (lock) {
+					ImGui::SameLine();
+					ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
+					if (ImGui::Button(*lock ? ICON_FA_LOCK : ICON_FA_LOCK_OPEN)) { *lock = !*lock; }
+					ImGui::PopStyleColor();
+				}
 
 				ImGui::PopID();
 				ImGui::PopStyleVar();
 			};
 
 			if (ImGui::BeginTable("TransformComponent_Properties", 2, ImGuiTableFlags_BordersInnerV)) {
-				ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_NoResize | ImGuiTableColumnFlags_WidthFixed, 85.0f);
+				ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_NoResize | ImGuiTableColumnFlags_WidthFixed, 75.0f);
 				ImGui::TableNextRow();
 				EditVec3("Translation", cTransform.Translation, 0.1f);
 				ImGui::TableNextRow();
 				EditVec3("Rotation", cTransform.Rotation, 0.5f);
 				ImGui::TableNextRow();
-				EditVec3("Scale", cTransform.Scale, 0.1f, 1.0f);
+				EditVec3("Scale", cTransform.Scale, 0.1f, 1.0f, &cTransform.LockScale);
 				ImGui::EndTable();
 			}
 
@@ -359,7 +393,72 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 	DrawComponent<MeshComponent>(
 		entity,
 		ICON_FA_CIRCLE_NODES " Mesh",
-		[](Entity entity, auto& cMesh) { return false; },
+		[](Entity entity, auto& cMesh) {
+			if (ImGui::BeginTable("MeshComponent_Properties", 2, ImGuiTableFlags_BordersInnerV)) {
+				ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_NoResize | ImGuiTableColumnFlags_WidthFixed, 85.0f);
+
+				const auto meshAssetPath   = cMesh.MeshAssetPath;
+				const auto meshFile        = meshAssetPath.filename();
+				const auto meshFileDisplay = meshFile.empty() ? "None" : meshFile.string();
+				const auto meshPathDisplay = meshAssetPath.empty() ? "No Mesh Loaded" : meshAssetPath.string();
+
+				auto* mesh     = AssetManager::GetMesh(meshAssetPath);
+				bool clearMesh = false;
+				std::filesystem::path newMesh;
+
+				ImGui::TableNextColumn();
+				ImGui::Text("Mesh");
+				ImGui::TableNextColumn();
+				ImGui::Button(meshFileDisplay.c_str());
+				if (ImGui::BeginDragDropTarget()) {
+					const ImGuiPayload* payload    = ImGui::GetDragDropPayload();
+					const ContentBrowserItem* item = reinterpret_cast<const ContentBrowserItem*>(payload->Data);
+					ImGuiDragDropFlags flags       = ImGuiDragDropFlags_AcceptNoDrawDefaultRect;
+
+					if (payload && payload->Preview) { flags &= ~ImGuiDragDropFlags_AcceptNoDrawDefaultRect; }
+
+					if (item->Type == ContentBrowserItemType::File && item->FilePath.extension().string() == ".gltf") {
+						if (ImGui::AcceptDragDropPayload("ContentBrowserItem")) { newMesh = item->FilePath; }
+					}
+					ImGui::EndDragDropTarget();
+				}
+				if (ImGui::IsItemHovered()) {
+					ImGui::BeginTooltip();
+					ImGui::Text("%s", meshPathDisplay.c_str());
+					ImGui::EndTooltip();
+				}
+				if (mesh) {
+					ImGui::SameLine();
+					ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
+					if (ImGui::Button(ICON_FA_XMARK)) { clearMesh = true; }
+					ImGui::PopStyleColor();
+				}
+
+				if (mesh) {
+					ImGui::TableNextColumn();
+					ImGui::Text("Submesh");
+					ImGui::TableNextColumn();
+					int submeshIndex = cMesh.SubmeshIndex;
+					if (ImGui::InputInt("##Submesh", &submeshIndex, 1, 1)) {
+						submeshIndex       = std::clamp(submeshIndex, 0, int(mesh->Submeshes.size() - 1));
+						cMesh.SubmeshIndex = submeshIndex;
+					}
+				}
+
+				if (clearMesh) {
+					cMesh.MeshAssetPath.clear();
+					cMesh.SubmeshIndex = 0;
+				}
+				if (!newMesh.empty()) {
+					cMesh.MeshAssetPath = newMesh;
+					cMesh.SubmeshIndex  = 0;
+				}
+
+				ImGui::EndTable();
+			}
+
+			return false;
+		},
 		[](Entity entity, auto& cMesh) {
 			bool deleted = false;
 			if (ImGui::MenuItem(ICON_FA_TRASH_CAN " Remove Component")) { deleted = true; }

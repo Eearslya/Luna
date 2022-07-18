@@ -5,6 +5,7 @@
 
 #include <glm/glm.hpp>
 
+#include "AssetManager.hpp"
 #include "ContentBrowserPanel.hpp"
 #include "GlfwPlatform.hpp"
 #include "ImGuiRenderer.hpp"
@@ -38,6 +39,7 @@ Editor::Editor() {
 	auto platform = std::make_unique<GlfwPlatform>();
 	_wsi          = std::make_unique<Vulkan::WSI>(std::move(platform));
 
+	AssetManager::Initialize(*_wsi);
 	LoadResources();
 
 	_scene               = std::make_shared<Scene>();
@@ -48,6 +50,7 @@ Editor::Editor() {
 }
 
 Editor::~Editor() noexcept {
+	AssetManager::Shutdown();
 	Log::Shutdown();
 }
 

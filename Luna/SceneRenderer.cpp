@@ -1,5 +1,6 @@
 #include "SceneRenderer.hpp"
 
+#include "AssetManager.hpp"
 #include "Scene/CameraComponent.hpp"
 #include "Scene/Entity.hpp"
 #include "Scene/MeshComponent.hpp"
@@ -41,9 +42,17 @@ void SceneRenderer::Render(Vulkan::CommandBufferHandle& cmd, Luna::Scene& scene,
 	                  vk::PipelineStageFlagBits::eColorAttachmentOutput,
 	                  vk::AccessFlagBits::eColorAttachmentWrite);
 
-	Vulkan::RenderPassInfo rpInfo{.ColorAttachmentCount = 1, .ClearAttachments = 1, .StoreAttachments = 1};
-	rpInfo.ColorAttachments[0] = &image->GetView();
-	rpInfo.ClearColors[0]      = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f});
+	auto depth = _wsi.GetDevice().RequestTransientAttachment(vk::Extent2D(_imageSize.x, _imageSize.y),
+	                                                         _wsi.GetDevice().GetDefaultDepthFormat());
+
+	Vulkan::RenderPassInfo rpInfo;
+	rpInfo.ColorAttachmentCount   = 1;
+	rpInfo.ColorAttachments[0]    = &image->GetView();
+	rpInfo.DepthStencilAttachment = &(depth->GetView());
+	rpInfo.ClearAttachments       = 1 << 0 | 1 << 1;
+	rpInfo.StoreAttachments       = 1 << 0;
+	rpInfo.ClearColors[0]         = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f});
+	rpInfo.ClearDepthStencil      = vk::ClearDepthStencilValue(1.0f, 0);
 	cmd->BeginRenderPass(rpInfo);
 
 	auto cameraEntity = scene.GetMainCamera();
@@ -59,15 +68,33 @@ void SceneRenderer::Render(Vulkan::CommandBufferHandle& cmd, Luna::Scene& scene,
 		sceneData->View        = cameraView;
 
 		cmd->SetProgram(_program);
+		cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
+		cmd->SetVertexAttribute(1, 1, vk::Format::eR32G32B32Sfloat, 0);
+		cmd->SetVertexAttribute(2, 2, vk::Format::eR32G32Sfloat, 0);
 		cmd->SetUniformBuffer(0, 0, *sceneBuffer);
 		auto renderables = scene.GetRegistry().view<MeshComponent>();
 		for (auto entityId : renderables) {
 			Entity entity(entityId, scene);
-			const auto& mesh = renderables.get<MeshComponent>(entityId);
+			const auto& cMesh = renderables.get<MeshComponent>(entityId);
 			const PushConstant pc{.Model = entity.GetGlobalTransform()};
 			cmd->PushConstants(&pc, 0, sizeof(PushConstant));
 
-			cmd->Draw(6);
+			Mesh* mesh = AssetManager::GetMesh(cMesh.MeshAssetPath);
+			if (mesh) {
+				const auto& submesh = mesh->Submeshes[cMesh.SubmeshIndex];
+				if (submesh.VertexCount == 0) { continue; }
+
+				cmd->SetVertexBinding(0, *mesh->Buffer, mesh->PositionOffset, sizeof(glm::vec3), vk::VertexInputRate::eVertex);
+				cmd->SetVertexBinding(1, *mesh->Buffer, mesh->NormalOffset, sizeof(glm::vec3), vk::VertexInputRate::eVertex);
+				cmd->SetVertexBinding(2, *mesh->Buffer, mesh->Texcoord0Offset, sizeof(glm::vec2), vk::VertexInputRate::eVertex);
+				cmd->SetIndexBuffer(*mesh->Buffer, mesh->IndexOffset, vk::IndexType::eUint32);
+
+				if (submesh.IndexCount > 0) {
+					cmd->DrawIndexed(submesh.IndexCount, 1, submesh.FirstIndex, submesh.FirstVertex, 0);
+				} else {
+					cmd->Draw(submesh.VertexCount, 1, submesh.FirstVertex, 0);
+				}
+			}
 		}
 	}
 

@@ -1,10 +1,13 @@
 #pragma once
 
+#include <filesystem>
+
 namespace Luna {
 struct MeshComponent {
 	MeshComponent()                     = default;
 	MeshComponent(const MeshComponent&) = default;
 
-	float Test = 0.0f;
+	std::filesystem::path MeshAssetPath;
+	uint32_t SubmeshIndex = 0;
 };
 }  // namespace Luna

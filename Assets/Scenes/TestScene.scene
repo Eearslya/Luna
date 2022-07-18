@@ -2,37 +2,28 @@ Scene: Name
 Entities:
   - Entity: 123
     NameComponent:
-      Name: Mesh 3
+      Name: BoomBox
     IdComponent:
-      Id: 15682241595910300916
+      Id: 12057818187763686837
     TransformComponent:
-      Translation: [0.899999976, 0, -1]
-      Rotation: [0, 0, 0]
-      Scale: [1, 1, 1]
+      Translation: [1.20000005, 0, -2]
+      Rotation: [0, -221.5, 0]
+      Scale: [85, 85, 85]
     MeshComponent:
-      {}
+      MeshAssetPath: Models\BoomBox\BoomBox.gltf
+      SubmeshIndex: 0
   - Entity: 123
     NameComponent:
-      Name: Mesh 2
-    IdComponent:
-      Id: 2948135924911922231
-    TransformComponent:
-      Translation: [0, -1.29999995, -2.5]
-      Rotation: [0, 0, 0]
-      Scale: [1, 1, 1]
-    MeshComponent:
-      {}
-  - Entity: 123
-    NameComponent:
-      Name: Mesh
+      Name: Helmet
     IdComponent:
       Id: 11520578322536293722
     TransformComponent:
-      Translation: [0, 0, -2]
-      Rotation: [0, 0, 0]
+      Translation: [-1.5, 0, -2]
+      Rotation: [90, 0, -45]
       Scale: [1, 1, 1]
     MeshComponent:
-      {}
+      MeshAssetPath: Models\DamagedHelmet\DamagedHelmet.gltf
+      SubmeshIndex: 0
   - Entity: 123
     NameComponent:
       Name: Camera
@@ -40,7 +31,7 @@ Entities:
       Id: 13980200600584143677
     TransformComponent:
       Translation: [0, 0, 0]
-      Rotation: [-6, -22.5, 0]
+      Rotation: [0, 0, 0]
       Scale: [1, 1, 1]
     CameraComponent:
       Camera:
