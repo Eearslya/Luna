@@ -59,6 +59,7 @@ add_subdirectory(Vulkan)
 
 target_sources(Luna PRIVATE
 	ContentBrowserPanel.cpp
+	Editor.cpp
 	ImGuiRenderer.cpp
 	Main.cpp
 	SceneRenderer.cpp)
