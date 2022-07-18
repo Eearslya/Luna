@@ -9,7 +9,6 @@ class Entity;
 class Scene {
  public:
 	friend class Entity;
-	friend class SceneHierarchyPanel;
 	friend class SceneSerializer;
 
 	Scene();

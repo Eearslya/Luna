@@ -1,7 +1,5 @@
 #include "ImGuiRenderer.hpp"
 
-#include <GLFW/glfw3.h>
-
 #include "Input.hpp"
 #include "Vulkan/Buffer.hpp"
 #include "Vulkan/CommandBuffer.hpp"
@@ -11,8 +9,7 @@
 #include "Vulkan/Sampler.hpp"
 #include "Vulkan/WSI.hpp"
 
-using namespace Luna;
-
+namespace Luna {
 enum class ImGuiSampleMode : uint32_t { Standard = 0, ImGuiFont = 1, Grayscale = 2 };
 
 struct PushConstant {
@@ -33,25 +30,6 @@ ImGuiRenderer::ImGuiRenderer(Vulkan::WSI& wsi) : _wsi(wsi) {
 	// Basic config flags.
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-
-	// Fonts
-	{
-		io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-SemiMedium.ttf", 16.0f);
-
-		ImFontConfig jpConfig;
-		jpConfig.MergeMode = true;
-		io.Fonts->AddFontFromFileTTF(
-			"Assets/Fonts/NotoSansJP-Medium.otf", 18.0f, &jpConfig, io.Fonts->GetGlyphRangesJapanese());
-
-		ImFontConfig faConfig;
-		faConfig.MergeMode                 = true;
-		faConfig.PixelSnapH                = true;
-		static const ImWchar fontAwesome[] = {ICON_MIN_FA, ICON_MAX_16_FA, 0};
-		io.Fonts->AddFontFromFileTTF("Assets/Fonts/FontAwesome6Free-Regular-400.otf", 16.0f, &faConfig, fontAwesome);
-		io.Fonts->AddFontFromFileTTF("Assets/Fonts/FontAwesome6Free-Solid-900.otf", 16.0f, &faConfig, fontAwesome);
-
-		io.Fonts->Build();
-	}
 
 	// Custom theming
 	{
@@ -195,13 +173,7 @@ void main() {
 
 		_program = device.RequestProgram(vertGlsl, fragGlsl);
 
-		unsigned char* pixels = nullptr;
-		int width, height;
-		io.Fonts->GetTexDataAsAlpha8(&pixels, &width, &height);
-		const Vulkan::ImageInitialData data{.Data = pixels};
-		const auto imageCI = Vulkan::ImageCreateInfo::Immutable2D(
-			static_cast<uint32_t>(width), static_cast<uint32_t>(height), vk::Format::eR8Unorm, false);
-		_fontTexture = device.CreateImage(imageCI, &data);
+		UpdateFontAtlas();
 
 		const Vulkan::SamplerCreateInfo samplerCI{.MagFilter        = vk::Filter::eLinear,
 		                                          .MinFilter        = vk::Filter::eLinear,
@@ -441,3 +413,17 @@ void ImGuiRenderer::BeginDockspace() {
 void ImGuiRenderer::EndDockspace() {
 	ImGui::End();
 }
+
+void ImGuiRenderer::UpdateFontAtlas() {
+	ImGuiIO& io = ImGui::GetIO();
+	io.Fonts->Build();
+
+	unsigned char* pixels = nullptr;
+	int width, height;
+	io.Fonts->GetTexDataAsAlpha8(&pixels, &width, &height);
+	const Vulkan::ImageInitialData data{.Data = pixels};
+	const auto imageCI = Vulkan::ImageCreateInfo::Immutable2D(
+		static_cast<uint32_t>(width), static_cast<uint32_t>(height), vk::Format::eR8Unorm, false);
+	_fontTexture = _wsi.GetDevice().CreateImage(imageCI, &data);
+}
+}  // namespace Luna

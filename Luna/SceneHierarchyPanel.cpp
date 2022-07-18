@@ -5,20 +5,22 @@
 
 #include <optional>
 
-#include "../ContentBrowserPanel.hpp"
-#include "../ImGuiRenderer.hpp"
 #include "AssetManager.hpp"
-#include "CameraComponent.hpp"
-#include "Entity.hpp"
-#include "IdComponent.hpp"
-#include "MeshComponent.hpp"
-#include "NameComponent.hpp"
-#include "RelationshipComponent.hpp"
-#include "Scene.hpp"
-#include "TransformComponent.hpp"
+#include "ContentBrowserPanel.hpp"
+#include "IconsFontAwesome6.h"
+#include "ImGui/ImGuiRenderer.hpp"
+#include "Scene/CameraComponent.hpp"
+#include "Scene/Entity.hpp"
+#include "Scene/IdComponent.hpp"
+#include "Scene/MeshComponent.hpp"
+#include "Scene/NameComponent.hpp"
+#include "Scene/RelationshipComponent.hpp"
+#include "Scene/Scene.hpp"
+#include "Scene/TransformComponent.hpp"
 #include "Utility/Log.hpp"
 
-namespace Luna {
+using namespace Luna;
+
 SceneHierarchyPanel::SceneHierarchyPanel(const std::shared_ptr<Scene>& scene) : _scene(scene) {}
 
 template <typename T, typename... Args>
@@ -36,7 +38,7 @@ void SceneHierarchyPanel::Render() {
 		return;
 	}
 
-	auto& registry = scene->_registry;
+	auto& registry = scene->GetRegistry();
 
 	if (ImGui::Begin("Hierarchy")) {
 		if (!_selected) { _selected = {}; }
@@ -466,4 +468,3 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 			return deleted;
 		});
 }
-}  // namespace Luna

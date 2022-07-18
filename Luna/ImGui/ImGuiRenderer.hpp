@@ -2,9 +2,9 @@
 
 #include <imgui.h>
 
-#include "IconsFontAwesome6.h"
 #include "Vulkan/Common.hpp"
 
+namespace Luna {
 class ImGuiRenderer {
  public:
 	ImGuiRenderer(Luna::Vulkan::WSI& wsi);
@@ -15,6 +15,7 @@ class ImGuiRenderer {
 
 	void BeginDockspace();
 	void EndDockspace();
+	void UpdateFontAtlas();
 
  private:
 	void SetRenderState(Luna::Vulkan::CommandBufferHandle& cmd, ImDrawData* drawData, uint32_t frameIndex) const;
@@ -28,3 +29,4 @@ class ImGuiRenderer {
 	std::vector<Luna::Vulkan::BufferHandle> _vertexBuffers;
 	std::vector<Luna::Vulkan::BufferHandle> _indexBuffers;
 };
+}  // namespace Luna

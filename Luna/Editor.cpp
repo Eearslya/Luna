@@ -8,14 +8,15 @@
 #include "AssetManager.hpp"
 #include "ContentBrowserPanel.hpp"
 #include "GlfwPlatform.hpp"
-#include "ImGuiRenderer.hpp"
+#include "IconsFontAwesome6.h"
+#include "ImGui/ImGuiRenderer.hpp"
 #include "MeshImportPanel.hpp"
 #include "Scene/CameraComponent.hpp"
 #include "Scene/Entity.hpp"
 #include "Scene/MeshComponent.hpp"
 #include "Scene/Scene.hpp"
-#include "Scene/SceneHierarchyPanel.hpp"
 #include "Scene/SceneSerializer.hpp"
+#include "SceneHierarchyPanel.hpp"
 #include "SceneRenderer.hpp"
 #include "Utility/Log.hpp"
 #include "Vulkan/Buffer.hpp"
@@ -43,8 +44,10 @@ Editor::Editor() {
 	AssetManager::Initialize(*_wsi);
 	LoadResources();
 
+	_imguiRenderer = std::make_unique<ImGuiRenderer>(*_wsi);
+	StyleImGui();
+
 	_scene               = std::make_shared<Scene>();
-	_imguiRenderer       = std::make_unique<ImGuiRenderer>(*_wsi);
 	_sceneRenderer       = std::make_unique<SceneRenderer>(*_wsi);
 	_contentBrowserPanel = std::make_unique<ContentBrowserPanel>();
 	_scenePanel          = std::make_unique<SceneHierarchyPanel>(_scene);
@@ -210,4 +213,29 @@ void Editor::SaveScene() {
 		SceneSerializer serializer(*_scene);
 		serializer.Serialize(scenePath);
 	}
+}
+
+void Editor::StyleImGui() {
+	ImGuiIO& io = ImGui::GetIO();
+
+	// Fonts
+	{
+		io.Fonts->Clear();
+
+		io.Fonts->AddFontFromFileTTF("Assets/Fonts/Roboto-SemiMedium.ttf", 16.0f);
+
+		ImFontConfig jpConfig;
+		jpConfig.MergeMode = true;
+		io.Fonts->AddFontFromFileTTF(
+			"Assets/Fonts/NotoSansJP-Medium.otf", 18.0f, &jpConfig, io.Fonts->GetGlyphRangesJapanese());
+
+		ImFontConfig faConfig;
+		faConfig.MergeMode                 = true;
+		faConfig.PixelSnapH                = true;
+		static const ImWchar fontAwesome[] = {ICON_MIN_FA, ICON_MAX_16_FA, 0};
+		io.Fonts->AddFontFromFileTTF("Assets/Fonts/FontAwesome6Free-Regular-400.otf", 16.0f, &faConfig, fontAwesome);
+		io.Fonts->AddFontFromFileTTF("Assets/Fonts/FontAwesome6Free-Solid-900.otf", 16.0f, &faConfig, fontAwesome);
+	}
+
+	_imguiRenderer->UpdateFontAtlas();
 }

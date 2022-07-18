@@ -8,11 +8,11 @@
 struct ContentBrowserItem;
 class ContentBrowserPanel;
 class MeshImportPanel;
-class ImGuiRenderer;
+class SceneHierarchyPanel;
 class SceneRenderer;
 namespace Luna {
+class ImGuiRenderer;
 class Scene;
-class SceneHierarchyPanel;
 }  // namespace Luna
 
 class Editor {
@@ -46,14 +46,15 @@ class Editor {
 	void LoadResources();
 	void RenderViewport(Luna::Vulkan::CommandBufferHandle& cmd);
 	void SaveScene();
+	void StyleImGui();
 
 	std::unique_ptr<Luna::Vulkan::WSI> _wsi;
 	EditorResources _resources;
 	std::shared_ptr<Luna::Scene> _scene;
-	std::unique_ptr<ImGuiRenderer> _imguiRenderer;
+	std::unique_ptr<Luna::ImGuiRenderer> _imguiRenderer;
 	std::unique_ptr<SceneRenderer> _sceneRenderer;
 	std::unique_ptr<ContentBrowserPanel> _contentBrowserPanel;
-	std::unique_ptr<Luna::SceneHierarchyPanel> _scenePanel;
+	std::unique_ptr<SceneHierarchyPanel> _scenePanel;
 	std::unique_ptr<MeshImportPanel> _meshImportPanel;
 
 	bool _showContentBrowser = true;
