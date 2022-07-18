@@ -10,7 +10,7 @@ Entities:
       Rotation: [0, -221.5, 0]
       Scale: [85, 85, 85]
     MeshComponent:
-      MeshAssetPath: Models\BoomBox\BoomBox.gltf
+      MeshAssetPath: Models/BoomBox/BoomBox.gltf
       SubmeshIndex: 0
   - Entity: 123
     NameComponent:
@@ -22,7 +22,7 @@ Entities:
       Rotation: [90, 0, -45]
       Scale: [1, 1, 1]
     MeshComponent:
-      MeshAssetPath: Models\DamagedHelmet\DamagedHelmet.gltf
+      MeshAssetPath: Models/DamagedHelmet/DamagedHelmet.gltf
       SubmeshIndex: 0
   - Entity: 123
     NameComponent:
