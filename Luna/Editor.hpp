@@ -26,4 +26,7 @@ class Editor {
 	std::unique_ptr<SceneRenderer> _sceneRenderer;
 	std::unique_ptr<ContentBrowserPanel> _contentBrowserPanel;
 	std::unique_ptr<Luna::SceneHierarchyPanel> _scenePanel;
+
+	bool _showContentBrowser = false;
+	bool _showDemoWindow     = false;
 };

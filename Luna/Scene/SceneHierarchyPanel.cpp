@@ -57,6 +57,7 @@ void SceneHierarchyPanel::Render() {
 	ImGui::SetNextWindowSizeConstraints(ImVec2(350.0f, -1.0f), ImVec2(std::numeric_limits<float>::infinity(), -1.0f));
 	if (ImGui::Begin("Properties") && _selected) {
 		DrawComponents(_selected);
+		ImGui::Spacing();
 		ImGui::Separator();
 		ImGui::Button(ICON_FA_PLUS " Add Component");
 		if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
@@ -178,14 +179,18 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 		strcpy(nameBuffer, cName.Name.data());
 #endif
 
-		ImGui::Columns(2);
-		ImGui::SetColumnWidth(0, 100.0f);
-		ImGui::Text("Name");
-		ImGui::NextColumn();
-		if (ImGui::InputText("##Name", nameBuffer, sizeof(nameBuffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
-			if (strlen(nameBuffer) > 0) { cName.Name = nameBuffer; }
+		if (ImGui::BeginTable("NameComponent_Properties", 2, ImGuiTableFlags_BordersInnerV)) {
+			ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_NoResize | ImGuiTableColumnFlags_WidthFixed, 85.0f);
+			ImGui::TableNextColumn();
+			ImGui::Text("Name");
+			ImGui::TableNextColumn();
+			if (ImGui::InputText("##Name", nameBuffer, sizeof(nameBuffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
+				if (strlen(nameBuffer) > 0) { cName.Name = nameBuffer; }
+			}
+			ImGui::EndTable();
 		}
-		ImGui::Columns(1);
+
+		ImGui::Spacing();
 
 		ImGui::Separator();
 	}
@@ -206,12 +211,10 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 				const float lineHeight = io.Fonts->Fonts[0]->FontSize + style.FramePadding.y * 2.0f;
 				const ImVec2 buttonSize(lineHeight + 3.0f, lineHeight);
 
-				ImGui::Columns(2);
-				ImGui::SetColumnWidth(0, columnWidth);
-
+				ImGui::TableNextColumn();
 				ImGui::Text("%s", label.c_str());
-				ImGui::NextColumn();
 
+				ImGui::TableNextColumn();
 				ImGui::PushMultiItemsWidths(3, ImGui::CalcItemWidth());
 				ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
 				ImGui::PushID(label.c_str());
@@ -256,13 +259,19 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 
 				ImGui::PopID();
 				ImGui::PopStyleVar();
-
-				ImGui::Columns(1);
 			};
 
-			EditVec3("Translation", cTransform.Translation, 0.1f);
-			EditVec3("Rotation", cTransform.Rotation, 0.5f);
-			EditVec3("Scale", cTransform.Scale, 0.1f, 1.0f);
+			if (ImGui::BeginTable("TransformComponent_Properties", 2, ImGuiTableFlags_BordersInnerV)) {
+				ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_NoResize | ImGuiTableColumnFlags_WidthFixed, 85.0f);
+				ImGui::TableNextRow();
+				EditVec3("Translation", cTransform.Translation, 0.1f);
+				ImGui::TableNextRow();
+				EditVec3("Rotation", cTransform.Rotation, 0.5f);
+				ImGui::TableNextRow();
+				EditVec3("Scale", cTransform.Scale, 0.1f, 1.0f);
+				ImGui::EndTable();
+			}
+
 			ImGui::Spacing();
 
 			return false;
@@ -287,31 +296,33 @@ void SceneHierarchyPanel::DrawComponents(Entity entity) {
 			float zNear      = camera.GetZNear();
 			float zFar       = camera.GetZFar();
 
-			ImGui::Columns(2);
-			ImGui::SetColumnWidth(0, 125.0f);
+			if (ImGui::BeginTable("CameraComponent_Properties", 2, ImGuiTableFlags_BordersInnerV)) {
+				ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_NoResize | ImGuiTableColumnFlags_WidthFixed, 100.0f);
 
-			ImGui::Text("Primary Camera");
-			ImGui::NextColumn();
-			ImGui::Checkbox("##PrimaryCamera", &cCamera.Primary);
-			ImGui::NextColumn();
+				ImGui::TableNextColumn();
+				ImGui::Text("Primary Camera");
+				ImGui::TableNextColumn();
+				ImGui::Checkbox("##PrimaryCamera", &cCamera.Primary);
 
-			ImGui::Text("Field of View");
-			ImGui::NextColumn();
-			ImGui::DragFloat("##FieldOfView", &fovDegrees, 0.5f, 30.0f, 90.0f, "%.1f deg");
-			ImGui::NextColumn();
+				ImGui::TableNextColumn();
+				ImGui::Text("Field of View");
+				ImGui::TableNextColumn();
+				ImGui::DragFloat("##FieldOfView", &fovDegrees, 0.5f, 30.0f, 90.0f, "%.1f deg");
 
-			ImGui::Text("Near Plane");
-			ImGui::NextColumn();
-			ImGui::DragFloat("##NearPlane", &zNear, 0.01f, 0.001f, 10.0f, "%.3f");
-			ImGui::NextColumn();
+				ImGui::TableNextColumn();
+				ImGui::Text("Near Plane");
+				ImGui::TableNextColumn();
+				ImGui::DragFloat("##NearPlane", &zNear, 0.01f, 0.001f, 10.0f, "%.3f");
 
-			ImGui::Text("Far Plane");
-			ImGui::NextColumn();
-			ImGui::DragFloat("##FarPlane", &zFar, 1.0f, 1.0f, 100'000.0f, "%.2f");
+				ImGui::TableNextColumn();
+				ImGui::Text("Far Plane");
+				ImGui::TableNextColumn();
+				ImGui::DragFloat("##FarPlane", &zFar, 1.0f, 1.0f, 100'000.0f, "%.2f");
 
-			camera.SetPerspective(fovDegrees, zNear, zFar);
+				camera.SetPerspective(fovDegrees, zNear, zFar);
 
-			ImGui::Columns(1);
+				ImGui::EndTable();
+			}
 
 			return false;
 		},

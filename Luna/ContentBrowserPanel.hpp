@@ -6,7 +6,7 @@ class ContentBrowserPanel {
  public:
 	ContentBrowserPanel() = default;
 
-	void Render();
+	void Render(bool* show);
 
  private:
 	const std::filesystem::path _assetsDirectory = "Assets";

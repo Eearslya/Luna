@@ -3,8 +3,8 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
-void ContentBrowserPanel::Render() {
-	if (ImGui::Begin("Content Browser", nullptr, ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoScrollbar)) {
+void ContentBrowserPanel::Render(bool* show) {
+	if (ImGui::Begin("Content Browser", show, ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoScrollbar)) {
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
 		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 4.0f));
 		ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(10.0f, 2.0f));

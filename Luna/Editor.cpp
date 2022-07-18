@@ -67,12 +67,20 @@ void Editor::Run() {
 				if (ImGui::MenuItem(ICON_FA_POWER_OFF " Exit")) { _wsi->RequestShutdown(); }
 				ImGui::EndMenu();
 			}
+
+			if (ImGui::BeginMenu("Window")) {
+				ImGui::MenuItem(ICON_FA_FOLDER_TREE " Content Browser", nullptr, &_showContentBrowser);
+				ImGui::Separator();
+				ImGui::MenuItem(ICON_FA_DESKTOP " ImGui Demo", nullptr, &_showDemoWindow);
+
+				ImGui::EndMenu();
+			}
+
 			ImGui::EndMainMenuBar();
 		}
 
-		ImGui::ShowDemoWindow();
-
-		_contentBrowserPanel->Render();
+		if (_showDemoWindow) { ImGui::ShowDemoWindow(&_showDemoWindow); }
+		if (_showContentBrowser) { _contentBrowserPanel->Render(&_showContentBrowser); }
 		_scenePanel->Render();
 
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
