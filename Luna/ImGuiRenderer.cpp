@@ -216,7 +216,7 @@ void main() {
 		_fontSampler = device.RequestSampler(samplerCI);
 	}
 
-	Input::OnChar += [this](char c) {
+	Input::OnChar += [this](int c) {
 		ImGuiIO& io = ImGui::GetIO();
 
 		io.AddInputCharacter(c);
@@ -224,8 +224,7 @@ void main() {
 	Input::OnKey += [this](Key key, InputAction action, InputMods mods) {
 		ImGuiIO& io = ImGui::GetIO();
 
-		constexpr static const int maxKey = sizeof(io.KeysDown) / sizeof(io.KeysDown[0]);
-		if (static_cast<int>(key) < maxKey) {
+		if (int(key) >= 0 && int(key) < 512) {
 			if (action == InputAction::Press) { io.KeysDown[static_cast<int>(key)] = true; }
 			if (action == InputAction::Release) { io.KeysDown[static_cast<int>(key)] = false; }
 		}
