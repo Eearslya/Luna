@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "Assets/Mesh.hpp"
