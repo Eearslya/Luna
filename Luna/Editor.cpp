@@ -185,6 +185,16 @@ void Editor::RenderViewport(Vulkan::CommandBufferHandle& cmd) {
 	ImGui::PopStyleVar();
 }
 
+void Editor::RequestContent(const ContentBrowserItem& item) {
+	if (item.Type == ContentBrowserItemType::File) {
+		const auto extension = item.FilePath.extension();
+		if (extension.string() == ".scene") {
+			SceneSerializer serializer(*_scene);
+			serializer.Deserialize(AssetsDirectory / item.FilePath);
+		}
+	}
+}
+
 void Editor::SaveScene() {
 	const auto scenePath = _scene->GetSceneAssetPath();
 	if (!scenePath.empty()) {

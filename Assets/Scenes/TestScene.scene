@@ -2,26 +2,11 @@ Scene: Name
 Entities:
   - Entity: 123
     NameComponent:
-      Name: Camera
+      Name: Mesh 3
     IdComponent:
-      Id: 13980200600584143677
+      Id: 15682241595910300916
     TransformComponent:
-      Translation: [0, 0, 0]
-      Rotation: [-6, -22.5, 0]
-      Scale: [1, 1, 1]
-    CameraComponent:
-      Camera:
-        FovDegrees: 70
-        ZNear: 0.00999999978
-        ZFar: 1000
-      Primary: true
-  - Entity: 123
-    NameComponent:
-      Name: Mesh
-    IdComponent:
-      Id: 11520578322536293722
-    TransformComponent:
-      Translation: [0, 0, -2]
+      Translation: [0.899999976, 0, -1]
       Rotation: [0, 0, 0]
       Scale: [1, 1, 1]
     MeshComponent:
@@ -39,12 +24,27 @@ Entities:
       {}
   - Entity: 123
     NameComponent:
-      Name: Mesh 3
+      Name: Mesh
     IdComponent:
-      Id: 15682241595910300916
+      Id: 11520578322536293722
     TransformComponent:
-      Translation: [0.899999976, 0, -1]
+      Translation: [0, 0, -2]
       Rotation: [0, 0, 0]
       Scale: [1, 1, 1]
     MeshComponent:
       {}
+  - Entity: 123
+    NameComponent:
+      Name: Camera
+    IdComponent:
+      Id: 13980200600584143677
+    TransformComponent:
+      Translation: [0, 0, 0]
+      Rotation: [-6, -22.5, 0]
+      Scale: [1, 1, 1]
+    CameraComponent:
+      Camera:
+        FovDegrees: 70
+        ZNear: 0.00999999978
+        ZFar: 1000
+      Primary: true

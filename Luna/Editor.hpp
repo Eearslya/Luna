@@ -33,6 +33,7 @@ class Editor {
 	EditorResources& GetResources() {
 		return _resources;
 	}
+	void RequestContent(const ContentBrowserItem& item);
 
 	static inline const std::filesystem::path AssetsDirectory = "Assets";
 

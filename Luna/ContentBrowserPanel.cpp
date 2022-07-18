@@ -41,7 +41,12 @@ void ContentBrowserPanel::Render(bool* show) {
 
 				ImGui::ImageButton(UI::TextureID(icon), ImVec2(buttonSize, buttonSize));
 				if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-					if (directory) { _currentDirectory /= path; }
+					if (directory) {
+						_currentDirectory /= path;
+					} else {
+						ContentBrowserItem item{.Type = ContentBrowserItemType::File, .FilePath = relativePath};
+						Editor::Get()->RequestContent(item);
+					}
 				}
 				if (ImGui::BeginDragDropSource()) {
 					_currentDragDropItem.Type     = directory ? ContentBrowserItemType::Directory : ContentBrowserItemType::File;
