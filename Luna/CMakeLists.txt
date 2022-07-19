@@ -21,9 +21,6 @@ FetchContent_Declare(spdlog
 FetchContent_Declare(spirv-cross
 	GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Cross.git
 	GIT_TAG master)
-FetchContent_Declare(tinygltf
-	GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
-	GIT_TAG master)
 FetchContent_Declare(yaml
 	GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
 	GIT_TAG master)
@@ -38,38 +35,24 @@ set(SPIRV_CROSS_ENABLE_GLSL On CACHE BOOL "" FORCE)
 set(SPIRV_CROSS_ENABLE_HLSL Off CACHE BOOL "" FORCE)
 set(SPIRV_CROSS_ENABLE_MSL Off CACHE BOOL "" FORCE)
 set(SPIRV_CROSS_ENABLE_TESTS Off CACHE BOOL "" FORCE)
-set(TINYGLTF_BUILD_LOADER_EXAMPLE Off CACHE BOOL "" FORCE)
 set(YAML_BUILD_SHARED_LIBS Off CACHE BOOL "" FORCE)
 set(YAML_CPP_BUILD_TESTS Off CACHE BOOL "" FORCE)
 set(YAML_CPP_BUILD_TOOLS Off CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(entt glfw glm glslang spdlog spirv-cross tinygltf yaml)
 
-add_executable(Luna)
+add_library(Luna STATIC)
 target_compile_definitions(Luna
-	PRIVATE
-	IMGUI_DEFINE_MATH_OPERATORS VK_ENABLE_BETA_EXTENSIONS VK_NO_PROTOTYPES VULKAN_HPP_DISPATCH_LOADER_DYNAMIC YAML_CPP_STATIC_DEFINE)
+	PUBLIC IMGUI_DEFINE_MATH_OPERATORS VK_ENABLE_BETA_EXTENSIONS VK_NO_PROTOTYPES
+	PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC YAML_CPP_STATIC_DEFINE)
 target_include_directories(Luna
-	PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+	PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(Luna
-	PRIVATE EnTT::EnTT glfw glm glslang imgui spdlog SPIRV spirv-cross-cpp tinygltf vma Vulkan::Headers yaml-cpp)
+	PUBLIC EnTT::EnTT glm imgui spdlog vma Vulkan::Headers yaml-cpp
+	PRIVATE glfw glslang SPIRV spirv-cross-cpp yaml-cpp)
 
 add_subdirectory(Application)
 add_subdirectory(ImGui)
 add_subdirectory(Scene)
 add_subdirectory(Utility)
 add_subdirectory(Vulkan)
-
-target_sources(Luna PRIVATE
-	AssetManager.cpp
-	ContentBrowserPanel.cpp
-	Editor.cpp
-	MeshImportPanel.cpp
-	SceneHierarchyPanel.cpp
-	SceneRenderer.cpp
-	UI.cpp)
-
-add_custom_target(Run
-	COMMAND Luna
-	DEPENDS Luna
-	WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
