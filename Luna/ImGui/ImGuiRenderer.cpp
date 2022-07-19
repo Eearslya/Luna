@@ -1,6 +1,8 @@
 #include "ImGuiRenderer.hpp"
 
-#include "Input.hpp"
+#include <GLFW/glfw3.h>
+
+#include "Application/Input.hpp"
 #include "Vulkan/Buffer.hpp"
 #include "Vulkan/CommandBuffer.hpp"
 #include "Vulkan/Device.hpp"

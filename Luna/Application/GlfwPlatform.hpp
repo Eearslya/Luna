@@ -8,6 +8,7 @@
 #include "Input.hpp"
 #include "Vulkan/WSI.hpp"
 
+namespace Luna {
 class GlfwPlatform : public Luna::Vulkan::WSIPlatform {
  public:
 	GlfwPlatform() {
@@ -122,3 +123,4 @@ class GlfwPlatform : public Luna::Vulkan::WSIPlatform {
 	glm::ivec2 _framebufferSize = glm::ivec2(0, 0);
 	glm::ivec2 _windowSize      = glm::ivec2(1600, 900);
 };
+}  // namespace Luna

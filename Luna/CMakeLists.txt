@@ -54,6 +54,7 @@ target_include_directories(Luna
 target_link_libraries(Luna
 	PRIVATE EnTT::EnTT glfw glm glslang imgui spdlog SPIRV spirv-cross-cpp tinygltf vma Vulkan::Headers yaml-cpp)
 
+add_subdirectory(Application)
 add_subdirectory(ImGui)
 add_subdirectory(Scene)
 add_subdirectory(Utility)
@@ -63,7 +64,6 @@ target_sources(Luna PRIVATE
 	AssetManager.cpp
 	ContentBrowserPanel.cpp
 	Editor.cpp
-	Main.cpp
 	MeshImportPanel.cpp
 	SceneHierarchyPanel.cpp
 	SceneRenderer.cpp

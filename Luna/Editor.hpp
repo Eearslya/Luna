@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <memory>
 
+#include "Application/Application.hpp"
 #include "Vulkan/Common.hpp"
 
 struct ContentBrowserItem;
@@ -15,21 +16,20 @@ class ImGuiRenderer;
 class Scene;
 }  // namespace Luna
 
-class Editor {
+class Editor : public Luna::Application {
  public:
 	struct EditorResources {
 		Luna::Vulkan::ImageHandle DirectoryIcon;
 		Luna::Vulkan::ImageHandle FileIcon;
 	};
 
-	Editor();
-	~Editor() noexcept;
+	virtual void Start() override;
+	virtual void Stop() override;
+	virtual void Update() override;
 
 	static Editor* Get() {
 		return _instance;
 	}
-
-	void Run();
 
 	EditorResources& GetResources() {
 		return _resources;
@@ -48,7 +48,6 @@ class Editor {
 	void SaveScene();
 	void StyleImGui();
 
-	std::unique_ptr<Luna::Vulkan::WSI> _wsi;
 	EditorResources _resources;
 	std::shared_ptr<Luna::Scene> _scene;
 	std::unique_ptr<Luna::ImGuiRenderer> _imguiRenderer;

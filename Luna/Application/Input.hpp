@@ -1,12 +1,13 @@
 #pragma once
 
-#include <GLFW/glfw3.h>
-
 #include <glm/glm.hpp>
 
 #include "Utility/Delegate.hpp"
 #include "Utility/EnumClass.hpp"
 
+struct GLFWwindow;
+
+namespace Luna {
 enum class Key : int16_t {
 	Unknown        = -1,
 	Space          = 32,
@@ -152,13 +153,11 @@ enum class MouseButton : uint8_t {
 
 class Input {
  public:
-	inline static void AttachWindow(GLFWwindow* window) {
+	static void AttachWindow(GLFWwindow* window) {
 		_window = window;
 	}
 
-	inline static bool GetButton(MouseButton button) {
-		return glfwGetMouseButton(_window, int(button)) == GLFW_PRESS;
-	}
+	static bool GetButton(MouseButton button);
 
 	inline static Luna::Delegate<void(MouseButton, InputAction, InputMods)> OnButton;
 	inline static Luna::Delegate<void(int)> OnChar;
@@ -169,6 +168,7 @@ class Input {
  private:
 	inline static GLFWwindow* _window = nullptr;
 };
+}  // namespace Luna
 
 template <>
-struct Luna::EnableBitmaskOperators<InputModBits> : std::true_type {};
+struct Luna::EnableBitmaskOperators<Luna::InputModBits> : std::true_type {};

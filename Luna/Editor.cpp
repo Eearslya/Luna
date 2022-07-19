@@ -5,9 +5,9 @@
 
 #include <glm/glm.hpp>
 
+#include "Application/EntryPoint.hpp"
 #include "AssetManager.hpp"
 #include "ContentBrowserPanel.hpp"
-#include "GlfwPlatform.hpp"
 #include "IconsFontAwesome6.h"
 #include "ImGui/ImGuiRenderer.hpp"
 #include "MeshImportPanel.hpp"
@@ -32,14 +32,8 @@ using namespace Luna;
 
 Editor* Editor::_instance = nullptr;
 
-Editor::Editor() {
+void Editor::Start() {
 	_instance = this;
-
-	Log::Initialize();
-	Log::SetLevel(Log::Level::Trace);
-
-	auto platform = std::make_unique<GlfwPlatform>();
-	_wsi          = std::make_unique<Vulkan::WSI>(std::move(platform));
 
 	AssetManager::Initialize(*_wsi);
 	LoadResources();
@@ -53,56 +47,53 @@ Editor::Editor() {
 	_scenePanel          = std::make_unique<SceneHierarchyPanel>(_scene);
 }
 
-Editor::~Editor() noexcept {
+void Editor::Stop() {
 	AssetManager::Shutdown();
-	Log::Shutdown();
 }
 
-void Editor::Run() {
+void Editor::Update() {
 	auto& device = _wsi->GetDevice();
 
-	while (_wsi->IsAlive()) {
-		_wsi->BeginFrame();
-		_imguiRenderer->BeginFrame();
+	_wsi->BeginFrame();
+	_imguiRenderer->BeginFrame();
 
-		const auto frameIndex = _wsi->GetAcquiredIndex();
+	const auto frameIndex = _wsi->GetAcquiredIndex();
 
-		auto cmd = device.RequestCommandBuffer();
+	auto cmd = device.RequestCommandBuffer();
 
-		_imguiRenderer->BeginDockspace();
-		if (ImGui::BeginMainMenuBar()) {
-			if (ImGui::BeginMenu("File")) {
-				if (ImGui::MenuItem(ICON_FA_DOWNLOAD " Save Scene")) { SaveScene(); }
-				if (ImGui::MenuItem(ICON_FA_POWER_OFF " Exit")) { _wsi->RequestShutdown(); }
-				ImGui::EndMenu();
-			}
-
-			if (ImGui::BeginMenu("Window")) {
-				ImGui::MenuItem(ICON_FA_FOLDER_TREE " Content Browser", nullptr, &_showContentBrowser);
-				ImGui::Separator();
-				ImGui::MenuItem(ICON_FA_DESKTOP " ImGui Demo", nullptr, &_showDemoWindow);
-
-				ImGui::EndMenu();
-			}
-
-			ImGui::EndMainMenuBar();
+	_imguiRenderer->BeginDockspace();
+	if (ImGui::BeginMainMenuBar()) {
+		if (ImGui::BeginMenu("File")) {
+			if (ImGui::MenuItem(ICON_FA_DOWNLOAD " Save Scene")) { SaveScene(); }
+			if (ImGui::MenuItem(ICON_FA_POWER_OFF " Exit")) { _wsi->RequestShutdown(); }
+			ImGui::EndMenu();
 		}
 
-		if (_showDemoWindow) { ImGui::ShowDemoWindow(&_showDemoWindow); }
-		if (_showContentBrowser) { _contentBrowserPanel->Render(&_showContentBrowser); }
-		_scenePanel->Render();
-		if (_meshImportPanel) {
-			if (!_meshImportPanel->Render(cmd)) { _meshImportPanel.reset(); }
+		if (ImGui::BeginMenu("Window")) {
+			ImGui::MenuItem(ICON_FA_FOLDER_TREE " Content Browser", nullptr, &_showContentBrowser);
+			ImGui::Separator();
+			ImGui::MenuItem(ICON_FA_DESKTOP " ImGui Demo", nullptr, &_showDemoWindow);
+
+			ImGui::EndMenu();
 		}
-		RenderViewport(cmd);
 
-		_imguiRenderer->EndDockspace();
-		_imguiRenderer->Render(cmd, frameIndex, true);
-
-		device.Submit(cmd);
-
-		_wsi->EndFrame();
+		ImGui::EndMainMenuBar();
 	}
+
+	if (_showDemoWindow) { ImGui::ShowDemoWindow(&_showDemoWindow); }
+	if (_showContentBrowser) { _contentBrowserPanel->Render(&_showContentBrowser); }
+	_scenePanel->Render();
+	if (_meshImportPanel) {
+		if (!_meshImportPanel->Render(cmd)) { _meshImportPanel.reset(); }
+	}
+	RenderViewport(cmd);
+
+	_imguiRenderer->EndDockspace();
+	_imguiRenderer->Render(cmd, frameIndex, true);
+
+	device.Submit(cmd);
+
+	_wsi->EndFrame();
 }
 
 void Editor::AcceptContent(const ContentBrowserItem& item) {
@@ -239,3 +230,9 @@ void Editor::StyleImGui() {
 
 	_imguiRenderer->UpdateFontAtlas();
 }
+
+namespace Luna {
+std::unique_ptr<Application> CreateApplication(int argc, const char** argv) {
+	return std::make_unique<Editor>();
+}
+}  // namespace Luna
