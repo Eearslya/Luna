@@ -1,8 +1,7 @@
 #pragma once
 
+#include <Vulkan/Common.hpp>
 #include <glm/glm.hpp>
-
-#include "Vulkan/Common.hpp"
 
 namespace Luna {
 class Scene;

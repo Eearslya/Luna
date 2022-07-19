@@ -3,21 +3,21 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include <ImGui/ImGuiRenderer.hpp>
+#include <Scene/CameraComponent.hpp>
+#include <Scene/Entity.hpp>
+#include <Scene/IdComponent.hpp>
+#include <Scene/MeshComponent.hpp>
+#include <Scene/NameComponent.hpp>
+#include <Scene/RelationshipComponent.hpp>
+#include <Scene/Scene.hpp>
+#include <Scene/TransformComponent.hpp>
+#include <Utility/Log.hpp>
 #include <optional>
 
 #include "AssetManager.hpp"
 #include "ContentBrowserPanel.hpp"
 #include "IconsFontAwesome6.h"
-#include "ImGui/ImGuiRenderer.hpp"
-#include "Scene/CameraComponent.hpp"
-#include "Scene/Entity.hpp"
-#include "Scene/IdComponent.hpp"
-#include "Scene/MeshComponent.hpp"
-#include "Scene/NameComponent.hpp"
-#include "Scene/RelationshipComponent.hpp"
-#include "Scene/Scene.hpp"
-#include "Scene/TransformComponent.hpp"
-#include "Utility/Log.hpp"
 
 using namespace Luna;
 

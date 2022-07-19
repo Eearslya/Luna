@@ -1,8 +1,7 @@
 #pragma once
 
+#include <Scene/Entity.hpp>
 #include <memory>
-
-#include "Scene/Entity.hpp"
 
 class SceneHierarchyPanel {
  public:

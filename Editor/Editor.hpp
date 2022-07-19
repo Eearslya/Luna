@@ -1,10 +1,9 @@
 #pragma once
 
+#include <Application/Application.hpp>
+#include <Vulkan/Common.hpp>
 #include <filesystem>
 #include <memory>
-
-#include "Application/Application.hpp"
-#include "Vulkan/Common.hpp"
 
 struct ContentBrowserItem;
 class ContentBrowserPanel;

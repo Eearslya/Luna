@@ -1,12 +1,11 @@
 #pragma once
 
+#include <Assets/Mesh.hpp>
+#include <Vulkan/Common.hpp>
 #include <filesystem>
 #include <memory>
 #include <unordered_map>
 #include <vector>
-
-#include "Assets/Mesh.hpp"
-#include "Vulkan/Common.hpp"
 
 class AssetManager {
  public:

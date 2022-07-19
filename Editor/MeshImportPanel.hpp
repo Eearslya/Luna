@@ -1,8 +1,7 @@
 #pragma once
 
+#include <Vulkan/Common.hpp>
 #include <filesystem>
-
-#include "Vulkan/Common.hpp"
 
 class MeshImportPanel {
  public:
