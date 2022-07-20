@@ -5,25 +5,25 @@ include(FindVulkan)
 
 FetchContent_Declare(entt
 	GIT_REPOSITORY https://github.com/skypjack/entt.git
-	GIT_TAG master)
+	GIT_TAG e8f85202513f268a6b350d9f2d1f53248cddd2d5)
 FetchContent_Declare(glfw
 	GIT_REPOSITORY https://github.com/glfw/glfw.git
-	GIT_TAG 3.3.6)
+	GIT_TAG c50d53160fa9b579dda0d0a4f9a7c2512940df8e)
 FetchContent_Declare(glm
 	GIT_REPOSITORY https://github.com/g-truc/glm.git
-	GIT_TAG master)
+	GIT_TAG cc98465e3508535ba8c7f6208df934c156a018dc)
 FetchContent_Declare(glslang
 	GIT_REPOSITORY https://github.com/KhronosGroup/glslang.git
-	GIT_TAG master)
+	GIT_TAG 7e6b7c26a2a565c677b93f1c1769977cadced306)
 FetchContent_Declare(spdlog
 	GIT_REPOSITORY https://github.com/gabime/spdlog.git
-	GIT_TAG v1.10.0)
+	GIT_TAG 834840636cb52242d0fae2d6233c90067a4248dc)
 FetchContent_Declare(spirv-cross
 	GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Cross.git
-	GIT_TAG master)
+	GIT_TAG d8d051381f65b9606fb8016c79b7c3bab872eec3)
 FetchContent_Declare(yaml
 	GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
-	GIT_TAG master)
+	GIT_TAG c73ee34704c512ebe915b283645aefa9f424a22f)
 
 set(ENABLE_GLSLANG_BINARIES Off CACHE BOOL "" FORCE)
 set(GLFW_BUILD_DOCS Off CACHE BOOL "" FORCE)
