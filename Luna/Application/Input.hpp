@@ -158,6 +158,7 @@ class Input {
 	}
 
 	static bool GetButton(MouseButton button);
+	static bool GetCursorHidden();
 	static bool GetKey(Key key);
 	static void SetCursorHidden(bool hidden);
 	static void SetMousePosition(const glm::dvec2& position);
@@ -169,6 +170,8 @@ class Input {
 	inline static Luna::Delegate<void(glm::dvec2)> OnScroll;
 
  private:
+	friend class GlfwPlatform;
+
 	inline static GLFWwindow* _window = nullptr;
 	inline static bool _cursorHidden  = false;
 	inline static glm::dvec2 _lastPosition;

@@ -8,6 +8,10 @@ bool Input::GetButton(MouseButton button) {
 	return glfwGetMouseButton(_window, int(button)) == GLFW_PRESS;
 }
 
+bool Input::GetCursorHidden() {
+	return _cursorHidden;
+}
+
 bool Input::GetKey(Key key) {
 	return glfwGetKey(_window, int(key)) == GLFW_PRESS;
 }

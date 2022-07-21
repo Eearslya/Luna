@@ -101,7 +101,13 @@ class GlfwPlatform : public Luna::Vulkan::WSIPlatform {
 	}
 
 	static void CallbackPosition(GLFWwindow* window, double x, double y) {
-		Input::OnMoved({x, y});
+		if (Input::GetCursorHidden()) {
+			Input::_position     = {Input::_lastPosition.x - x, Input::_lastPosition.y - y};
+			Input::_lastPosition = {x, y};
+		} else {
+			Input::_position = {x, y};
+		}
+		Input::OnMoved(Input::_position);
 	}
 
 	static void CallbackScroll(GLFWwindow* window, double xOffset, double yOffset) {
