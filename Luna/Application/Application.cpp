@@ -31,7 +31,13 @@ int Application::Main(int argc, const char** argv) {
 }
 
 void Application::Run() {
-	while (_wsi->IsAlive()) { Update(); }
+	double lastTime = glfwGetTime();
+	while (_wsi->IsAlive()) {
+		const double now = glfwGetTime();
+		const double dt  = now - lastTime;
+		lastTime         = now;
+		Update(dt);
+	}
 }
 
 void Application::Initialize(std::shared_ptr<Vulkan::WSI> wsi) {

@@ -12,9 +12,9 @@ class Application {
 	static int Main(int argc, const char** argv);
 
  protected:
-	virtual void Start()  = 0;
-	virtual void Update() = 0;
-	virtual void Stop()   = 0;
+	virtual void Start()          = 0;
+	virtual void Update(float dt) = 0;
+	virtual void Stop()           = 0;
 
 	std::shared_ptr<Vulkan::WSI> _wsi;
 
