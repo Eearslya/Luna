@@ -608,6 +608,9 @@ vk::Format Device::GetDefaultDepthStencilFormat() const {
 }
 
 RenderPassInfo Device::GetStockRenderPass(StockRenderPass type) const {
+	assert(_swapchainIndex != std::numeric_limits<uint32_t>::max() &&
+	       "Swapchain Index not set! Did you call WSI::BeginFrame()?");
+
 	RenderPassInfo info{.ColorAttachmentCount = 1, .ClearAttachments = 1, .StoreAttachments = 1};
 	info.ColorAttachments[0] = &_swapchainImages[_swapchainIndex]->GetView();
 
