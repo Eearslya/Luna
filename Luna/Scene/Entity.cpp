@@ -55,6 +55,7 @@ void Entity::SetParent(Entity newParent) {
 		auto& cParent = parent.GetComponent<RelationshipComponent>();
 		if (cParent.FirstChild == *this) { cParent.FirstChild = next; }
 	}
+	cRelationship.Parent = newParent;
 
 	if (newParent) {
 		auto& cNewParent = newParent.GetComponent<RelationshipComponent>();
