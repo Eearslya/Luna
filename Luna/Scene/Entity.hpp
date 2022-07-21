@@ -44,6 +44,10 @@ class Entity {
 	void SetParent(Entity newParent);
 	void SetTranslation(const glm::vec3& translation);
 
+	void Rotate(const glm::vec3& rDelta);
+	void Scale(const glm::vec3& sDelta);
+	void Translate(const glm::vec3& tDelta);
+
 	TransformComponent& Transform();
 	const TransformComponent& Transform() const;
 
