@@ -4,6 +4,7 @@
 
 #include <fstream>
 
+#include "Assets/Mesh.hpp"
 #include "CameraComponent.hpp"
 #include "Entity.hpp"
 #include "IdComponent.hpp"

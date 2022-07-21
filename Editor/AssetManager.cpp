@@ -13,7 +13,8 @@
 using namespace Luna;
 
 Vulkan::WSI* AssetManager::_wsi = nullptr;
-std::unordered_map<std::string, std::unique_ptr<Mesh>> AssetManager::_meshes;
+std::unordered_map<std::string, IntrusivePtr<Mesh>> AssetManager::_meshes;
+Luna::ObjectPool<Mesh> AssetManager::_meshPool;
 
 void AssetManager::Initialize(Luna::Vulkan::WSI& wsi) {
 	_wsi = &wsi;
@@ -28,13 +29,13 @@ Mesh* AssetManager::GetMesh(const std::filesystem::path& meshAssetPath) {
 	if (meshAssetPath.empty()) { return nullptr; }
 
 	const auto it = _meshes.find(meshAssetPath.string());
-	if (it != _meshes.end()) { return it->second.get(); }
+	if (it != _meshes.end()) { return it->second.Get(); }
 
 	return LoadMesh(meshAssetPath);
 }
 
 Mesh* AssetManager::LoadMesh(const std::filesystem::path& meshAssetPath) {
-	std::unique_ptr<Mesh> mesh = std::make_unique<Mesh>();
+	Mesh mesh;
 
 	const auto gltfPath      = Editor::AssetsDirectory / meshAssetPath;
 	const auto gltfFile      = gltfPath.string();
@@ -85,7 +86,7 @@ Mesh* AssetManager::LoadMesh(const std::filesystem::path& meshAssetPath) {
 		vk::DeviceSize totalIndexCount  = 0;
 		std::vector<PrimitiveContext> primData(gltfMesh.primitives.size());
 		{
-			mesh->Submeshes.resize(gltfMesh.primitives.size());
+			mesh.Submeshes.resize(gltfMesh.primitives.size());
 			for (size_t prim = 0; prim < gltfMesh.primitives.size(); ++prim) {
 				const auto& gltfPrimitive = gltfMesh.primitives[prim];
 				if (gltfPrimitive.mode != 4) {
@@ -140,12 +141,12 @@ Mesh* AssetManager::LoadMesh(const std::filesystem::path& meshAssetPath) {
 		const vk::DeviceSize totalIndexSize     = ((totalIndexCount * sizeof(uint32_t)) + 16llu) & ~16llu;
 		const vk::DeviceSize bufferSize         = totalPositionSize + totalNormalSize + totalTexcoord0Size + totalIndexSize;
 
-		mesh->PositionOffset   = 0;
-		mesh->NormalOffset     = totalPositionSize;
-		mesh->Texcoord0Offset  = totalPositionSize + totalNormalSize;
-		mesh->IndexOffset      = totalPositionSize + totalNormalSize + totalTexcoord0Size;
-		mesh->TotalVertexCount = totalVertexCount;
-		mesh->TotalIndexCount  = totalIndexCount;
+		mesh.PositionOffset   = 0;
+		mesh.NormalOffset     = totalPositionSize;
+		mesh.Texcoord0Offset  = totalPositionSize + totalNormalSize;
+		mesh.IndexOffset      = totalPositionSize + totalNormalSize + totalTexcoord0Size;
+		mesh.TotalVertexCount = totalVertexCount;
+		mesh.TotalIndexCount  = totalIndexCount;
 
 		std::unique_ptr<uint8_t[]> bufferData;
 		bufferData.reset(new uint8_t[bufferSize]);
@@ -157,7 +158,7 @@ Mesh* AssetManager::LoadMesh(const std::filesystem::path& meshAssetPath) {
 		{
 			for (size_t prim = 0; prim < gltfMesh.primitives.size(); ++prim) {
 				const auto& data = primData[prim];
-				auto& submesh    = mesh->Submeshes[prim];
+				auto& submesh    = mesh.Submeshes[prim];
 
 				submesh.VertexCount = data.VertexCount;
 				submesh.IndexCount  = data.IndexCount;
@@ -206,14 +207,14 @@ Mesh* AssetManager::LoadMesh(const std::filesystem::path& meshAssetPath) {
 		}
 
 		auto& device = _wsi->GetDevice();
-		mesh->Buffer = device.CreateBuffer(
-			Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Device,
-		                           bufferSize,
-		                           vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer),
-			bufferData.get());
+		mesh.Buffer  = device.CreateBuffer(
+      Vulkan::BufferCreateInfo(Vulkan::BufferDomain::Device,
+                               bufferSize,
+                               vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer),
+      bufferData.get());
 	}
 
-	_meshes[meshAssetPath.string()] = std::move(mesh);
+	_meshes[meshAssetPath.string()] = IntrusivePtr<Mesh>(_meshPool.Allocate(mesh));
 
-	return _meshes[meshAssetPath.string()].get();
+	return _meshes[meshAssetPath.string()].Get();
 }

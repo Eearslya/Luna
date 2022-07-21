@@ -2,8 +2,10 @@
 
 #include <vector>
 
-#include "Vulkan/Common.hpp"
+#include "Utility/IntrusivePtr.hpp"
+#include "Vulkan/Buffer.hpp"
 
+namespace Luna {
 struct Submesh {
 	vk::DeviceSize VertexCount = 0;
 	vk::DeviceSize IndexCount  = 0;
@@ -11,7 +13,7 @@ struct Submesh {
 	vk::DeviceSize FirstIndex  = 0;
 };
 
-struct Mesh {
+struct Mesh : public IntrusivePtrEnabled<Mesh> {
 	std::vector<Submesh> Submeshes;
 	Luna::Vulkan::BufferHandle Buffer;
 	vk::DeviceSize PositionOffset   = 0;
@@ -21,3 +23,4 @@ struct Mesh {
 	vk::DeviceSize TotalVertexCount = 0;
 	vk::DeviceSize TotalIndexCount  = 0;
 };
+}  // namespace Luna

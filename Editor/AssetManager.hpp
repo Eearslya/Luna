@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Assets/Mesh.hpp>
+#include <Utility/IntrusivePtr.hpp>
+#include <Utility/ObjectPool.hpp>
 #include <Vulkan/Common.hpp>
 #include <filesystem>
 #include <memory>
@@ -12,11 +14,12 @@ class AssetManager {
 	static void Initialize(Luna::Vulkan::WSI& wsi);
 	static void Shutdown();
 
-	static Mesh* GetMesh(const std::filesystem::path& meshAssetPath);
+	static Luna::Mesh* GetMesh(const std::filesystem::path& meshAssetPath);
 
  private:
-	static Mesh* LoadMesh(const std::filesystem::path& meshAssetPath);
+	static Luna::Mesh* LoadMesh(const std::filesystem::path& meshAssetPath);
 
 	static Luna::Vulkan::WSI* _wsi;
-	static std::unordered_map<std::string, std::unique_ptr<Mesh>> _meshes;
+	static std::unordered_map<std::string, Luna::IntrusivePtr<Luna::Mesh>> _meshes;
+	static Luna::ObjectPool<Luna::Mesh> _meshPool;
 };
