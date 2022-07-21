@@ -11,6 +11,7 @@ struct Submesh {
 	vk::DeviceSize IndexCount  = 0;
 	vk::DeviceSize FirstVertex = 0;
 	vk::DeviceSize FirstIndex  = 0;
+	uint32_t MaterialIndex     = 0;
 };
 
 struct Mesh : public IntrusivePtrEnabled<Mesh> {
