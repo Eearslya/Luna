@@ -25,7 +25,7 @@ class Camera {
 	void SetViewport(const glm::uvec2& viewportSize);
 
 	float Pitch = 0.0f;
-	float Yaw   = 0.0f;
+	float Yaw   = -90.0f;
 
  private:
 	float _fovDegrees     = 70.0f;
