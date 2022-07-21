@@ -46,6 +46,7 @@ class Entity {
 
 	void Rotate(const glm::vec3& rDelta);
 	void Scale(const glm::vec3& sDelta);
+	void Scale(const float sDelta);
 	void Translate(const glm::vec3& tDelta);
 
 	TransformComponent& Transform();

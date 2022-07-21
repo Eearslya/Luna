@@ -87,6 +87,10 @@ void Entity::Scale(const glm::vec3& sDelta) {
 	Transform().Scale *= sDelta;
 }
 
+void Entity::Scale(const float sDelta) {
+	Scale(glm::vec3(sDelta));
+}
+
 void Entity::Translate(const glm::vec3& tDelta) {
 	Transform().Translation += tDelta;
 }
