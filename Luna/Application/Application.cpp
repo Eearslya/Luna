@@ -10,9 +10,19 @@ int Application::Main(int argc, const char** argv) {
 
 	auto app      = CreateApplication(argc, argv);
 	auto platform = std::make_unique<GlfwPlatform>();
-	app->Initialize(std::make_shared<Vulkan::WSI>(std::move(platform)));
-	app->Start();
-	app->Run();
+	try {
+		app->Initialize(std::make_shared<Vulkan::WSI>(std::move(platform)));
+		app->Start();
+	} catch (const std::exception& e) {
+		Log::Fatal("Luna", "Fatal exception caught when initializing application:\n\t{}", e.what());
+		return 1;
+	}
+	try {
+		app->Run();
+	} catch (const std::exception& e) {
+		Log::Fatal("Luna", "Fatal exception caught when running application:\n\t{}", e.what());
+		return 1;
+	}
 	app->Stop();
 
 	Log::Shutdown();

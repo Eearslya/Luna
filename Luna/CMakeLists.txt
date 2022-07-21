@@ -39,7 +39,7 @@ set(YAML_BUILD_SHARED_LIBS Off CACHE BOOL "" FORCE)
 set(YAML_CPP_BUILD_TESTS Off CACHE BOOL "" FORCE)
 set(YAML_CPP_BUILD_TOOLS Off CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(entt glfw glm glslang spdlog spirv-cross tinygltf yaml)
+FetchContent_MakeAvailable(entt glfw glm glslang spdlog spirv-cross yaml)
 
 add_library(Luna STATIC)
 target_compile_definitions(Luna
