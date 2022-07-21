@@ -158,6 +158,9 @@ class Input {
 	}
 
 	static bool GetButton(MouseButton button);
+	static bool GetKey(Key key);
+	static void SetCursorHidden(bool hidden);
+	static void SetMousePosition(const glm::dvec2& position);
 
 	inline static Luna::Delegate<void(MouseButton, InputAction, InputMods)> OnButton;
 	inline static Luna::Delegate<void(int)> OnChar;
@@ -167,6 +170,14 @@ class Input {
 
  private:
 	inline static GLFWwindow* _window = nullptr;
+	inline static bool _cursorHidden  = false;
+	inline static glm::dvec2 _lastPosition;
+	inline static glm::dvec2 _lastScroll;
+	inline static glm::dvec2 _position;
+	inline static glm::dvec2 _positionDelta;
+	inline static glm::dvec2 _savedPosition;
+	inline static glm::dvec2 _scroll;
+	inline static glm::dvec2 _scrollDelta;
 };
 }  // namespace Luna
 
