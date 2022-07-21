@@ -1,7 +1,9 @@
 #pragma once
 
 #include <filesystem>
+#include <vector>
 
+#include "Assets/Material.hpp"
 #include "Assets/Mesh.hpp"
 #include "Utility/IntrusivePtr.hpp"
 
@@ -11,6 +13,9 @@ struct MeshComponent {
 	MeshComponent(const MeshComponent&) = default;
 
 	IntrusivePtr<Mesh> Mesh;
+	std::vector<MaterialHandle> Materials;
+
+	// Legacy
 	std::filesystem::path MeshAssetPath;
 	uint32_t SubmeshIndex = 0;
 };
