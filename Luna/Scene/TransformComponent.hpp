@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/euler_angles.hpp>
 
 namespace Luna {
 struct TransformComponent {
@@ -10,10 +11,8 @@ struct TransformComponent {
 
 	glm::mat4 GetTransform() const {
 		glm::mat4 matrix = glm::translate(glm::mat4(1.0f), Translation);
-		matrix           = glm::rotate(matrix, glm::radians(Rotation.x), {1.0f, 0.0f, 0.0f});
-		matrix           = glm::rotate(matrix, glm::radians(Rotation.y), {0.0f, 1.0f, 0.0f});
-		matrix           = glm::rotate(matrix, glm::radians(Rotation.z), {0.0f, 0.0f, 1.0f});
-		matrix           = glm::scale(matrix, Scale);
+		matrix *= glm::mat4(glm::quat(glm::radians(Rotation)));
+		matrix = glm::scale(matrix, Scale);
 
 		return matrix;
 	}
