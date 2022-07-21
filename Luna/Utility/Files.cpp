@@ -13,4 +13,16 @@ std::string ReadFile(const std::filesystem::path& filePath) {
 
 	return ss.str();
 }
+
+std::vector<uint8_t> ReadFileBinary(const std::filesystem::path& filePath) {
+	std::ifstream file(filePath, std::ios::ate);
+	if (!file.is_open()) { throw std::runtime_error("Failed to open file for reading!"); }
+
+	const size_t fileSize = file.tellg();
+	file.seekg(0);
+	std::vector<uint8_t> bytes(fileSize);
+	file.read(reinterpret_cast<char*>(bytes.data()), fileSize);
+
+	return bytes;
+}
 }  // namespace Luna
