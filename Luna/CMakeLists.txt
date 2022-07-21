@@ -52,6 +52,7 @@ target_link_libraries(Luna
 	PRIVATE glfw glslang SPIRV spirv-cross-cpp yaml-cpp)
 
 add_subdirectory(Application)
+add_subdirectory(Assets)
 add_subdirectory(ImGui)
 add_subdirectory(Scene)
 add_subdirectory(Utility)

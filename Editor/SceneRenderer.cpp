@@ -56,6 +56,7 @@ void SceneRenderer::Render(Vulkan::CommandBufferHandle& cmd, Luna::Scene& scene,
 	rpInfo.ClearDepthStencil      = vk::ClearDepthStencilValue(1.0f, 0);
 	cmd->BeginRenderPass(rpInfo);
 
+#if 0
 	auto cameraEntity = scene.GetMainCamera();
 	if (cameraEntity) {
 		auto& cCameraTransform = cameraEntity.Transform();
@@ -98,6 +99,7 @@ void SceneRenderer::Render(Vulkan::CommandBufferHandle& cmd, Luna::Scene& scene,
 			}
 		}
 	}
+#endif
 
 	cmd->EndRenderPass();
 
