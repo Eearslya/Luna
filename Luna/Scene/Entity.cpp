@@ -57,7 +57,7 @@ void Entity::SetParent(Entity newParent) {
 	}
 
 	if (newParent) {
-		auto& cNewParent = parent.GetComponent<RelationshipComponent>();
+		auto& cNewParent = newParent.GetComponent<RelationshipComponent>();
 		Entity sibling   = Entity(cNewParent.FirstChild, *_scene);
 		if (sibling) {
 			auto& cSibling = sibling.GetComponent<RelationshipComponent>();
