@@ -15,7 +15,7 @@ std::string ReadFile(const std::filesystem::path& filePath) {
 }
 
 std::vector<uint8_t> ReadFileBinary(const std::filesystem::path& filePath) {
-	std::ifstream file(filePath, std::ios::ate);
+	std::ifstream file(filePath, std::ios::ate | std::ios::binary);
 	if (!file.is_open()) { throw std::runtime_error("Failed to open file for reading!"); }
 
 	const size_t fileSize = file.tellg();
