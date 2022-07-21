@@ -2,11 +2,10 @@
 
 #include <filesystem>
 
+#include "Assets/Mesh.hpp"
 #include "Utility/IntrusivePtr.hpp"
 
 namespace Luna {
-struct Mesh;
-
 struct MeshComponent {
 	MeshComponent()                     = default;
 	MeshComponent(const MeshComponent&) = default;
