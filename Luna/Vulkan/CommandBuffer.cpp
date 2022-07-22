@@ -271,6 +271,14 @@ void CommandBuffer::EndRenderPass() {
 		}                                                                             \
 	} while (0)
 
+#define SetDynamicState(field, value, dirtyFlag) \
+	do {                                           \
+		if (_dynamicState.field != value) {          \
+			_dynamicState.field = value;               \
+			_dirty |= dirtyFlag;                       \
+		}                                            \
+	} while (0)
+
 void CommandBuffer::ClearRenderState() {
 	memset(&_pipelineCompileInfo.StaticState, 0, sizeof(_pipelineCompileInfo.StaticState));
 	_dirty |= CommandBufferDirtyFlagBits::StaticState;
@@ -318,6 +326,15 @@ void CommandBuffer::SetTransparentSpriteState() {
 
 void CommandBuffer::SetCullMode(vk::CullModeFlagBits mode) {
 	SetStaticState(CullMode, mode);
+}
+
+void CommandBuffer::SetDepthBias(float depthBiasConstant, float depthBiasSlope) {
+	SetDynamicState(DepthBiasConstant, depthBiasConstant, CommandBufferDirtyFlagBits::DepthBias);
+	SetDynamicState(DepthBiasSlope, depthBiasSlope, CommandBufferDirtyFlagBits::DepthBias);
+}
+
+void CommandBuffer::SetDepthBiasEnabled(bool depthBiasEnabled) {
+	SetStaticState(DepthBiasEnable, depthBiasEnabled);
 }
 
 void CommandBuffer::SetDepthClamp(bool clamp) {
@@ -1025,6 +1042,11 @@ bool CommandBuffer::FlushRenderState(bool synchronous) {
 
 	if (_dirty & CommandBufferDirtyFlagBits::Scissor) { _commandBuffer.setScissor(0, _scissor); }
 	_dirty &= ~CommandBufferDirtyFlagBits::Scissor;
+
+	if (_pipelineCompileInfo.StaticState.DepthBiasEnable && _dirty & CommandBufferDirtyFlagBits::DepthBias) {
+		_commandBuffer.setDepthBias(_dynamicState.DepthBiasConstant, 0.0f, _dynamicState.DepthBiasSlope);
+	}
+	_dirty &= ~CommandBufferDirtyFlagBits::DepthBias;
 
 	const uint32_t updateVBOs = _dirtyVertexBuffers & _pipelineCompileInfo.ActiveVertexBuffers;
 	ForEachBitRange(updateVBOs, [&](uint32_t binding, uint32_t bindingCount) {

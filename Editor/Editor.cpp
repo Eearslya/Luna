@@ -51,7 +51,7 @@ void Editor::Stop() {
 	AssetManager::Shutdown();
 }
 
-void Editor::Update() {
+void Editor::Update(float dt) {
 	auto& device = _wsi->GetDevice();
 
 	_wsi->BeginFrame();

@@ -123,6 +123,11 @@ struct DescriptorBindingState {
 	uint8_t PushConstantData[MaxPushConstantSize] = {};
 };
 
+struct DynamicState {
+	float DepthBiasConstant = 0.0f;
+	float DepthBiasSlope    = 0.0f;
+};
+
 enum class CommandBufferDirtyFlagBits {
 	StaticState      = 1 << 0,
 	Pipeline         = 1 << 1,
@@ -207,6 +212,8 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void SetOpaqueState();
 	void SetTransparentSpriteState();
 	void SetCullMode(vk::CullModeFlagBits mode);
+	void SetDepthBias(float depthBiasConstant, float depthBiasSlope);
+	void SetDepthBiasEnabled(bool depthBiasEnabled);
 	void SetDepthClamp(bool clamp);
 	void SetDepthCompareOp(vk::CompareOp op);
 	void SetDepthWrite(bool write);
@@ -266,6 +273,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	CommandBufferDirtyFlags _dirty;
 	uint32_t _dirtyDescriptorSets                                                 = 0;
 	uint32_t _dirtyVertexBuffers                                                  = 0;
+	DynamicState _dynamicState                                                    = {};
 	const Framebuffer* _framebuffer                                               = nullptr;
 	std::array<const ImageView*, MaxColorAttachments + 1> _framebufferAttachments = {nullptr};
 	IndexState _indexBuffer                                                       = {};

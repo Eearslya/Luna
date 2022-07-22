@@ -24,7 +24,7 @@ class Editor : public Luna::Application {
 
 	virtual void Start() override;
 	virtual void Stop() override;
-	virtual void Update() override;
+	virtual void Update(float dt) override;
 
 	static Editor* Get() {
 		return _instance;
