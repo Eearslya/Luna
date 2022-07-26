@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include "Utility/AABB.hpp"
 #include "Utility/IntrusivePtr.hpp"
 #include "Vulkan/Buffer.hpp"
 
@@ -15,6 +16,7 @@ struct Submesh {
 };
 
 struct Mesh : public IntrusivePtrEnabled<Mesh> {
+	AABB Bounds;
 	std::vector<Submesh> Submeshes;
 	Luna::Vulkan::BufferHandle Buffer;
 	vk::DeviceSize PositionOffset   = 0;
