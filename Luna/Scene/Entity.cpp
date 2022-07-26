@@ -1,5 +1,6 @@
 #include "Entity.hpp"
 
+#include "MeshComponent.hpp"
 #include "RelationshipComponent.hpp"
 #include "TransformComponent.hpp"
 
@@ -12,6 +13,26 @@ TransformComponent& Entity::Transform() {
 
 const TransformComponent& Entity::Transform() const {
 	return GetComponent<TransformComponent>();
+}
+
+AABB Entity::GetGlobalBounds() const {
+	auto myBounds       = GetLocalBounds().Transform(GetGlobalTransform());
+	auto& cRelationship = GetComponent<RelationshipComponent>();
+
+	Entity child = Entity(cRelationship.FirstChild, *_scene);
+	while (child) {
+		myBounds.Contain(child.GetGlobalBounds());
+		auto& cChildRel = child.GetComponent<RelationshipComponent>();
+		child           = Entity(cChildRel.Next, *_scene);
+	}
+
+	return myBounds;
+}
+
+AABB Entity::GetLocalBounds() const {
+	if (HasComponent<MeshComponent>()) { return GetComponent<MeshComponent>().Bounds; }
+
+	return {};
 }
 
 glm::mat4 Entity::GetGlobalTransform() const {

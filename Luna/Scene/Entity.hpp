@@ -4,6 +4,7 @@
 #include <glm/glm.hpp>
 
 #include "Scene.hpp"
+#include "Utility/AABB.hpp"
 
 namespace Luna {
 struct TransformComponent;
@@ -38,6 +39,8 @@ class Entity {
 		_scene->_registry.remove<T>(_handle);
 	}
 
+	AABB GetGlobalBounds() const;
+	AABB GetLocalBounds() const;
 	glm::mat4 GetGlobalTransform() const;
 	glm::mat4 GetLocalTransform() const;
 	Entity GetParent() const;
