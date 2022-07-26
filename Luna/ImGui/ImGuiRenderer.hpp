@@ -11,6 +11,10 @@ class ImGuiRenderer {
 	ImGuiRenderer(Luna::Vulkan::WSI& wsi);
 	~ImGuiRenderer() noexcept;
 
+	static ImGuiRenderer* Get() {
+		return _instance;
+	}
+
 	void BeginFrame();
 	void Render(Luna::Vulkan::CommandBufferHandle& cmd, uint32_t frameIndex, bool clear = false);
 	ImTextureID Texture(Vulkan::ImageViewHandle& view,
@@ -37,6 +41,8 @@ class ImGuiRenderer {
 	};
 
 	void SetRenderState(Luna::Vulkan::CommandBufferHandle& cmd, ImDrawData* drawData, uint32_t frameIndex) const;
+
+	static ImGuiRenderer* _instance;
 
 	Luna::Vulkan::WSI& _wsi;
 

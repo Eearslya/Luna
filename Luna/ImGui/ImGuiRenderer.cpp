@@ -12,6 +12,8 @@
 #include "Vulkan/WSI.hpp"
 
 namespace Luna {
+ImGuiRenderer* ImGuiRenderer::_instance = nullptr;
+
 enum class ImGuiSampleMode : uint32_t { Standard = 0, ImGuiFont = 1, Grayscale = 2 };
 
 struct PushConstant {
@@ -24,6 +26,7 @@ struct PushConstant {
 
 ImGuiRenderer::ImGuiRenderer(Vulkan::WSI& wsi) : _wsi(wsi) {
 	auto& device = wsi.GetDevice();
+	_instance    = this;
 
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -224,7 +227,9 @@ void main() {
 	};
 }
 
-ImGuiRenderer::~ImGuiRenderer() noexcept {}
+ImGuiRenderer::~ImGuiRenderer() noexcept {
+	_instance = nullptr;
+}
 
 void ImGuiRenderer::BeginFrame() {
 	ImGuiIO& io = ImGui::GetIO();
