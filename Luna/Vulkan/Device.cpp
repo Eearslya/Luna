@@ -577,6 +577,32 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& imageCI, const ImageIniti
 	return handle;
 }
 
+ImageViewHandle Device::CreateImageView(const ImageViewCreateInfo& viewCI) {
+	vk::ImageView imageView;
+	vk::ImageView depthView;
+	vk::ImageView stencilView;
+	vk::ImageView unormView;
+	vk::ImageView srgbView;
+	std::vector<vk::ImageView> renderTargetViews;
+
+	const auto& imageCI = viewCI.Image->GetCreateInfo();
+	vk::ImageViewCreateInfo defaultViewCI(
+		{},
+		viewCI.Image->GetImage(),
+		viewCI.Type,
+		viewCI.Format,
+		vk::ComponentMapping(),
+		vk::ImageSubresourceRange(
+			FormatToAspect(viewCI.Format), viewCI.BaseMipLevel, viewCI.MipLevels, viewCI.BaseArrayLayer, viewCI.ArrayLayers));
+
+	imageView = _device.createImageView(defaultViewCI);
+	Log::Trace("Vulkan", "Image View created.");
+
+	auto handle = ImageViewHandle(_imageViewPool.Allocate(*this, imageView, defaultViewCI));
+
+	return handle;
+}
+
 vk::Format Device::GetDefaultDepthFormat() const {
 	if (ImageFormatSupported(
 				vk::Format::eD32Sfloat, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {

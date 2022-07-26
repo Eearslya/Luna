@@ -54,6 +54,7 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 
 	BufferHandle CreateBuffer(const BufferCreateInfo& bufferCI, const void* initialData = nullptr);
 	ImageHandle CreateImage(const ImageCreateInfo& imageCI, const ImageInitialData* initialData = nullptr);
+	ImageViewHandle CreateImageView(const ImageViewCreateInfo& viewCI);
 	vk::Format GetDefaultDepthFormat() const;
 	vk::Format GetDefaultDepthStencilFormat() const;
 	RenderPassInfo GetStockRenderPass(StockRenderPass type = StockRenderPass::ColorOnly) const;

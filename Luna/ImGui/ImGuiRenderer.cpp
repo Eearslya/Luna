@@ -229,6 +229,8 @@ ImGuiRenderer::~ImGuiRenderer() noexcept {}
 void ImGuiRenderer::BeginFrame() {
 	ImGuiIO& io = ImGui::GetIO();
 
+	_textures.BeginFrame();
+
 	// Update display size and platform data.
 	{
 		const auto windowSize      = _wsi.GetWindowSize();
@@ -344,10 +346,10 @@ void ImGuiRenderer::Render(Vulkan::CommandBufferHandle& cmd, uint32_t frameIndex
 						cmd->SetTexture(0, 0, _fontTexture->GetView(), _fontSampler);
 						sampleMode = ImGuiSampleMode::ImGuiFont;
 					} else {
-						Vulkan::ImageView* view = reinterpret_cast<Vulkan::ImageView*>(drawCmd.TextureId);
-						cmd->SetTexture(0, 0, *view, Vulkan::StockSampler::LinearClamp);
+						ImGuiTexture* texture = reinterpret_cast<ImGuiTexture*>(drawCmd.TextureId);
+						cmd->SetTexture(0, 0, *texture->View, texture->Sampler);
 
-						if (Vulkan::FormatChannelCount(view->GetCreateInfo().Format) == 1) {
+						if (Vulkan::FormatChannelCount(texture->View->GetCreateInfo().Format) == 1) {
 							sampleMode = ImGuiSampleMode::Grayscale;
 						}
 					}
@@ -371,6 +373,23 @@ void ImGuiRenderer::Render(Vulkan::CommandBufferHandle& cmd, uint32_t frameIndex
 	}
 
 	cmd->EndRenderPass();
+}
+
+ImTextureID ImGuiRenderer::Texture(Vulkan::ImageViewHandle& view, Vulkan::Sampler* sampler, uint32_t arrayLayer) {
+	Hasher h;
+	h(view->GetCookie());
+	h(sampler->GetHash());
+	h(arrayLayer);
+	const auto hash = h.Get();
+
+	auto* texture = _textures.Request(hash);
+	if (texture) { return reinterpret_cast<ImTextureID>(texture); }
+
+	return _textures.Emplace(hash, view, sampler, arrayLayer);
+}
+
+ImTextureID ImGuiRenderer::Texture(Vulkan::ImageViewHandle& view, Vulkan::StockSampler sampler, uint32_t arrayLayer) {
+	return Texture(view, _wsi.GetDevice().RequestSampler(sampler), arrayLayer);
 }
 
 void ImGuiRenderer::SetRenderState(Vulkan::CommandBufferHandle& cmd, ImDrawData* drawData, uint32_t frameIndex) const {
