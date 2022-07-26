@@ -598,7 +598,7 @@ ImageViewHandle Device::CreateImageView(const ImageViewCreateInfo& viewCI) {
 	imageView = _device.createImageView(defaultViewCI);
 	Log::Trace("Vulkan", "Image View created.");
 
-	auto handle = ImageViewHandle(_imageViewPool.Allocate(*this, imageView, defaultViewCI));
+	auto handle = ImageViewHandle(_imageViewPool.Allocate(*this, imageView, viewCI));
 
 	return handle;
 }
