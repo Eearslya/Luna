@@ -98,6 +98,17 @@ AABB& AABB::Scale(const glm::vec3& scale, const glm::vec3& origin) {
 	return *this;
 }
 
+AABB& AABB::Transform(const glm::mat4& t) {
+	if (Valid()) {
+		const auto min = t * glm::vec4(_min, 1.0f);
+		const auto max = t * glm::vec4(_max, 1.0f);
+		_min           = glm::vec3(min) / min.w;
+		_max           = glm::vec3(max) / max.w;
+	}
+
+	return *this;
+}
+
 AABB& AABB::Translate(const glm::vec3& t) {
 	if (Valid()) {
 		_min += t;

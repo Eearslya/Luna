@@ -27,6 +27,7 @@ class AABB {
 	AABB& Expand(float v);
 	AABB& Expand(const glm::vec3& origin, float radius);
 	AABB& Scale(const glm::vec3& scale, const glm::vec3& origin);
+	AABB& Transform(const glm::mat4& t);
 	AABB& Translate(const glm::vec3& t);
 
 	bool Contains(const glm::vec3& p) const;
