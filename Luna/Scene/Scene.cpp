@@ -40,6 +40,16 @@ void Scene::DestroyEntity(Entity entity) {
 	if (entity) { _registry.destroy(entity); }
 }
 
+void Scene::EntityMoved(Entity entity, Entity newParent) {
+	if (newParent) {
+		auto it = std::find(_rootEntities.begin(), _rootEntities.end(), entity);
+		if (it != _rootEntities.end()) { _rootEntities.erase(it); }
+	} else {
+		auto it = std::find(_rootEntities.begin(), _rootEntities.end(), entity);
+		if (it == _rootEntities.end()) { _rootEntities.push_back(entity); }
+	}
+}
+
 Entity Scene::GetMainCamera() {
 	auto view = _registry.view<CameraComponent>();
 	for (auto entity : view) {
@@ -48,5 +58,11 @@ Entity Scene::GetMainCamera() {
 	}
 
 	return {};
+}
+
+std::vector<Entity> Scene::GetRootEntities() {
+	std::vector<Entity> rootEntities;
+	for (auto& entity : _rootEntities) { rootEntities.push_back(Entity(entity, *this)); }
+	return rootEntities;
 }
 }  // namespace Luna

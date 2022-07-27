@@ -95,6 +95,8 @@ void Entity::SetParent(Entity newParent) {
 			cRelationship.Prev    = entt::null;
 		}
 	}
+
+	_scene->EntityMoved(*this, newParent);
 }
 
 void Entity::SetTranslation(const glm::vec3& translation) {
