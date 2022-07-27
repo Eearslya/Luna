@@ -31,7 +31,11 @@ Entity Scene::CreateChildEntity(Entity parent, const std::string& name) {
 	entity.AddComponent<RelationshipComponent>();
 	entity.AddComponent<TransformComponent>();
 
-	if (parent) { entity.SetParent(parent); }
+	if (parent) {
+		entity.SetParent(parent);
+	} else {
+		_rootEntities.push_back(entityId);
+	}
 
 	return entity;
 }
