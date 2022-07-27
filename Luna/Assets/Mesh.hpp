@@ -21,6 +21,8 @@ struct Mesh : public IntrusivePtrEnabled<Mesh> {
 	Luna::Vulkan::BufferHandle Buffer;
 	vk::DeviceSize PositionOffset   = 0;
 	vk::DeviceSize NormalOffset     = 0;
+	vk::DeviceSize TangentOffset    = 0;
+	vk::DeviceSize BitangentOffset  = 0;
 	vk::DeviceSize Texcoord0Offset  = 0;
 	vk::DeviceSize IndexOffset      = 0;
 	vk::DeviceSize TotalVertexCount = 0;
