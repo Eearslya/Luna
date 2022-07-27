@@ -11,21 +11,30 @@ struct AABB {
 	AABB(const AABB&) = default;
 
 	AABB& Contain(const glm::vec3& p) {
-		Min = glm::vec3(glm::min(Min.x, p.x), glm::min(Min.y, p.y), glm::min(Min.z, p.z));
-		Max = glm::vec3(glm::max(Max.x, p.x), glm::max(Max.y, p.y), glm::max(Max.z, p.z));
+		if (Valid()) {
+			Min = glm::vec3(glm::min(Min.x, p.x), glm::min(Min.y, p.y), glm::min(Min.z, p.z));
+			Max = glm::vec3(glm::max(Max.x, p.x), glm::max(Max.y, p.y), glm::max(Max.z, p.z));
+		} else {
+			Min = p;
+			Max = p;
+		}
 
 		return *this;
 	}
 	AABB& Contain(const AABB& aabb) {
-		Contain(aabb.Min);
-		Contain(aabb.Max);
+		if (aabb.Valid()) {
+			Contain(aabb.Min);
+			Contain(aabb.Max);
+		}
 		return *this;
 	}
 	AABB& Transform(const glm::mat4& t) {
-		glm::vec4 min = t * glm::vec4(Min, 1.0f);
-		glm::vec4 max = t * glm::vec4(Max, 1.0f);
-		Min           = glm::vec3(min) / min.w;
-		Max           = glm::vec3(max) / max.w;
+		if (Valid()) {
+			glm::vec4 min = t * glm::vec4(Min, 1.0f);
+			glm::vec4 max = t * glm::vec4(Max, 1.0f);
+			Min           = glm::vec3(min) / min.w;
+			Max           = glm::vec3(max) / max.w;
+		}
 
 		return *this;
 	}
@@ -35,6 +44,10 @@ struct AABB {
 	}
 	bool Contains(const AABB& aabb) const {
 		return Contains(aabb.Min) && Contains(aabb.Max);
+	}
+
+	bool Valid() const {
+		return Min.x <= Max.x && Min.y <= Max.y && Min.z <= Max.z;
 	}
 
 	glm::vec3 Min = glm::vec3(std::numeric_limits<float>::max());
