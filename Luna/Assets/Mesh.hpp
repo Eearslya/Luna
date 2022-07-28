@@ -8,6 +8,7 @@
 
 namespace Luna {
 struct Submesh {
+	AABB Bounds;
 	vk::DeviceSize VertexCount = 0;
 	vk::DeviceSize IndexCount  = 0;
 	vk::DeviceSize FirstVertex = 0;
