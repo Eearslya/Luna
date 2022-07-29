@@ -1,6 +1,7 @@
 #include "AABB.hpp"
 
 #include <glm/gtx/component_wise.hpp>
+#include <utility>
 
 namespace Luna {
 AABB::AABB() {}
