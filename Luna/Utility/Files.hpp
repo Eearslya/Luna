@@ -1,6 +1,8 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
+#include <vector>
 
 namespace Luna {
 std::string ReadFile(const std::filesystem::path& filePath);
