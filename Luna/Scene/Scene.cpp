@@ -42,6 +42,16 @@ Entity Scene::CreateChildEntity(Entity parent, const std::string& name) {
 
 void Scene::DestroyEntity(Entity entity) {
 	if (entity) {
+		auto& cRelationship = entity.GetComponent<RelationshipComponent>();
+
+		Entity child = Entity(cRelationship.FirstChild, *this);
+		while (child) {
+			DestroyEntity(child);
+
+			auto& cChildRel = child.GetComponent<RelationshipComponent>();
+			child           = Entity(cChildRel.Next, *this);
+		}
+
 		_registry.destroy(entity);
 		auto it = std::find(_rootEntities.begin(), _rootEntities.end(), entity);
 		if (it != _rootEntities.end()) { _rootEntities.erase(it); }
