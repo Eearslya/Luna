@@ -46,10 +46,12 @@ void Scene::DestroyEntity(Entity entity) {
 
 		Entity child = Entity(cRelationship.FirstChild, *this);
 		while (child) {
+			auto& cChildRel = child.GetComponent<RelationshipComponent>();
+			auto next       = Entity(cChildRel.Next, *this);
+
 			DestroyEntity(child);
 
-			auto& cChildRel = child.GetComponent<RelationshipComponent>();
-			child           = Entity(cChildRel.Next, *this);
+			child = next;
 		}
 
 		_registry.destroy(entity);
