@@ -41,7 +41,11 @@ Entity Scene::CreateChildEntity(Entity parent, const std::string& name) {
 }
 
 void Scene::DestroyEntity(Entity entity) {
-	if (entity) { _registry.destroy(entity); }
+	if (entity) {
+		_registry.destroy(entity);
+		auto it = std::find(_rootEntities.begin(), _rootEntities.end(), entity);
+		if (it != _rootEntities.end()) { _rootEntities.erase(it); }
+	}
 }
 
 void Scene::EntityMoved(Entity entity, Entity newParent) {
