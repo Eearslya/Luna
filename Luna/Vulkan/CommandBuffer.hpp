@@ -202,6 +202,13 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void CopyBuffer(
 		const Buffer& dst, vk::DeviceSize dstOffset, const Buffer& src, vk::DeviceSize srcOffset, vk::DeviceSize size);
 	void CopyBufferToImage(const Image& image, const Buffer& buffer, const std::vector<vk::BufferImageCopy>& blits);
+	void CopyImage(Image& dst,
+	               Image& src,
+	               const vk::Offset3D& dstOffset,
+	               const vk::Offset3D& srcOffset,
+	               const vk::Extent3D& extent,
+	               const vk::ImageSubresourceLayers& dstSubresource,
+	               const vk::ImageSubresourceLayers& srcSubresource);
 	void GenerateMipmaps(const Image& image);
 
 	void BeginRenderPass(const RenderPassInfo& info);

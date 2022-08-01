@@ -178,6 +178,21 @@ void CommandBuffer::CopyBufferToImage(const Image& image,
 		buffer.GetBuffer(), image.GetImage(), image.GetLayout(vk::ImageLayout::eTransferDstOptimal), blits);
 }
 
+void CommandBuffer::CopyImage(Image& dst,
+                              Image& src,
+                              const vk::Offset3D& dstOffset,
+                              const vk::Offset3D& srcOffset,
+                              const vk::Extent3D& extent,
+                              const vk::ImageSubresourceLayers& dstSubresource,
+                              const vk::ImageSubresourceLayers& srcSubresource) {
+	const vk::ImageCopy region(srcSubresource, srcOffset, dstSubresource, dstOffset, extent);
+	_commandBuffer.copyImage(src.GetImage(),
+	                         src.GetLayout(vk::ImageLayout::eTransferSrcOptimal),
+	                         dst.GetImage(),
+	                         dst.GetLayout(vk::ImageLayout::eTransferDstOptimal),
+	                         region);
+}
+
 void CommandBuffer::GenerateMipmaps(const Image& image) {
 	auto& createInfo = image.GetCreateInfo();
 	vk::Offset3D size(createInfo.Width, createInfo.Height, createInfo.Depth);
