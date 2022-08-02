@@ -73,6 +73,7 @@ class ProgramBuilder {
 	friend class Program;
 
  public:
+	ProgramBuilder();
 	ProgramBuilder& AddStage(ShaderStage stage, Shader* shader);
 
  private:

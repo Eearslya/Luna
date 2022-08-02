@@ -306,6 +306,10 @@ Shader::~Shader() noexcept {
 	if (_shaderModule) { _device.GetDevice().destroyShaderModule(_shaderModule); }
 }
 
+ProgramBuilder::ProgramBuilder() {
+	std::fill(_shaders.begin(), _shaders.end(), nullptr);
+}
+
 ProgramBuilder& ProgramBuilder::AddStage(ShaderStage stage, Shader* shader) {
 	_shaders[int(stage)] = shader;
 
