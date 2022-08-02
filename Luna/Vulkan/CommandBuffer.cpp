@@ -301,41 +301,43 @@ void CommandBuffer::ClearRenderState() {
 
 void CommandBuffer::SetOpaqueState() {
 	ClearRenderState();
-	auto& state            = _pipelineCompileInfo.StaticState;
-	state.FrontFace        = static_cast<unsigned>(vk::FrontFace::eCounterClockwise);
-	state.CullMode         = static_cast<unsigned>(vk::CullModeFlagBits::eBack);
-	state.BlendEnable      = false;
-	state.DepthTest        = true;
-	state.DepthCompare     = static_cast<unsigned>(vk::CompareOp::eLessOrEqual);
-	state.DepthWrite       = true;
-	state.DepthBiasEnable  = false;
-	state.PrimitiveRestart = false;
-	state.StencilTest      = false;
-	state.Topology         = static_cast<unsigned>(vk::PrimitiveTopology::eTriangleList);
-	state.WriteMask        = ~0u;
+	auto& state                     = _pipelineCompileInfo.StaticState;
+	state.FrontFace                 = static_cast<unsigned>(vk::FrontFace::eCounterClockwise);
+	state.CullMode                  = static_cast<unsigned>(vk::CullModeFlagBits::eBack);
+	state.BlendEnable               = false;
+	state.DepthTest                 = true;
+	state.DepthCompare              = static_cast<unsigned>(vk::CompareOp::eLessOrEqual);
+	state.DepthWrite                = true;
+	state.DepthBiasEnable           = false;
+	state.PrimitiveRestart          = false;
+	state.StencilTest               = false;
+	state.Topology                  = static_cast<unsigned>(vk::PrimitiveTopology::eTriangleList);
+	state.WriteMask                 = ~0u;
+	state.TessellationControlPoints = 0;
 	_dirty |= CommandBufferDirtyFlagBits::StaticState;
 }
 
 void CommandBuffer::SetTransparentSpriteState() {
 	ClearRenderState();
-	auto& state            = _pipelineCompileInfo.StaticState;
-	state.FrontFace        = static_cast<unsigned>(vk::FrontFace::eCounterClockwise);
-	state.CullMode         = static_cast<unsigned>(vk::CullModeFlagBits::eNone);
-	state.BlendEnable      = true;
-	state.DepthTest        = true;
-	state.DepthCompare     = static_cast<unsigned>(vk::CompareOp::eLess);
-	state.DepthWrite       = false;
-	state.DepthBiasEnable  = false;
-	state.PrimitiveRestart = false;
-	state.StencilTest      = false;
-	state.Topology         = static_cast<unsigned>(vk::PrimitiveTopology::eTriangleList);
-	state.WriteMask        = ~0u;
-	state.SrcColorBlend    = static_cast<unsigned>(vk::BlendFactor::eSrcAlpha);
-	state.DstColorBlend    = static_cast<unsigned>(vk::BlendFactor::eOneMinusSrcAlpha);
-	state.ColorBlendOp     = static_cast<unsigned>(vk::BlendOp::eAdd);
-	state.SrcAlphaBlend    = static_cast<unsigned>(vk::BlendFactor::eZero);
-	state.DstAlphaBlend    = static_cast<unsigned>(vk::BlendFactor::eOneMinusSrcAlpha);
-	state.AlphaBlendOp     = static_cast<unsigned>(vk::BlendOp::eAdd);
+	auto& state                     = _pipelineCompileInfo.StaticState;
+	state.FrontFace                 = static_cast<unsigned>(vk::FrontFace::eCounterClockwise);
+	state.CullMode                  = static_cast<unsigned>(vk::CullModeFlagBits::eNone);
+	state.BlendEnable               = true;
+	state.DepthTest                 = true;
+	state.DepthCompare              = static_cast<unsigned>(vk::CompareOp::eLess);
+	state.DepthWrite                = false;
+	state.DepthBiasEnable           = false;
+	state.PrimitiveRestart          = false;
+	state.StencilTest               = false;
+	state.Topology                  = static_cast<unsigned>(vk::PrimitiveTopology::eTriangleList);
+	state.WriteMask                 = ~0u;
+	state.SrcColorBlend             = static_cast<unsigned>(vk::BlendFactor::eSrcAlpha);
+	state.DstColorBlend             = static_cast<unsigned>(vk::BlendFactor::eOneMinusSrcAlpha);
+	state.ColorBlendOp              = static_cast<unsigned>(vk::BlendOp::eAdd);
+	state.SrcAlphaBlend             = static_cast<unsigned>(vk::BlendFactor::eZero);
+	state.DstAlphaBlend             = static_cast<unsigned>(vk::BlendFactor::eOneMinusSrcAlpha);
+	state.AlphaBlendOp              = static_cast<unsigned>(vk::BlendOp::eAdd);
+	state.TessellationControlPoints = 0;
 	_dirty |= CommandBufferDirtyFlagBits::StaticState;
 }
 
@@ -377,6 +379,10 @@ void CommandBuffer::SetPrimitiveTopology(vk::PrimitiveTopology topology) {
 void CommandBuffer::SetScissor(const vk::Rect2D& scissor) {
 	_scissor = scissor;
 	_dirty |= CommandBufferDirtyFlagBits::Scissor;
+}
+
+void CommandBuffer::SetTessellationControlPoints(uint8_t points) {
+	SetStaticState(TessellationControlPoints, points);
 }
 
 #undef SetStaticState
@@ -733,6 +739,9 @@ vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 		0.0f,
 		1.0f);
 
+	const vk::PipelineTessellationStateCreateInfo tessellation({}, state.TessellationControlPoints);
+
+	bool hasTessellation = false;
 	std::vector<vk::PipelineShaderStageCreateInfo> stages;
 	stages.push_back(
 		vk::PipelineShaderStageCreateInfo({},
@@ -741,6 +750,7 @@ vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 	                                    "main",
 	                                    nullptr));
 	if (_pipelineCompileInfo.Program->GetShader(ShaderStage::TessellationControl)) {
+		hasTessellation = true;
 		stages.push_back(vk::PipelineShaderStageCreateInfo(
 			{},
 			vk::ShaderStageFlagBits::eTessellationControl,
@@ -749,6 +759,7 @@ vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 			nullptr));
 	}
 	if (_pipelineCompileInfo.Program->GetShader(ShaderStage::TessellationEvaluation)) {
+		hasTessellation = true;
 		stages.push_back(vk::PipelineShaderStageCreateInfo(
 			{},
 			vk::ShaderStageFlagBits::eTessellationEvaluation,
@@ -767,7 +778,7 @@ vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 	                                                stages,
 	                                                &vertexInput,
 	                                                &assembly,
-	                                                nullptr,
+	                                                hasTessellation ? &tessellation : nullptr,
 	                                                &viewport,
 	                                                &rasterizer,
 	                                                &multisample,

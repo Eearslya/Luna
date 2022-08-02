@@ -15,23 +15,23 @@ constexpr static const int TopologyBits    = 4;
 
 union PipelineState {
 	struct {
-		// Topology
+		// Topology (6 bits)
 		unsigned PrimitiveRestart : 1;
 		unsigned Topology : TopologyBits;
 		unsigned Wireframe : 1;
 
-		// Culling
+		// Culling (3 bits)
 		unsigned CullMode : CullModeBits;
 		unsigned FrontFace : FrontFaceBits;
 
-		// Depth
+		// Depth (7 bits)
 		unsigned DepthBiasEnable : 1;
 		unsigned DepthClamp : 1;
 		unsigned DepthCompare : CompareOpBits;
 		unsigned DepthTest : 1;
 		unsigned DepthWrite : 1;
 
-		// Stencil
+		// Stencil (25 bits)
 		unsigned StencilTest : 1;
 		unsigned StencilFrontFail : StencilOpBits;
 		unsigned StencilFrontPass : StencilOpBits;
@@ -42,7 +42,7 @@ union PipelineState {
 		unsigned StencilBackDepthFail : StencilOpBits;
 		unsigned StencilBackCompareOp : CompareOpBits;
 
-		// Blending
+		// Blending (27 bits)
 		unsigned BlendEnable : 1;
 		unsigned SrcColorBlend : BlendFactorBits;
 		unsigned DstColorBlend : BlendFactorBits;
@@ -51,20 +51,23 @@ union PipelineState {
 		unsigned DstAlphaBlend : BlendFactorBits;
 		unsigned AlphaBlendOp : BlendOpBits;
 
-		// Misc
+		// Misc (4 bits)
 		unsigned AlphaToCoverage : 1;
 		unsigned AlphaToOne : 1;
 		unsigned SampleShading : 1;
 		unsigned ConservativeRaster : 1;
 
-		// Compute
+		// Compute (8 bits)
 		unsigned SubgroupControlSize : 1;
 		unsigned SubgroupFullGroup : 1;
 		unsigned SubgroupMinimumSizeLog2 : 3;
 		unsigned SubgroupMaximumSizeLog2 : 3;
 
-		// Write Mask
+		// Write Mask (32 bits)
 		uint32_t WriteMask;
+
+		// Tessellation (8 bits)
+		uint8_t TessellationControlPoints;
 	};
 	uint32_t Data[4];
 };
@@ -227,6 +230,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void SetFrontFace(vk::FrontFace front);
 	void SetPrimitiveTopology(vk::PrimitiveTopology topology);
 	void SetScissor(const vk::Rect2D& scissor);
+	void SetTessellationControlPoints(uint8_t points);
 
 	void Dispatch(uint32_t x, uint32_t y, uint32_t z);
 	void Draw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);
