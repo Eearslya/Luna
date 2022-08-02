@@ -456,7 +456,6 @@ void CommandBuffer::SetProgram(const Program* program) {
 	if (!_pipelineLayout) {
 		_dirty |= CommandBufferDirtyFlagBits::PushConstants;
 		_dirtyDescriptorSets = ~0u;
-
 	} else if (program->GetPipelineLayout()->GetHash() != _programLayout->GetHash()) {
 		auto& newLayout = program->GetPipelineLayout()->GetResourceLayout();
 		auto& oldLayout = _programLayout->GetResourceLayout();
@@ -466,7 +465,12 @@ void CommandBuffer::SetProgram(const Program* program) {
 			_dirtyDescriptorSets = ~0u;
 		} else {
 			auto* newPipelineLayout = program->GetPipelineLayout();
-			for (uint32_t set = 0; set < MaxDescriptorSets; ++set) {}
+			for (uint32_t set = 0; set < MaxDescriptorSets; ++set) {
+				if (newPipelineLayout->GetAllocator(set) != _programLayout->GetAllocator(set)) {
+					_dirtyDescriptorSets |= ~((1u << set) - 1);
+					break;
+				}
+			}
 		}
 	}
 
