@@ -68,10 +68,22 @@ class Shader : public HashedObject<Shader> {
 	ShaderResourceLayout _layout;
 };
 
+class ProgramBuilder {
+	friend class Device;
+	friend class Program;
+
+ public:
+	ProgramBuilder& AddStage(ShaderStage stage, Shader* shader);
+
+ private:
+	std::array<Shader*, ShaderStageCount> _shaders;
+};
+
 class Program : public HashedObject<Program> {
  public:
 	Program(Hash hash, Device& device, Shader* vertex, Shader* fragment);
 	Program(Hash hash, Device& device, Shader* compute);
+	Program(Hash hash, Device& device, ProgramBuilder& builder);
 	~Program() noexcept;
 
 	PipelineLayout* GetPipelineLayout() const {

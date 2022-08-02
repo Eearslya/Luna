@@ -370,6 +370,10 @@ void CommandBuffer::SetFrontFace(vk::FrontFace front) {
 	SetStaticState(FrontFace, front);
 }
 
+void CommandBuffer::SetPrimitiveTopology(vk::PrimitiveTopology topology) {
+	SetStaticState(Topology, topology);
+}
+
 void CommandBuffer::SetScissor(const vk::Rect2D& scissor) {
 	_scissor = scissor;
 	_dirty |= CommandBufferDirtyFlagBits::Scissor;

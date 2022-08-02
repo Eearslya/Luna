@@ -68,6 +68,7 @@ class Device : public IntrusivePtrEnabled<Device, std::default_delete<Device>, H
 	Program* RequestProgram(const std::string& computeGlsl);
 	Program* RequestProgram(Shader* vertex, Shader* fragment);
 	Program* RequestProgram(const std::string& vertexGlsl, const std::string& fragmentGlsl);
+	Program* RequestProgram(ProgramBuilder& builder);
 	Sampler* RequestSampler(const SamplerCreateInfo& createInfo);
 	Sampler* RequestSampler(StockSampler type);
 	SemaphoreHandle RequestSemaphore(const std::string& debugName = "");

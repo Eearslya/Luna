@@ -37,6 +37,7 @@ struct ImageViewCreateInfo;
 struct ImageViewDeleter;
 class PipelineLayout;
 class Program;
+class ProgramBuilder;
 struct ProgramResourceLayout;
 class RenderPass;
 struct RenderPassInfo;

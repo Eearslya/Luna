@@ -306,6 +306,12 @@ Shader::~Shader() noexcept {
 	if (_shaderModule) { _device.GetDevice().destroyShaderModule(_shaderModule); }
 }
 
+ProgramBuilder& ProgramBuilder::AddStage(ShaderStage stage, Shader* shader) {
+	_shaders[int(stage)] = shader;
+
+	return *this;
+}
+
 Program::Program(Hash hash, Device& device, Shader* vertex, Shader* fragment)
 		: HashedObject<Program>(hash), _device(device) {
 	std::fill(_shaders.begin(), _shaders.end(), nullptr);
@@ -318,6 +324,13 @@ Program::Program(Hash hash, Device& device, Shader* vertex, Shader* fragment)
 Program::Program(Hash hash, Device& device, Shader* compute) : HashedObject<Program>(hash), _device(device) {
 	std::fill(_shaders.begin(), _shaders.end(), nullptr);
 	_shaders[static_cast<int>(ShaderStage::Compute)] = compute;
+
+	Bake();
+}
+
+Program::Program(Hash hash, Device& device, ProgramBuilder& builder) : HashedObject<Program>(hash), _device(device) {
+	std::fill(_shaders.begin(), _shaders.end(), nullptr);
+	for (int stage = 0; stage < ShaderStageCount; ++stage) { _shaders[stage] = builder._shaders[stage]; }
 
 	Bake();
 }

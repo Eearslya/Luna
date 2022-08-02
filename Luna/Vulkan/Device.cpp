@@ -763,6 +763,30 @@ Program* Device::RequestProgram(const std::string& vertexGlsl, const std::string
 	}
 }
 
+Program* Device::RequestProgram(ProgramBuilder& builder) {
+	Hasher h;
+	for (int i = 0; i < ShaderStageCount; ++i) {
+		if (builder._shaders[i]) {
+			h(builder._shaders[i]->GetHash());
+		} else {
+			h(0);
+		}
+	}
+	const auto hash = h.Get();
+
+	Program* ret = _programs.Find(hash);
+	if (!ret) {
+		try {
+			ret = _programs.EmplaceYield(hash, hash, *this, builder);
+		} catch (const std::exception& e) {
+			Log::Error("Vulkan::Device", "Failed to create program: {}", e.what());
+			return nullptr;
+		}
+	}
+
+	return ret;
+}
+
 Sampler* Device::RequestSampler(const SamplerCreateInfo& createInfo) {
 	Hasher h(createInfo);
 	const auto hash = h.Get();
