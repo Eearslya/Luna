@@ -430,6 +430,10 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 			Log::Trace("Vulkan::Context", "Enabling Depth Clamp.");
 			features.depthClamp = VK_TRUE;
 		}
+		if (_gpuInfo.AvailableFeatures.Features.tessellationShader == VK_TRUE) {
+			Log::Trace("Vulkan::Context", "Enabling Tessellation Shaders.");
+			features.tessellationShader = VK_TRUE;
+		}
 
 		if (_extensions.TimelineSemaphore) {
 			auto& timelineSemaphore = enabledFeaturesChain.get<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
