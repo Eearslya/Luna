@@ -740,6 +740,22 @@ vk::Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 	                                    _pipelineCompileInfo.Program->GetShader(ShaderStage::Vertex)->GetShaderModule(),
 	                                    "main",
 	                                    nullptr));
+	if (_pipelineCompileInfo.Program->GetShader(ShaderStage::TessellationControl)) {
+		stages.push_back(vk::PipelineShaderStageCreateInfo(
+			{},
+			vk::ShaderStageFlagBits::eTessellationControl,
+			_pipelineCompileInfo.Program->GetShader(ShaderStage::TessellationControl)->GetShaderModule(),
+			"main",
+			nullptr));
+	}
+	if (_pipelineCompileInfo.Program->GetShader(ShaderStage::TessellationEvaluation)) {
+		stages.push_back(vk::PipelineShaderStageCreateInfo(
+			{},
+			vk::ShaderStageFlagBits::eTessellationEvaluation,
+			_pipelineCompileInfo.Program->GetShader(ShaderStage::TessellationEvaluation)->GetShaderModule(),
+			"main",
+			nullptr));
+	}
 	stages.push_back(
 		vk::PipelineShaderStageCreateInfo({},
 	                                    vk::ShaderStageFlagBits::eFragment,
