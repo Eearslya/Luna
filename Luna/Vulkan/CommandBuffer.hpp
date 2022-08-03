@@ -231,6 +231,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void SetPrimitiveTopology(vk::PrimitiveTopology topology);
 	void SetScissor(const vk::Rect2D& scissor);
 	void SetTessellationControlPoints(uint8_t points);
+	void SetWireframe(bool wireframe);
 
 	void Dispatch(uint32_t x, uint32_t y, uint32_t z);
 	void Draw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);

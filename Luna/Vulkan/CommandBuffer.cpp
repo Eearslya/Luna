@@ -385,6 +385,11 @@ void CommandBuffer::SetTessellationControlPoints(uint8_t points) {
 	SetStaticState(TessellationControlPoints, points);
 }
 
+void CommandBuffer::SetWireframe(bool wireframe) {
+	if (!_device.GetGPUInfo().EnabledFeatures.Features.fillModeNonSolid) { wireframe = false; }
+	SetStaticState(Wireframe, wireframe);
+}
+
 #undef SetStaticState
 
 void CommandBuffer::Dispatch(uint32_t x, uint32_t y, uint32_t z) {
