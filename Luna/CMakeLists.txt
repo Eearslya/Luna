@@ -1,6 +1,7 @@
 project(Luna-Engine LANGUAGES CXX)
 
 include(FetchContent)
+include(FindVulkan)
 
 FetchContent_Declare(glfw
 	GIT_REPOSITORY https://github.com/glfw/glfw.git
@@ -8,20 +9,24 @@ FetchContent_Declare(glfw
 FetchContent_Declare(glm
 	GIT_REPOSITORY https://github.com/g-truc/glm.git
 	GIT_TAG cc98465e3508535ba8c7f6208df934c156a018dc)
+FetchContent_Declare(spdlog
+	GIT_REPOSITORY https://github.com/gabime/spdlog.git
+	GIT_TAG 834840636cb52242d0fae2d6233c90067a4248dc)
 
 set(GLFW_BUILD_DOCS Off CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES Off CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS Off CACHE BOOL "" FORCE)
 set(GLFW_INSTALL Off CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(glfw glm)
+FetchContent_MakeAvailable(glfw glm spdlog)
 
 add_library(Luna STATIC)
 target_compile_definitions(Luna
-	PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE)
+	PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE VK_ENABLE_BETA_EXTENSIONS VK_NO_PROTOTYPES
+	PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC)
 target_include_directories(Luna PUBLIC "Include")
 target_link_libraries(Luna
-	PUBLIC glm
+	PUBLIC glm spdlog Vulkan::Headers
 	PRIVATE glfw)
 
 add_subdirectory(Source)

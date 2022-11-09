@@ -20,6 +20,17 @@ GlfwPlatform::GlfwPlatform(const std::string& name, const glm::uvec2& startSize)
 	glfwFocusWindow(_window);
 }
 
+std::vector<const char*> GlfwPlatform::GetRequiredInstanceExtensions() const {
+	uint32_t extensionCount = 0;
+	const char** extensions = glfwGetRequiredInstanceExtensions(&extensionCount);
+
+	return std::vector<const char*>(extensions, extensions + extensionCount);
+}
+
+std::vector<const char*> GlfwPlatform::GetRequiredDeviceExtensions() const {
+	return {"VK_KHR_swapchain"};
+}
+
 bool GlfwPlatform::IsAlive() const {
 	return !_shutdownRequested.load();
 }

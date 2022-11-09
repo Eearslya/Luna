@@ -1,8 +1,11 @@
+#include <Luna/Vulkan/Context.hpp>
 #include <Luna/Vulkan/WSI.hpp>
 
 namespace Luna {
 namespace Vulkan {
-WSI::WSI(WSIPlatform* platform) : _platform(platform) {}
+WSI::WSI(WSIPlatform* platform) : _platform(platform) {
+	_context = MakeHandle<Context>(_platform->GetRequiredInstanceExtensions(), _platform->GetRequiredDeviceExtensions());
+}
 
 WSI::~WSI() noexcept {}
 

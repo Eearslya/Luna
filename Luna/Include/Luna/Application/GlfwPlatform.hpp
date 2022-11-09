@@ -12,6 +12,8 @@ class GlfwPlatform : public Vulkan::WSIPlatform {
  public:
 	GlfwPlatform(const std::string& name, const glm::uvec2& startSize);
 
+	virtual std::vector<const char*> GetRequiredInstanceExtensions() const override;
+	virtual std::vector<const char*> GetRequiredDeviceExtensions() const override;
 	virtual bool IsAlive() const override;
 
 	virtual void Update() override;
