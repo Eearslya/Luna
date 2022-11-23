@@ -12,13 +12,18 @@ FetchContent_Declare(glm
 FetchContent_Declare(spdlog
 	GIT_REPOSITORY https://github.com/gabime/spdlog.git
 	GIT_TAG 834840636cb52242d0fae2d6233c90067a4248dc)
+FetchContent_Declare(vma
+	GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+	GIT_TAG 73d13a83ede142fa030d84e603a313831fcc424a)
 
 set(GLFW_BUILD_DOCS Off CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES Off CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS Off CACHE BOOL "" FORCE)
 set(GLFW_INSTALL Off CACHE BOOL "" FORCE)
+set(VMA_STATIC_VULKAN_FUNCTIONS Off CACHE BOOL "" FORCE)
+set(VMA_DYNAMIC_VULKAN_FUNCTIONS Off CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(glfw glm spdlog)
+FetchContent_MakeAvailable(glfw glm spdlog vma)
 
 add_library(Luna STATIC)
 target_compile_definitions(Luna
@@ -26,7 +31,7 @@ target_compile_definitions(Luna
 	PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC)
 target_include_directories(Luna PUBLIC "Include")
 target_link_libraries(Luna
-	PUBLIC glm spdlog Vulkan::Headers
+	PUBLIC glm spdlog Vulkan::Headers VulkanMemoryAllocator
 	PRIVATE glfw)
 
 add_subdirectory(Source)

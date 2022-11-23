@@ -5,7 +5,10 @@
 #include <string>
 
 namespace Luna {
+class Threading;
+
 namespace Vulkan {
+class Device;
 class WSI;
 class WSIPlatform;
 }  // namespace Vulkan
@@ -24,7 +27,10 @@ class Application {
 	int Run();
 
  protected:
+	Vulkan::Device& GetDevice();
+
  private:
+	std::unique_ptr<Threading> _threading;
 	std::unique_ptr<Vulkan::WSI> _wsi;
 };
 

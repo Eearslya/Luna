@@ -1,3 +1,4 @@
+#define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
 #include <Luna/Application/GlfwPlatform.hpp>
@@ -20,6 +21,13 @@ GlfwPlatform::GlfwPlatform(const std::string& name, const glm::uvec2& startSize)
 	glfwFocusWindow(_window);
 }
 
+glm::uvec2 GlfwPlatform::GetFramebufferSize() const {
+	glm::ivec2 size(0);
+	glfwGetFramebufferSize(_window, &size.x, &size.y);
+
+	return size;
+}
+
 std::vector<const char*> GlfwPlatform::GetRequiredInstanceExtensions() const {
 	uint32_t extensionCount = 0;
 	const char** extensions = glfwGetRequiredInstanceExtensions(&extensionCount);
@@ -29,6 +37,14 @@ std::vector<const char*> GlfwPlatform::GetRequiredInstanceExtensions() const {
 
 std::vector<const char*> GlfwPlatform::GetRequiredDeviceExtensions() const {
 	return {"VK_KHR_swapchain"};
+}
+
+vk::SurfaceKHR GlfwPlatform::CreateSurface(vk::Instance instance) {
+	VkSurfaceKHR surface = VK_NULL_HANDLE;
+	const VkResult res   = glfwCreateWindowSurface(instance, _window, nullptr, &surface);
+	if (res != VK_SUCCESS) { throw std::runtime_error("Failed to create Window surface!"); }
+
+	return surface;
 }
 
 bool GlfwPlatform::IsAlive() const {

@@ -1,5 +1,6 @@
 #include <Luna/Application/Application.hpp>
 #include <Luna/Utility/Log.hpp>
+#include <Luna/Utility/Threading.hpp>
 #include <Luna/Vulkan/WSI.hpp>
 
 namespace Luna {
@@ -8,9 +9,13 @@ Application::Application() {
 #ifdef _DEBUG
 	Log::SetLevel(Log::Level::Trace);
 #endif
+
+	_threading = std::make_unique<Threading>();
 }
 
 Application::~Application() noexcept {
+	_threading.reset();
+
 	Log::Shutdown();
 }
 
@@ -30,5 +35,9 @@ int Application::Run() {
 	}
 
 	return 0;
+}
+
+Vulkan::Device& Application::GetDevice() {
+	return _wsi->GetDevice();
 }
 }  // namespace Luna

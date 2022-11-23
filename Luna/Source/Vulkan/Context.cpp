@@ -224,31 +224,31 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredExten
 								return std::string(a.extensionName.data()) < std::string(b.extensionName.data());
 							});
 
-		const bool properties2       = HasExtension(info, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-		const bool timelineSemaphore = HasExtension(info, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
-
 		// Fetch extended features and properties information.
-		if (properties2) {
-			vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceTimelineSemaphoreFeatures> features;
-			vk::StructureChain<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceTimelineSemaphoreProperties> properties;
+		vk::StructureChain<vk::PhysicalDeviceFeatures2,
+		                   vk::PhysicalDevicePerformanceQueryFeaturesKHR,
+		                   vk::PhysicalDeviceVulkan12Features>
+			features;
+		vk::StructureChain<vk::PhysicalDeviceProperties2,
+		                   vk::PhysicalDevicePerformanceQueryPropertiesKHR,
+		                   vk::PhysicalDeviceVulkan12Properties>
+			properties;
 
-			if (!timelineSemaphore) {
-				features.unlink<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
-				properties.unlink<vk::PhysicalDeviceTimelineSemaphoreProperties>();
-			}
-
-			info.PhysicalDevice.getFeatures2(&features.get());
-			info.PhysicalDevice.getProperties2(&properties.get());
-
-			info.AvailableFeatures.Core              = features.get().features;
-			info.AvailableFeatures.TimelineSemaphore = features.get<vk::PhysicalDeviceTimelineSemaphoreFeatures>();
-
-			info.Properties.Core              = properties.get().properties;
-			info.Properties.TimelineSemaphore = properties.get<vk::PhysicalDeviceTimelineSemaphoreProperties>();
-		} else {
-			info.AvailableFeatures.Core = info.PhysicalDevice.getFeatures();
-			info.Properties.Core        = info.PhysicalDevice.getProperties();
+		if (!HasExtension(info, VK_KHR_PERFORMANCE_QUERY_EXTENSION_NAME)) {
+			features.unlink<vk::PhysicalDevicePerformanceQueryFeaturesKHR>();
+			properties.unlink<vk::PhysicalDevicePerformanceQueryPropertiesKHR>();
 		}
+
+		info.PhysicalDevice.getFeatures2(&features.get());
+		info.PhysicalDevice.getProperties2(&properties.get());
+
+		info.AvailableFeatures.Core             = features.get().features;
+		info.AvailableFeatures.PerformanceQuery = features.get<vk::PhysicalDevicePerformanceQueryFeaturesKHR>();
+		info.AvailableFeatures.Vulkan12         = features.get<vk::PhysicalDeviceVulkan12Features>();
+
+		info.Properties.Core             = properties.get().properties;
+		info.Properties.PerformanceQuery = properties.get<vk::PhysicalDevicePerformanceQueryPropertiesKHR>();
+		info.Properties.Vulkan12         = properties.get<vk::PhysicalDeviceVulkan12Properties>();
 	}
 
 	// Sort our candidate list so dedicated GPUs are first.
@@ -327,6 +327,9 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 		}
 	}
 
+	// Then enable any extensions we might optionally want.
+	_extensions.PerformanceQuery = TryExtension(VK_KHR_PERFORMANCE_QUERY_EXTENSION_NAME);
+
 	// Determine our queue family assignments.
 	auto familyProps = _deviceInfo.QueueFamilies;
 	std::vector<std::vector<float>> familyPriorities(familyProps.size());
@@ -398,10 +401,31 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 	const auto& avail = _deviceInfo.AvailableFeatures;
 	auto& enable      = _deviceInfo.EnabledFeatures;
 
+	if (avail.Vulkan12.hostQueryReset) {
+		Log::Trace("Vulkan::Context", "Enabling Host Query Reset.");
+		enable.Vulkan12.hostQueryReset = VK_TRUE;
+	}
+	if (avail.Vulkan12.timelineSemaphore) {
+		Log::Trace("Vulkan::Context", "Enabling Timeline Semaphores.");
+		enable.Vulkan12.timelineSemaphore = VK_TRUE;
+	}
+	if (_extensions.PerformanceQuery) {
+		if (avail.PerformanceQuery.performanceCounterQueryPools) {
+			Log::Trace("Vulkan::Context", "Enabling Performance Counter Query Pools.");
+			enable.PerformanceQuery.performanceCounterQueryPools = VK_TRUE;
+		}
+		if (avail.PerformanceQuery.performanceCounterMultipleQueryPools) {
+			Log::Trace("Vulkan::Context", "Enabling Performance Counter Multiple Query Pools.");
+			enable.PerformanceQuery.performanceCounterMultipleQueryPools = VK_TRUE;
+		}
+	}
+
 	// Create our device.
 	const vk::PhysicalDeviceFeatures2 features2(_deviceInfo.EnabledFeatures.Core);
-	const vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceTimelineSemaphoreFeatures> featuresChain(
-		features2, _deviceInfo.EnabledFeatures.TimelineSemaphore);
+	const vk::StructureChain<vk::PhysicalDeviceFeatures2,
+	                         vk::PhysicalDevicePerformanceQueryFeaturesKHR,
+	                         vk::PhysicalDeviceVulkan12Features>
+		featuresChain(features2, enable.PerformanceQuery, enable.Vulkan12);
 	const vk::DeviceCreateInfo deviceCI({}, queueCIs, nullptr, enabledExtensions, nullptr);
 	const vk::StructureChain<vk::DeviceCreateInfo, vk::PhysicalDeviceFeatures2> deviceChain(deviceCI,
 	                                                                                        featuresChain.get());

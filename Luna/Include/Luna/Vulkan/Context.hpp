@@ -6,10 +6,28 @@
 namespace Luna {
 namespace Vulkan {
 class Context : public IntrusivePtrEnabled<Context> {
+	friend class Device;
+
  public:
 	Context(const std::vector<const char*>& instanceExtensions = {},
 	        const std::vector<const char*>& deviceExtensions   = {});
 	~Context() noexcept;
+
+	vk::Device GetDevice() const {
+		return _device;
+	}
+	const DeviceInfo& GetDeviceInfo() const {
+		return _deviceInfo;
+	}
+	vk::Instance GetInstance() const {
+		return _instance;
+	}
+	vk::PhysicalDevice GetPhysicalDevice() const {
+		return _deviceInfo.PhysicalDevice;
+	}
+	const QueueInfo& GetQueueInfo() const {
+		return _queueInfo;
+	}
 
  private:
 	void CreateInstance(const std::vector<const char*>& requiredExtensions);
