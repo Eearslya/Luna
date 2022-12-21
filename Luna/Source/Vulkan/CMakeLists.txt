@@ -1,4 +1,5 @@
 target_sources(Luna PRIVATE
+	Buffer.cpp
 	CommandBuffer.cpp
 	CommandPool.cpp
 	Common.cpp

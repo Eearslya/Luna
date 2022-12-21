@@ -2,8 +2,10 @@
 
 #include <vk_mem_alloc.h>
 
+#include <Luna/Utility/IntrusiveHashMap.hpp>
 #include <Luna/Utility/IntrusivePtr.hpp>
 #include <Luna/Utility/ObjectPool.hpp>
+#include <Luna/Utility/TemporaryHashMap.hpp>
 #include <Luna/Vulkan/Cookie.hpp>
 #include <Luna/Vulkan/Enums.hpp>
 #include <Luna/Vulkan/InternalSync.hpp>
@@ -21,6 +23,9 @@ namespace Vulkan {
 // ================================
 // ===== Forward Declarations =====
 // ================================
+class Buffer;
+struct BufferCreateInfo;
+struct BufferDeleter;
 class CommandBuffer;
 struct CommandBufferDeleter;
 class CommandPool;
@@ -47,16 +52,27 @@ class WSIPlatform;
 #ifdef LUNA_VULKAN_MT
 using HandleCounter = MultiThreadCounter;
 template <typename T>
+using VulkanCache = ThreadSafeIntrusiveHashMapReadCached<T>;
+template <typename T>
+using VulkanCacheReadWrite = ThreadSafeIntrusiveHashMap<T>;
+template <typename T>
 using VulkanObjectPool = ThreadSafeObjectPool<T>;
 #else
 using HandleCounter = SingleThreadCounter;
 template <typename T>
+using VulkanCache = IntrusiveHashMap<T>;
+template <typename T>
+using VulkanCacheReadWrite = IntrusiveHashMap<T>;
+template <typename T>
 using VulkanObjectPool = ObjectPool<T>;
 #endif
+template <typename T>
+using HashedObject = IntrusiveHashMapEnabled<T>;
 
 // ========================
 // ===== Handle Types =====
 // ========================
+using BufferHandle               = IntrusivePtr<Buffer>;
 using CommandBufferHandle        = IntrusivePtr<CommandBuffer>;
 using ContextHandle              = IntrusivePtr<Context>;
 using DeviceHandle               = IntrusivePtr<Device>;

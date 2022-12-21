@@ -1,5 +1,6 @@
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Utility/Threading.hpp>
+#include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/CommandPool.hpp>
 #include <Luna/Vulkan/Context.hpp>
@@ -156,6 +157,79 @@ void Device::Submit(CommandBufferHandle& cmd, FenceHandle* fence, std::vector<Se
 void Device::WaitIdle() {
 	DeviceFlush();
 	WaitIdleNoLock();
+}
+
+BufferHandle Device::CreateBuffer(const BufferCreateInfo& bufferInfo, const void* initial) {
+	const bool zeroInit = bufferInfo.Flags & BufferCreateFlagBits::ZeroInitialize;
+	if (initial && zeroInit) {
+		Log::Error("Vulkan", "Cannot create a buffer with initial data AND zero-initialize flag set!");
+		return {};
+	}
+
+	BufferCreateInfo actualInfo = bufferInfo;
+	actualInfo.Usage |= vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eTransferSrc;
+
+	const vk::BufferCreateInfo bufferCI({}, actualInfo.Size, actualInfo.Usage, vk::SharingMode::eExclusive, nullptr);
+
+	VmaAllocationCreateInfo bufferAI{.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
+	if (actualInfo.Domain == BufferDomain::Host) {
+		bufferAI.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+	}
+
+	VkBuffer buffer;
+	VmaAllocation allocation;
+	VmaAllocationInfo allocationInfo;
+
+	const VkResult res = vmaCreateBuffer(_allocator,
+	                                     reinterpret_cast<const VkBufferCreateInfo*>(&bufferCI),
+	                                     &bufferAI,
+	                                     &buffer,
+	                                     &allocation,
+	                                     &allocationInfo);
+	if (res != VK_SUCCESS) {
+		Log::Error("Vulkan", "Failed to create buffer: {}", vk::to_string(vk::Result(res)));
+		return {};
+	}
+	const auto& memType = _deviceInfo.Memory.memoryTypes[allocationInfo.memoryType];
+	const bool hostVisible(memType.propertyFlags & vk::MemoryPropertyFlagBits::eHostVisible);
+
+	void* bufferMap = nullptr;
+	if (hostVisible) {
+		if (vmaMapMemory(_allocator, allocation, &bufferMap) != VK_SUCCESS) {
+			Log::Error("Vulkan", "Failed to map host-visible buffer!");
+		}
+	}
+
+	BufferHandle handle(_bufferPool.Allocate(*this, buffer, allocation, actualInfo, bufferMap));
+
+	if (initial || zeroInit) {
+		if (bufferMap) {
+			if (initial) {
+				memcpy(bufferMap, initial, actualInfo.Size);
+			} else {
+				memset(bufferMap, 0, actualInfo.Size);
+			}
+		} else {
+			CommandBufferHandle cmd;
+
+			if (initial) {
+				auto stagingInfo   = actualInfo;
+				stagingInfo.Domain = BufferDomain::Host;
+				auto stagingBuffer = CreateBuffer(stagingInfo, initial);
+
+				cmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
+				cmd->CopyBuffer(*handle, *stagingBuffer);
+			} else {
+				cmd = RequestCommandBuffer(CommandBufferType::AsyncCompute);
+				cmd->FillBuffer(*handle, 0);
+			}
+
+			DeviceLock();
+			SubmitStaging(cmd, actualInfo.Usage, true);
+		}
+	}
+
+	return handle;
 }
 
 ImageHandle Device::CreateImage(const ImageCreateInfo& imageCI, const ImageInitialData* initial) {
@@ -551,8 +625,27 @@ void Device::SubmitQueue(QueueType queueType, InternalFence* submitFence, std::v
 	if (!_deviceInfo.EnabledFeatures.Vulkan12.timelineSemaphore) { queueData.NeedsFence = true; }
 }
 
+void Device::SubmitStaging(CommandBufferHandle& cmd, vk::BufferUsageFlags usage, bool flush) {
+	const auto access  = BufferUsageToAccess(usage);
+	const auto stages  = BufferUsageToStages(usage);
+	vk::Queue srcQueue = _queueInfo.Queue(GetQueueType(cmd->GetType()));
+
+	if (srcQueue == _queueInfo.Queue(QueueType::Graphics) && srcQueue == _queueInfo.Queue(QueueType::Compute)) {
+	} else {
+	}
+}
+
 void Device::WaitIdleNoLock() {
 	_device.waitIdle();
+}
+
+void Device::DestroyBuffer(vk::Buffer buffer) {
+	DeviceLock();
+	DestroyBufferNoLock(buffer);
+}
+
+void Device::DestroyBufferNoLock(vk::Buffer buffer) {
+	Frame().BuffersToDestroy.push_back(buffer);
 }
 
 void Device::DestroyImage(vk::Image image) {
@@ -619,6 +712,8 @@ Device::FrameContext::FrameContext(Device& device, uint32_t frameIndex) : Parent
 
 	const uint32_t threadCount = Threading::Get()->GetThreadCount();
 	for (uint32_t q = 0; q < QueueTypeCount; ++q) {
+		CommandPools[q].reserve(threadCount);
+		TimelineValues[q] = Parent._queueData[q].TimelineValue;
 		for (uint32_t i = 0; i < threadCount; ++i) {
 			CommandPools[q].push_back(std::make_unique<CommandPool>(Parent, Parent._queueInfo.Families[q]));
 		}
@@ -676,11 +771,13 @@ void Device::FrameContext::Begin() {
 		for (auto& pool : pools) { pool->Reset(); }
 	}
 
+	for (auto& buffer : BuffersToDestroy) { device.destroyBuffer(buffer); }
 	for (auto& image : ImagesToDestroy) { device.destroyImage(image); }
 	for (auto& view : ImageViewsToDestroy) { device.destroyImageView(view); }
 	for (auto& allocation : AllocationsToFree) { vmaFreeMemory(Parent._allocator, allocation); }
 	for (auto& semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
 	for (auto& semaphore : SemaphoresToRecycle) { Parent.ReleaseSemaphore(semaphore); }
+	BuffersToDestroy.clear();
 	ImagesToDestroy.clear();
 	ImageViewsToDestroy.clear();
 	AllocationsToFree.clear();

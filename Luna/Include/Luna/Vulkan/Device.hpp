@@ -6,6 +6,8 @@
 namespace Luna {
 namespace Vulkan {
 class Device : public IntrusivePtrEnabled<Device> {
+	friend class Buffer;
+	friend struct BufferDeleter;
 	friend class CommandBuffer;
 	friend struct CommandBufferDeleter;
 	friend class Cookie;
@@ -47,6 +49,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 
 	void WaitIdle();
 
+	BufferHandle CreateBuffer(const BufferCreateInfo& bufferCI, const void* initial = nullptr);
 	ImageHandle CreateImage(const ImageCreateInfo& imageCI, const ImageInitialData* initial = nullptr);
 	ImageHandle CreateImageFromStagingBuffer(const ImageCreateInfo& imageCI, const ImageInitialBuffer* buffer);
 	ImageViewHandle CreateImageView(const ImageViewCreateInfo& viewCI);
@@ -67,6 +70,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 		std::array<uint64_t, QueueTypeCount> TimelineValues;
 
 		std::vector<VmaAllocation> AllocationsToFree;
+		std::vector<vk::Buffer> BuffersToDestroy;
 		std::vector<vk::Fence> FencesToAwait;
 		std::vector<vk::Fence> FencesToRecycle;
 		std::vector<vk::Image> ImagesToDestroy;
@@ -112,6 +116,8 @@ class Device : public IntrusivePtrEnabled<Device> {
 	void SubmitStaging(CommandBufferHandle& cmd, vk::BufferUsageFlags usage, bool flush);
 	void WaitIdleNoLock();
 
+	void DestroyBuffer(vk::Buffer buffer);
+	void DestroyBufferNoLock(vk::Buffer buffer);
 	void DestroyImage(vk::Image image);
 	void DestroyImageNoLock(vk::Image image);
 	void DestroyImageView(vk::ImageView view);
@@ -159,6 +165,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 	uint32_t _swapchainIndex = std::numeric_limits<uint32_t>::max();
 	SemaphoreHandle _swapchainRelease;
 
+	VulkanObjectPool<Buffer> _bufferPool;
 	VulkanObjectPool<CommandBuffer> _commandBufferPool;
 	VulkanObjectPool<Fence> _fencePool;
 	VulkanObjectPool<Image> _imagePool;

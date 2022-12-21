@@ -9,6 +9,9 @@ static const char* VulkanEnumToString(const T value) {
 	return nullptr;
 }
 
+enum class BufferCreateFlagBits { ZeroInitialize = 1 << 0 };
+using BufferCreateFlags = Bitmask<BufferCreateFlagBits>;
+
 enum class FormatCompressionType { Uncompressed, BC, ETC, ASTC };
 constexpr static const int FormatCompressionTypeCount = 4;
 template <>
@@ -70,6 +73,8 @@ using ImageViewCreateFlags = Bitmask<ImageViewCreateFlagBits>;
 }  // namespace Vulkan
 }  // namespace Luna
 
+template <>
+struct Luna::EnableBitmaskOperators<Luna::Vulkan::BufferCreateFlagBits> : std::true_type {};
 template <>
 struct Luna::EnableBitmaskOperators<Luna::Vulkan::ImageCreateFlagBits> : std::true_type {};
 template <>
