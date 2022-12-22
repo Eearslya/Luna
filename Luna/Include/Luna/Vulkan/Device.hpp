@@ -13,6 +13,8 @@ class Device : public IntrusivePtrEnabled<Device> {
 	friend class Cookie;
 	friend class Fence;
 	friend struct FenceDeleter;
+	friend class Framebuffer;
+	friend class FramebufferAllocator;
 	friend class Image;
 	friend struct ImageDeleter;
 	friend class ImageView;
@@ -35,6 +37,12 @@ class Device : public IntrusivePtrEnabled<Device> {
 		return _deviceInfo;
 	}
 
+	vk::Format GetDefaultDepthFormat() const;
+	vk::Format GetDefaultDepthStencilFormat() const;
+	vk::ImageViewType GetImageViewType(const ImageCreateInfo& imageCI, const ImageViewCreateInfo* viewCI) const;
+	bool IsFormatSupported(vk::Format format, vk::FormatFeatureFlags features, vk::ImageTiling tiling) const;
+
+	void AddWaitSemaphore(CommandBufferType cbType, SemaphoreHandle semaphore, vk::PipelineStageFlags stages, bool flush);
 	void EndFrame();
 	void NextFrame();
 	CommandBufferHandle RequestCommandBuffer(CommandBufferType type = CommandBufferType::Generic);
@@ -52,7 +60,17 @@ class Device : public IntrusivePtrEnabled<Device> {
 	BufferHandle CreateBuffer(const BufferCreateInfo& bufferCI, const void* initial = nullptr);
 	ImageHandle CreateImage(const ImageCreateInfo& imageCI, const ImageInitialData* initial = nullptr);
 	ImageHandle CreateImageFromStagingBuffer(const ImageCreateInfo& imageCI, const ImageInitialBuffer* buffer);
+	ImageInitialBuffer CreateImageStagingBuffer(const ImageCreateInfo& imageCI, const ImageInitialData* initial);
+	ImageInitialBuffer CreateImageStagingBuffer(const TextureFormatLayout& layout);
 	ImageViewHandle CreateImageView(const ImageViewCreateInfo& viewCI);
+	ImageView& GetSwapchainView();
+	ImageView& GetSwapchainView(uint32_t index);
+	RenderPassInfo GetSwapchainRenderPass(SwapchainRenderPassType type = SwapchainRenderPassType::ColorOnly);
+	ImageHandle GetTransientAttachment(const vk::Extent2D& extent,
+	                                   vk::Format format,
+	                                   uint32_t index                  = 0,
+	                                   vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1,
+	                                   uint32_t arrayLayers            = 1);
 	SemaphoreHandle RequestSemaphore();
 
  private:
@@ -73,6 +91,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 		std::vector<vk::Buffer> BuffersToDestroy;
 		std::vector<vk::Fence> FencesToAwait;
 		std::vector<vk::Fence> FencesToRecycle;
+		std::vector<vk::Framebuffer> FramebuffersToDestroy;
 		std::vector<vk::Image> ImagesToDestroy;
 		std::vector<vk::ImageView> ImageViewsToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToDestroy;
@@ -94,6 +113,42 @@ class Device : public IntrusivePtrEnabled<Device> {
 		std::vector<vk::PipelineStageFlags> WaitStages;
 	};
 
+	struct ImageManager {
+	 public:
+		ImageManager(Device& device);
+		ImageManager(const ImageManager&)            = delete;
+		ImageManager(ImageManager&&)                 = delete;
+		ImageManager& operator=(const ImageManager&) = delete;
+		ImageManager& operator=(ImageManager&&)      = delete;
+		~ImageManager() noexcept;
+
+		bool CreateDefaultViews(const ImageCreateInfo& imageCI,
+		                        const vk::ImageViewCreateInfo* viewInfo,
+		                        bool createUnormSrgbViews     = false,
+		                        const vk::Format* viewFormats = nullptr);
+
+		Device& Parent;
+		vk::Image Image;
+		VmaAllocation Allocation;
+		vk::ImageView ImageView;
+		vk::ImageView DepthView;
+		vk::ImageView StencilView;
+		vk::ImageView UnormView;
+		vk::ImageView SrgbView;
+		vk::ImageViewType DefaultViewType;
+		std::vector<vk::ImageView> RenderTargetViews;
+		bool Owned = true;
+
+	 private:
+		bool CreateAltViews(const ImageCreateInfo& imageCI, const vk::ImageViewCreateInfo& viewCI);
+		bool CreateDefaultView(const vk::ImageViewCreateInfo& viewCI);
+		bool CreateRenderTargetViews(const ImageCreateInfo& imageCI, const vk::ImageViewCreateInfo& viewCI);
+	};
+
+	void AddWaitSemaphoreNoLock(QueueType queueType,
+	                            SemaphoreHandle semaphore,
+	                            vk::PipelineStageFlags stages,
+	                            bool flush);
 	uint64_t AllocateCookie();
 	vk::Fence AllocateFence();
 	vk::Semaphore AllocateSemaphore();
@@ -105,6 +160,8 @@ class Device : public IntrusivePtrEnabled<Device> {
 	FrameContext& Frame();
 	void ReleaseFence(vk::Fence fence);
 	void ReleaseSemaphore(vk::Semaphore semaphore);
+	const Framebuffer& RequestFramebuffer(const RenderPassInfo& rpInfo);
+	const RenderPass& RequestRenderPass(const RenderPassInfo& rpInfo, bool compatible = false);
 	void SetAcquireSemaphore(uint32_t imageIndex, SemaphoreHandle& semaphore);
 	void SetupSwapchain(WSI& wsi);
 
@@ -118,6 +175,8 @@ class Device : public IntrusivePtrEnabled<Device> {
 
 	void DestroyBuffer(vk::Buffer buffer);
 	void DestroyBufferNoLock(vk::Buffer buffer);
+	void DestroyFramebuffer(vk::Framebuffer framebuffer);
+	void DestroyFramebufferNoLock(vk::Framebuffer framebuffer);
 	void DestroyImage(vk::Image image);
 	void DestroyImageNoLock(vk::Image image);
 	void DestroyImageView(vk::ImageView view);
@@ -144,6 +203,8 @@ class Device : public IntrusivePtrEnabled<Device> {
 	VmaAllocator _allocator;
 	std::vector<vk::Fence> _availableFences;
 	std::vector<vk::Semaphore> _availableSemaphores;
+	std::unique_ptr<FramebufferAllocator> _framebufferAllocator;
+	std::unique_ptr<TransientAttachmentAllocator> _transientAttachmentAllocator;
 
 #ifdef LUNA_VULKAN_MT
 	std::atomic_uint64_t _nextCookie;
@@ -172,6 +233,8 @@ class Device : public IntrusivePtrEnabled<Device> {
 	VulkanObjectPool<ImageView> _imageViewPool;
 	VulkanObjectPool<QueryPoolResult> _queryPoolResultPool;
 	VulkanObjectPool<Semaphore> _semaphorePool;
+
+	VulkanCache<RenderPass> _renderPasses;
 };
 }  // namespace Vulkan
 }  // namespace Luna

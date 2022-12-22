@@ -158,6 +158,9 @@ class Image : public IntrusivePtrEnabled<Image, ImageDeleter, HandleCounter>,
 	vk::Image GetImage() const {
 		return _image;
 	}
+	vk::ImageLayout GetSwapchainLayout() const {
+		return _swapchainLayout;
+	}
 	ImageView& GetView() {
 		return *_view;
 	}
@@ -247,6 +250,12 @@ class ImageView : public IntrusivePtrEnabled<ImageView, ImageViewDeleter, Handle
 
 	const ImageViewCreateInfo& GetCreateInfo() const {
 		return _createInfo;
+	}
+	vk::Format GetFormat() const {
+		return _createInfo.Format;
+	}
+	const Image* GetImage() const {
+		return _createInfo.Image;
 	}
 	vk::ImageView GetView() const {
 		return _view;

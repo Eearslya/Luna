@@ -8,6 +8,7 @@
 #include <Luna/Vulkan/Fence.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/QueryPool.hpp>
+#include <Luna/Vulkan/RenderPass.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
 #include <Luna/Vulkan/WSI.hpp>
 
@@ -89,6 +90,9 @@ Device::Device(Context& context)
 
 	CreateFrameContexts(2);
 
+	_framebufferAllocator         = std::make_unique<FramebufferAllocator>(*this);
+	_transientAttachmentAllocator = std::make_unique<TransientAttachmentAllocator>(*this);
+
 	for (uint32_t i = 0; i < QueueTypeCount; ++i) {
 		if (_queueInfo.Families[i] == VK_QUEUE_FAMILY_IGNORED) { continue; }
 
@@ -112,9 +116,106 @@ Device::Device(Context& context)
 Device::~Device() noexcept {
 	WaitIdle();
 
+	_swapchainAcquire.Reset();
+	_swapchainRelease.Reset();
+	_swapchainImages.clear();
+
+	_framebufferAllocator.reset();
+	_transientAttachmentAllocator.reset();
+
 	vmaDestroyAllocator(_allocator);
 
+	for (auto& semaphore : _availableSemaphores) { _device.destroySemaphore(semaphore); }
+	for (auto& fence : _availableFences) { _device.destroyFence(fence); }
+
 	DestroyTimelineSemaphores();
+}
+
+vk::Format Device::GetDefaultDepthFormat() const {
+	if (IsFormatSupported(
+				vk::Format::eD32Sfloat, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eD32Sfloat;
+	}
+	if (IsFormatSupported(
+				vk::Format::eX8D24UnormPack32, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eX8D24UnormPack32;
+	}
+	if (IsFormatSupported(
+				vk::Format::eD16Unorm, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eD16Unorm;
+	}
+
+	return vk::Format::eUndefined;
+}
+
+vk::Format Device::GetDefaultDepthStencilFormat() const {
+	if (IsFormatSupported(
+				vk::Format::eD24UnormS8Uint, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eD24UnormS8Uint;
+	}
+	if (IsFormatSupported(
+				vk::Format::eD32SfloatS8Uint, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eD32SfloatS8Uint;
+	}
+
+	return vk::Format::eUndefined;
+}
+
+vk::ImageViewType Device::GetImageViewType(const ImageCreateInfo& imageCI, const ImageViewCreateInfo* viewCI) const {
+	const uint32_t baseLayer = viewCI ? viewCI->BaseLayer : 0;
+	uint32_t layers          = viewCI ? viewCI->ArrayLayers : imageCI.ArrayLayers;
+	if (layers == VK_REMAINING_ARRAY_LAYERS) { layers = imageCI.ArrayLayers - baseLayer; }
+
+	const bool forceArray = viewCI ? (viewCI->MiscFlags & ImageViewCreateFlagBits::ForceArray)
+	                               : (imageCI.MiscFlags & ImageCreateFlagBits::ForceArray);
+
+	switch (imageCI.Type) {
+		case vk::ImageType::e1D:
+			if (layers > 1 || forceArray) {
+				return vk::ImageViewType::e1DArray;
+			} else {
+				return vk::ImageViewType::e1D;
+			}
+			break;
+
+		case vk::ImageType::e2D:
+			if ((imageCI.MiscFlags & ImageCreateFlagBits::CubeCompatible) && (layers % 6) == 0) {
+				if (layers > 6 || forceArray) {
+					return vk::ImageViewType::eCubeArray;
+				} else {
+					return vk::ImageViewType::eCube;
+				}
+			} else {
+				if (layers > 1 || forceArray) {
+					return vk::ImageViewType::e2DArray;
+				} else {
+					return vk::ImageViewType::e2D;
+				}
+			}
+			break;
+
+		case vk::ImageType::e3D:
+			return vk::ImageViewType::e3D;
+
+		default:
+			throw std::runtime_error("Invalid image type given to GetImageViewType!");
+	}
+}
+
+bool Device::IsFormatSupported(vk::Format format, vk::FormatFeatureFlags features, vk::ImageTiling tiling) const {
+	const auto props = _deviceInfo.PhysicalDevice.getFormatProperties(format);
+	const auto featureFlags =
+		tiling == vk::ImageTiling::eOptimal ? props.optimalTilingFeatures : props.linearTilingFeatures;
+
+	return (featureFlags & features) == features;
+}
+
+void Device::AddWaitSemaphore(CommandBufferType cbType,
+                              SemaphoreHandle semaphore,
+                              vk::PipelineStageFlags stages,
+                              bool flush) {
+	DeviceLock();
+	AddWaitSemaphoreNoLock(GetQueueType(cbType), semaphore, stages, flush);
 }
 
 void Device::EndFrame() {
@@ -233,11 +334,323 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& bufferInfo, const void
 }
 
 ImageHandle Device::CreateImage(const ImageCreateInfo& imageCI, const ImageInitialData* initial) {
-	return {};
+	if (initial) {
+		auto stagingBuffer = CreateImageStagingBuffer(imageCI, initial);
+		return CreateImageFromStagingBuffer(imageCI, &stagingBuffer);
+	} else {
+		return CreateImageFromStagingBuffer(imageCI, nullptr);
+	}
 }
 
 ImageHandle Device::CreateImageFromStagingBuffer(const ImageCreateInfo& imageCI, const ImageInitialBuffer* buffer) {
-	return {};
+	ImageManager manager(*this);
+
+	vk::ImageCreateInfo createInfo(imageCI.Flags,
+	                               imageCI.Type,
+	                               imageCI.Format,
+	                               vk::Extent3D(imageCI.Width, imageCI.Height, imageCI.Depth),
+	                               imageCI.MipLevels,
+	                               imageCI.ArrayLayers,
+	                               imageCI.Samples,
+	                               vk::ImageTiling::eOptimal,
+	                               imageCI.Usage,
+	                               vk::SharingMode::eExclusive,
+	                               0,
+	                               nullptr,
+	                               vk::ImageLayout::eUndefined);
+
+	if (imageCI.Domain == ImageDomain::Transient) { createInfo.usage |= vk::ImageUsageFlagBits::eTransientAttachment; }
+	if (buffer) { createInfo.usage |= vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc; }
+	if (createInfo.mipLevels == 0) { createInfo.mipLevels = CalculateMipLevels(createInfo.extent); }
+
+	bool createUnormSrgbViews = false;
+	std::vector<vk::Format> viewFormats;
+	vk::ImageFormatListCreateInfo formatList;
+	if (imageCI.MiscFlags & ImageCreateFlagBits::MutableSrgb) {
+		viewFormats = ImageCreateInfo::GetComputeFormats(imageCI);
+		if (!viewFormats.empty()) {
+			createUnormSrgbViews = true;
+			formatList.setViewFormats(viewFormats);
+		}
+	}
+
+	if ((imageCI.Usage & vk::ImageUsageFlagBits::eStorage) || (imageCI.MiscFlags & ImageCreateFlagBits::MutableSrgb)) {
+		createInfo.flags |= vk::ImageCreateFlagBits::eMutableFormat;
+	}
+
+	std::set<uint32_t> uniqueIndices;
+	std::vector<uint32_t> sharingIndices;
+	const auto queueFlags =
+		imageCI.MiscFlags &
+		(ImageCreateFlagBits::ConcurrentQueueGraphics | ImageCreateFlagBits::ConcurrentQueueAsyncCompute |
+	   ImageCreateFlagBits::ConcurrentQueueAsyncGraphics | ImageCreateFlagBits::ConcurrentQueueAsyncTransfer);
+	const bool concurrentQueue(queueFlags);
+	if (concurrentQueue) {
+		createInfo.sharingMode = vk::SharingMode::eConcurrent;
+
+		if (buffer || queueFlags & (ImageCreateFlagBits::ConcurrentQueueGraphics |
+		                            ImageCreateFlagBits::ConcurrentQueueAsyncGraphics)) {
+			uniqueIndices.insert(_queueInfo.Family(QueueType::Graphics));
+		}
+		if (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncCompute) {
+			uniqueIndices.insert(_queueInfo.Family(QueueType::Compute));
+		}
+		if (buffer || (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncTransfer)) {
+			uniqueIndices.insert(_queueInfo.Family(QueueType::Transfer));
+		}
+
+		sharingIndices = std::vector<uint32_t>(uniqueIndices.begin(), uniqueIndices.end());
+		if (sharingIndices.size() > 1) {
+			createInfo.setQueueFamilyIndices(sharingIndices);
+		} else {
+			createInfo.setQueueFamilyIndices(nullptr);
+		}
+	}
+
+	{
+		vk::StructureChain chain(createInfo, formatList);
+		if (!createUnormSrgbViews) { chain.unlink<vk::ImageFormatListCreateInfo>(); }
+		const VkImageCreateInfo imageCreateInfo(chain.get<vk::ImageCreateInfo>());
+		const VmaAllocationCreateInfo imageAllocateInfo{.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
+		VkImage image = VK_NULL_HANDLE;
+		VmaAllocation allocation;
+		const VkResult result =
+			vmaCreateImage(_allocator, &imageCreateInfo, &imageAllocateInfo, &image, &allocation, nullptr);
+		if (result != VK_SUCCESS) {
+			Log::Error("Vulkan", "Failed to create image: {}", vk::to_string(vk::Result(result)));
+			throw std::runtime_error("Failed to create image!");
+		}
+		manager.Image      = image;
+		manager.Allocation = allocation;
+	}
+
+	auto tmpCI      = imageCI;
+	tmpCI.Usage     = createInfo.usage;
+	tmpCI.Flags     = createInfo.flags;
+	tmpCI.MipLevels = createInfo.mipLevels;
+
+	const bool hasView(createInfo.usage &
+	                   (vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage |
+	                    vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eDepthStencilAttachment |
+	                    vk::ImageUsageFlagBits::eInputAttachment));
+	if (hasView) {
+		if (!manager.CreateDefaultViews(tmpCI, nullptr, createUnormSrgbViews, viewFormats.data())) { return {}; }
+	}
+
+	ImageHandle handle(
+		_imagePool.Allocate(*this, manager.Image, manager.ImageView, manager.Allocation, tmpCI, manager.DefaultViewType));
+	if (handle) {
+		manager.Owned = false;
+		if (hasView) {
+			handle->GetView().SetAltViews(manager.DepthView, manager.StencilView);
+			handle->GetView().SetRenderTargetViews(std::move(manager.RenderTargetViews));
+			handle->GetView().SetUnormView(manager.UnormView);
+			handle->GetView().SetSrgbView(manager.SrgbView);
+		}
+
+		handle->SetStages(ImageUsageToStages(createInfo.usage));
+		handle->SetAccess(ImageUsageToAccess(createInfo.usage));
+	}
+
+	const bool shareCompute = (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncCompute) &&
+	                          !_queueInfo.SameQueue(QueueType::Graphics, QueueType::Compute);
+	const bool shareAsyncGraphics = GetQueueType(CommandBufferType::AsyncGraphics) == QueueType::Compute &&
+	                                (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncGraphics);
+
+	CommandBufferHandle transitionCmd;
+	if (buffer) {
+		const bool generateMips = imageCI.MiscFlags & ImageCreateFlagBits::GenerateMipmaps;
+
+		vk::AccessFlags finalTransitionSrcAccess = {};
+		if (generateMips) {
+			finalTransitionSrcAccess = vk::AccessFlagBits::eTransferRead;
+		} else if (_queueInfo.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
+			finalTransitionSrcAccess = vk::AccessFlagBits::eTransferWrite;
+		}
+
+		vk::AccessFlags prepareSrcAccess = _queueInfo.SameQueue(QueueType::Graphics, QueueType::Transfer)
+		                                     ? vk::AccessFlagBits::eTransferWrite
+		                                     : vk::AccessFlagBits{};
+		bool needMipmapBarrier           = true;
+		bool needInitialBarrier          = true;
+
+		auto graphicsCmd = RequestCommandBuffer(CommandBufferType::Generic);
+		CommandBufferHandle transferCmd;
+		if (!_queueInfo.SameQueue(QueueType::Transfer, QueueType::Graphics)) {
+			transferCmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
+		} else {
+			transferCmd = graphicsCmd;
+		}
+
+		transferCmd->ImageBarrier(*handle,
+		                          vk::ImageLayout::eUndefined,
+		                          vk::ImageLayout::eTransferDstOptimal,
+		                          vk::PipelineStageFlagBits::eTopOfPipe,
+		                          {},
+		                          vk::PipelineStageFlagBits::eTransfer,
+		                          vk::AccessFlagBits::eTransferWrite);
+		transferCmd->CopyBufferToImage(*handle, *buffer->Buffer, buffer->Blits);
+
+		if (!_queueInfo.SameQueue(QueueType::Graphics, QueueType::Transfer)) {
+			const vk::PipelineStageFlags dstStages =
+				generateMips ? vk::PipelineStageFlagBits::eTransfer : handle->GetStages();
+
+			if (!concurrentQueue && !_queueInfo.SameFamily(QueueType::Graphics, QueueType::Transfer)) {
+				needMipmapBarrier = false;
+				if (!generateMips) { needInitialBarrier = false; }
+
+				const vk::ImageMemoryBarrier release(
+					vk::AccessFlagBits::eTransferWrite,
+					{},
+					vk::ImageLayout::eTransferDstOptimal,
+					generateMips ? vk::ImageLayout::eTransferSrcOptimal : imageCI.InitialLayout,
+					_queueInfo.Family(QueueType::Transfer),
+					_queueInfo.Family(QueueType::Graphics),
+					handle->GetImage(),
+					vk::ImageSubresourceRange(
+						FormatAspectFlags(imageCI.Format), 0, generateMips ? 1 : createInfo.mipLevels, 0, createInfo.arrayLayers));
+
+				const vk::ImageMemoryBarrier acquire({},
+				                                     generateMips
+				                                       ? vk::AccessFlagBits::eTransferRead
+				                                       : handle->GetAccess() & ImageLayoutToAccess(imageCI.InitialLayout),
+				                                     release.oldLayout,
+				                                     release.newLayout,
+				                                     release.srcQueueFamilyIndex,
+				                                     release.dstQueueFamilyIndex,
+				                                     release.image,
+				                                     release.subresourceRange);
+
+				transferCmd->Barrier(
+					vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {release});
+				transferCmd->Barrier(dstStages, dstStages, {}, {}, {acquire});
+			}
+
+			std::vector<SemaphoreHandle> semaphores(1);
+			Submit(transferCmd, nullptr, &semaphores);
+			AddWaitSemaphore(CommandBufferType::Generic, semaphores[0], dstStages, true);
+		}
+
+		if (generateMips) {
+			graphicsCmd->BarrierPrepareGenerateMipmaps(*handle,
+			                                           vk::ImageLayout::eTransferDstOptimal,
+			                                           vk::PipelineStageFlagBits::eTransfer,
+			                                           prepareSrcAccess,
+			                                           needMipmapBarrier);
+			graphicsCmd->GenerateMipmaps(*handle);
+		}
+
+		if (needInitialBarrier) {
+			graphicsCmd->ImageBarrier(
+				*handle,
+				generateMips ? vk::ImageLayout::eTransferSrcOptimal : vk::ImageLayout::eTransferDstOptimal,
+				imageCI.InitialLayout,
+				vk::PipelineStageFlagBits::eTransfer,
+				finalTransitionSrcAccess,
+				handle->GetStages(),
+				handle->GetAccess() & ImageLayoutToAccess(imageCI.InitialLayout));
+		}
+
+		transitionCmd = std::move(graphicsCmd);
+	} else if (imageCI.InitialLayout != vk::ImageLayout::eUndefined) {
+		transitionCmd = RequestCommandBuffer(CommandBufferType::Generic);
+		transitionCmd->ImageBarrier(*handle,
+		                            createInfo.initialLayout,
+		                            imageCI.InitialLayout,
+		                            vk::PipelineStageFlagBits::eTopOfPipe,
+		                            {},
+		                            handle->GetStages(),
+		                            handle->GetAccess() & ImageLayoutToAccess(imageCI.InitialLayout));
+	}
+
+	if (transitionCmd) {
+		if (shareCompute || shareAsyncGraphics) {
+			std::vector<SemaphoreHandle> semaphores(1);
+			Submit(transitionCmd, nullptr, &semaphores);
+
+			vk::PipelineStageFlags dstStages = handle->GetStages();
+			if (!_queueInfo.SameFamily(QueueType::Graphics, QueueType::Compute)) {
+				dstStages &= vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eTransfer;
+			}
+			AddWaitSemaphore(CommandBufferType::AsyncCompute, semaphores[0], dstStages, true);
+		} else {
+			DeviceLock();
+			SubmitNoLock(transitionCmd, nullptr, nullptr);
+			if (concurrentQueue) { FlushFrame(QueueType::Graphics); }
+		}
+	}
+
+	return handle;
+}
+
+ImageInitialBuffer Device::CreateImageStagingBuffer(const ImageCreateInfo& imageCI, const ImageInitialData* initial) {
+	ImageInitialBuffer result;
+
+	bool generateMips = imageCI.MiscFlags & ImageCreateFlagBits::GenerateMipmaps;
+	TextureFormatLayout layout;
+
+	uint32_t copyLevels = imageCI.MipLevels;
+	if (generateMips) {
+		copyLevels = 1;
+	} else if (imageCI.MipLevels == 0) {
+		copyLevels = CalculateMipLevels(imageCI.Width, imageCI.Height, imageCI.Depth);
+	}
+
+	switch (imageCI.Type) {
+		case vk::ImageType::e1D:
+			layout.Set1D(imageCI.Format, imageCI.Width, imageCI.ArrayLayers, copyLevels);
+			break;
+		case vk::ImageType::e2D:
+			layout.Set2D(imageCI.Format, imageCI.Width, imageCI.Height, imageCI.ArrayLayers, copyLevels);
+			break;
+		case vk::ImageType::e3D:
+			layout.Set3D(imageCI.Format, imageCI.Width, imageCI.Height, imageCI.Depth, copyLevels);
+			break;
+		default:
+			return {};
+	}
+
+	const BufferCreateInfo bufferCI{BufferDomain::Host, layout.GetRequiredSize(), vk::BufferUsageFlagBits::eTransferSrc};
+	result.Buffer = CreateBuffer(bufferCI);
+
+	uint32_t index = 0;
+	uint8_t* data  = reinterpret_cast<uint8_t*>(result.Buffer->Map());
+	layout.SetBuffer(layout.GetRequiredSize(), data);
+
+	for (uint32_t level = 0; level < copyLevels; ++level) {
+		const auto& mipInfo            = layout.GetMipInfo(level);
+		const uint32_t dstHeightStride = layout.GetLayerSize(level);
+		const size_t rowSize           = layout.GetRowSize(level);
+
+		for (uint32_t layer = 0; layer < imageCI.ArrayLayers; ++layer, ++index) {
+			const uint32_t srcRowLength    = initial[index].RowLength ? initial[index].RowLength : mipInfo.RowLength;
+			const uint32_t srcArrayHeight  = initial[index].ImageHeight ? initial[index].ImageHeight : mipInfo.ImageHeight;
+			const uint32_t srcRowStride    = layout.RowByteStride(srcRowLength);
+			const uint32_t srcHeightStride = layout.LayerByteStride(srcArrayHeight, srcRowStride);
+
+			uint8_t* dst       = reinterpret_cast<uint8_t*>(layout.Data(layer, level));
+			const uint8_t* src = reinterpret_cast<const uint8_t*>(initial[index].Data);
+			for (uint32_t z = 0; z < mipInfo.Depth; ++z) {
+				for (uint32_t y = 0; y < mipInfo.BlockImageHeight; ++y) {
+					memcpy(dst + z * dstHeightStride + y * rowSize, src + z * srcHeightStride + y * srcRowStride, rowSize);
+				}
+			}
+		}
+	}
+
+	result.Blits = layout.BuildBufferImageCopies();
+
+	return result;
+}
+
+ImageInitialBuffer Device::CreateImageStagingBuffer(const TextureFormatLayout& layout) {
+	ImageInitialBuffer result;
+
+	const BufferCreateInfo bufferCI{BufferDomain::Host, layout.GetRequiredSize(), vk::BufferUsageFlagBits::eTransferSrc};
+	result.Buffer = CreateBuffer(bufferCI, layout.Data());
+	result.Blits  = layout.BuildBufferImageCopies();
+
+	return result;
 }
 
 ImageViewHandle Device::CreateImageView(const ImageViewCreateInfo& viewCI) {
@@ -257,10 +670,69 @@ ImageViewHandle Device::CreateImageView(const ImageViewCreateInfo& viewCI) {
 	return ImageViewHandle(_imageViewPool.Allocate(*this, imageView, viewCI));
 }
 
+ImageView& Device::GetSwapchainView() {
+	return GetSwapchainView(_swapchainIndex);
+}
+
+ImageView& Device::GetSwapchainView(uint32_t index) {
+	return _swapchainImages[index]->GetView();
+}
+
+RenderPassInfo Device::GetSwapchainRenderPass(SwapchainRenderPassType type) {
+	RenderPassInfo info       = {};
+	info.ColorAttachmentCount = 1;
+	info.ColorAttachments[0]  = &GetSwapchainView();
+	info.ClearAttachmentMask  = 1 << 0;
+	info.StoreAttachmentMask  = 1 << 0;
+
+	const auto& imageCI = info.ColorAttachments[0]->GetImage()->GetCreateInfo();
+	const vk::Extent2D extent(imageCI.Width, imageCI.Height);
+
+	switch (type) {
+		case SwapchainRenderPassType::Depth: {
+			info.Flags |= RenderPassOpFlagBits::ClearDepthStencil;
+			auto depth                  = GetTransientAttachment(extent, GetDefaultDepthFormat());
+			info.DepthStencilAttachment = &depth->GetView();
+		} break;
+
+		case SwapchainRenderPassType::DepthStencil: {
+			info.Flags |= RenderPassOpFlagBits::ClearDepthStencil;
+			auto depthStencil           = GetTransientAttachment(extent, GetDefaultDepthStencilFormat());
+			info.DepthStencilAttachment = &depthStencil->GetView();
+		} break;
+
+		default:
+			break;
+	}
+
+	return info;
+}
+
+ImageHandle Device::GetTransientAttachment(const vk::Extent2D& extent,
+                                           vk::Format format,
+                                           uint32_t index,
+                                           vk::SampleCountFlagBits samples,
+                                           uint32_t arrayLayers) {
+	return _transientAttachmentAllocator->RequestAttachment(extent, format, index, samples, arrayLayers);
+}
+
 SemaphoreHandle Device::RequestSemaphore() {
 	DeviceLock();
 	auto semaphore = AllocateSemaphore();
 	return SemaphoreHandle(_semaphorePool.Allocate(*this, semaphore, false, true));
+}
+
+void Device::AddWaitSemaphoreNoLock(QueueType queueType,
+                                    SemaphoreHandle semaphore,
+                                    vk::PipelineStageFlags stages,
+                                    bool flush) {
+	if (flush) { FlushFrame(queueType); }
+
+	auto& data = _queueData[int(queueType)];
+	semaphore->SetPendingWait();
+	data.WaitSemaphores.push_back(semaphore);
+	data.WaitStages.push_back(stages);
+	data.NeedsFence = true;
 }
 
 uint64_t Device::AllocateCookie() {
@@ -358,6 +830,68 @@ void Device::ReleaseFence(vk::Fence fence) {
 
 void Device::ReleaseSemaphore(vk::Semaphore semaphore) {
 	_availableSemaphores.push_back(semaphore);
+}
+
+const Framebuffer& Device::RequestFramebuffer(const RenderPassInfo& rpInfo) {
+	return _framebufferAllocator->RequestFramebuffer(rpInfo);
+}
+
+const RenderPass& Device::RequestRenderPass(const RenderPassInfo& rpInfo, bool compatible) {
+	Hasher h;
+
+	std::array<vk::Format, MaxColorAttachments> colorFormats;
+	vk::Format depthFormat = vk::Format::eUndefined;
+	uint32_t lazy          = 0;
+	uint32_t optimal       = 0;
+
+	for (uint32_t i = 0; i < rpInfo.ColorAttachmentCount; ++i) {
+		colorFormats[i] = rpInfo.ColorAttachments[i]->GetFormat();
+		if (rpInfo.ColorAttachments[i]->GetImage()->GetCreateInfo().Domain == ImageDomain::Transient) { lazy |= 1u << i; }
+		if (rpInfo.ColorAttachments[i]->GetImage()->GetLayoutType() == ImageLayout::Optimal) { optimal |= 1u << i; }
+		h(rpInfo.ColorAttachments[i]->GetImage()->GetSwapchainLayout());
+	}
+
+	if (rpInfo.DepthStencilAttachment) {
+		if (rpInfo.DepthStencilAttachment->GetImage()->GetCreateInfo().Domain == ImageDomain::Transient) {
+			lazy |= 1u << rpInfo.ColorAttachmentCount;
+		}
+		if (rpInfo.DepthStencilAttachment->GetImage()->GetLayoutType() == ImageLayout::Optimal) {
+			optimal |= 1u << rpInfo.ColorAttachmentCount;
+		}
+	}
+
+	h(rpInfo.BaseLayer);
+	h(rpInfo.ArrayLayers);
+	h(rpInfo.Subpasses.size());
+	for (const auto& subpass : rpInfo.Subpasses) {
+		h(subpass.ColorAttachmentCount);
+		h(subpass.InputAttachmentCount);
+		h(subpass.ResolveAttachmentCount);
+		h(subpass.DepthStencil);
+		for (uint32_t i = 0; i < subpass.ColorAttachmentCount; ++i) { h(subpass.ColorAttachments[i]); }
+		for (uint32_t i = 0; i < subpass.InputAttachmentCount; ++i) { h(subpass.InputAttachments[i]); }
+		for (uint32_t i = 0; i < subpass.ResolveAttachmentCount; ++i) { h(subpass.ResolveAttachments[i]); }
+	}
+
+	h(rpInfo.ColorAttachmentCount);
+	for (const auto format : colorFormats) { h(format); }
+	h(rpInfo.DepthStencilAttachment ? rpInfo.DepthStencilAttachment->GetFormat() : vk::Format::eUndefined);
+
+	if (!compatible) {
+		h(uint32_t(rpInfo.Flags));
+		h(rpInfo.ClearAttachmentMask);
+		h(rpInfo.LoadAttachmentMask);
+		h(rpInfo.StoreAttachmentMask);
+		h(optimal);
+	}
+
+	h(lazy);
+
+	const auto hash = h.Get();
+	auto* ret       = _renderPasses.Find(hash);
+	if (!ret) { ret = _renderPasses.EmplaceYield(hash, hash, *this, rpInfo); }
+
+	return *ret;
 }
 
 void Device::SetAcquireSemaphore(uint32_t imageIndex, SemaphoreHandle& semaphore) {
@@ -631,12 +1165,77 @@ void Device::SubmitStaging(CommandBufferHandle& cmd, vk::BufferUsageFlags usage,
 	vk::Queue srcQueue = _queueInfo.Queue(GetQueueType(cmd->GetType()));
 
 	if (srcQueue == _queueInfo.Queue(QueueType::Graphics) && srcQueue == _queueInfo.Queue(QueueType::Compute)) {
+		cmd->Barrier(vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite, stages, access);
+		SubmitNoLock(cmd, nullptr, nullptr);
 	} else {
+		const auto computeStages =
+			stages & (vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eTransfer |
+		            vk::PipelineStageFlagBits::eDrawIndirect);
+		const auto computeAccess  = access & (vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite |
+                                         vk::AccessFlagBits::eTransferRead | vk::AccessFlagBits::eUniformRead |
+                                         vk::AccessFlagBits::eTransferWrite | vk::AccessFlagBits::eIndirectCommandRead);
+		const auto graphicsStages = stages;
+
+		if (srcQueue == _queueInfo.Queue(QueueType::Graphics)) {
+			cmd->Barrier(vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite, graphicsStages, access);
+
+			if (computeStages) {
+				std::vector<SemaphoreHandle> semaphores(1);
+				SubmitNoLock(cmd, nullptr, &semaphores);
+				AddWaitSemaphoreNoLock(QueueType::Compute, semaphores[0], computeStages, flush);
+			} else {
+				SubmitNoLock(cmd, nullptr, nullptr);
+			}
+		} else if (srcQueue == _queueInfo.Queue(QueueType::Compute)) {
+			cmd->Barrier(
+				vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite, computeStages, computeAccess);
+
+			if (graphicsStages) {
+				std::vector<SemaphoreHandle> semaphores(1);
+				SubmitNoLock(cmd, nullptr, &semaphores);
+				AddWaitSemaphoreNoLock(QueueType::Graphics, semaphores[0], graphicsStages, flush);
+			} else {
+				SubmitNoLock(cmd, nullptr, nullptr);
+			}
+		} else {
+			if (graphicsStages && computeStages) {
+				std::vector<SemaphoreHandle> semaphores(2);
+				SubmitNoLock(cmd, nullptr, &semaphores);
+				AddWaitSemaphoreNoLock(QueueType::Graphics, semaphores[0], graphicsStages, flush);
+				AddWaitSemaphoreNoLock(QueueType::Compute, semaphores[1], computeStages, flush);
+			} else if (graphicsStages) {
+				std::vector<SemaphoreHandle> semaphores(1);
+				SubmitNoLock(cmd, nullptr, &semaphores);
+				AddWaitSemaphoreNoLock(QueueType::Graphics, semaphores[0], graphicsStages, flush);
+			} else if (computeStages) {
+				std::vector<SemaphoreHandle> semaphores(1);
+				SubmitNoLock(cmd, nullptr, &semaphores);
+				AddWaitSemaphoreNoLock(QueueType::Compute, semaphores[0], computeStages, flush);
+			} else {
+				SubmitNoLock(cmd, nullptr, nullptr);
+			}
+		}
 	}
 }
 
 void Device::WaitIdleNoLock() {
+	if (!_frameContexts.empty()) { EndFrameNoLock(); }
+
 	_device.waitIdle();
+
+	if (_framebufferAllocator) { _framebufferAllocator->Clear(); }
+	if (_transientAttachmentAllocator) { _transientAttachmentAllocator->Clear(); }
+
+	for (auto& queue : _queueData) {
+		for (auto& semaphore : queue.WaitSemaphores) { _device.destroySemaphore(semaphore->Consume()); }
+		queue.WaitSemaphores.clear();
+		queue.WaitStages.clear();
+	}
+
+	for (auto& frame : _frameContexts) {
+		frame->FencesToAwait.clear();
+		frame->Begin();
+	}
 }
 
 void Device::DestroyBuffer(vk::Buffer buffer) {
@@ -646,6 +1245,15 @@ void Device::DestroyBuffer(vk::Buffer buffer) {
 
 void Device::DestroyBufferNoLock(vk::Buffer buffer) {
 	Frame().BuffersToDestroy.push_back(buffer);
+}
+
+void Device::DestroyFramebuffer(vk::Framebuffer framebuffer) {
+	DeviceLock();
+	DestroyFramebufferNoLock(framebuffer);
+}
+
+void Device::DestroyFramebufferNoLock(vk::Framebuffer framebuffer) {
+	Frame().FramebuffersToDestroy.push_back(framebuffer);
 }
 
 void Device::DestroyImage(vk::Image image) {
@@ -772,17 +1380,118 @@ void Device::FrameContext::Begin() {
 	}
 
 	for (auto& buffer : BuffersToDestroy) { device.destroyBuffer(buffer); }
+	for (auto& framebuffer : FramebuffersToDestroy) { device.destroyFramebuffer(framebuffer); }
 	for (auto& image : ImagesToDestroy) { device.destroyImage(image); }
 	for (auto& view : ImageViewsToDestroy) { device.destroyImageView(view); }
 	for (auto& allocation : AllocationsToFree) { vmaFreeMemory(Parent._allocator, allocation); }
 	for (auto& semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
 	for (auto& semaphore : SemaphoresToRecycle) { Parent.ReleaseSemaphore(semaphore); }
 	BuffersToDestroy.clear();
+	FramebuffersToDestroy.clear();
 	ImagesToDestroy.clear();
 	ImageViewsToDestroy.clear();
 	AllocationsToFree.clear();
 	SemaphoresToDestroy.clear();
 	SemaphoresToRecycle.clear();
+}
+
+Device::ImageManager::ImageManager(Device& device) : Parent(device) {}
+
+Device::ImageManager::~ImageManager() noexcept {
+	vk::Device device = Parent.GetDevice();
+
+	if (Owned) {
+		if (ImageView) { device.destroyImageView(ImageView); }
+		if (DepthView) { device.destroyImageView(DepthView); }
+		if (StencilView) { device.destroyImageView(StencilView); }
+		if (UnormView) { device.destroyImageView(UnormView); }
+		if (SrgbView) { device.destroyImageView(SrgbView); }
+		for (auto& view : RenderTargetViews) { device.destroyImageView(view); }
+
+		if (Image) { device.destroyImage(Image); }
+		if (Allocation) { vmaFreeMemory(Parent._allocator, Allocation); }
+	}
+}
+
+bool Device::ImageManager::CreateDefaultViews(const ImageCreateInfo& imageCI,
+                                              const vk::ImageViewCreateInfo* viewInfo,
+                                              bool createUnormSrgbViews,
+                                              const vk::Format* viewFormats) {
+	vk::Device device = Parent.GetDevice();
+
+	vk::ImageViewCreateInfo viewCI(
+		{},
+		Image,
+		Parent.GetImageViewType(imageCI, nullptr),
+		imageCI.Format,
+		vk::ComponentMapping(),
+		vk::ImageSubresourceRange(FormatAspectFlags(imageCI.Format), 0, imageCI.MipLevels, 0, imageCI.ArrayLayers));
+	if (viewInfo) { viewCI = *viewInfo; }
+
+	if (!CreateAltViews(imageCI, viewCI)) { return false; }
+	if (!CreateRenderTargetViews(imageCI, viewCI)) { return false; }
+	if (!CreateDefaultView(viewCI)) { return false; }
+	if (createUnormSrgbViews) {
+		auto tmpCI = viewCI;
+
+		tmpCI.format = viewFormats[0];
+		UnormView    = device.createImageView(tmpCI);
+
+		tmpCI.format = viewFormats[1];
+		SrgbView     = device.createImageView(tmpCI);
+	}
+
+	return true;
+}
+
+bool Device::ImageManager::CreateAltViews(const ImageCreateInfo& imageCI, const vk::ImageViewCreateInfo& viewCI) {
+	if (viewCI.viewType == vk::ImageViewType::eCube || viewCI.viewType == vk::ImageViewType::eCubeArray ||
+	    viewCI.viewType == vk::ImageViewType::e3D) {
+		return true;
+	}
+
+	if (viewCI.subresourceRange.aspectMask == (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil)) {
+		if ((imageCI.Usage & ~vk::ImageUsageFlagBits::eDepthStencilAttachment)) {
+			auto viewInfo = viewCI;
+
+			viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
+			DepthView                            = Parent.GetDevice().createImageView(viewInfo);
+
+			viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eStencil;
+			StencilView                          = Parent.GetDevice().createImageView(viewInfo);
+		}
+	}
+
+	return true;
+}
+
+bool Device::ImageManager::CreateDefaultView(const vk::ImageViewCreateInfo& viewCI) {
+	ImageView = Parent.GetDevice().createImageView(viewCI);
+
+	return true;
+}
+
+bool Device::ImageManager::CreateRenderTargetViews(const ImageCreateInfo& imageCI,
+                                                   const vk::ImageViewCreateInfo& viewCI) {
+	if (viewCI.viewType == vk::ImageViewType::e3D) { return true; }
+
+	RenderTargetViews.reserve(viewCI.subresourceRange.layerCount);
+
+	if ((imageCI.Usage & (vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eDepthStencilAttachment)) &&
+	    ((viewCI.subresourceRange.levelCount > 1) || (viewCI.subresourceRange.layerCount > 1))) {
+		auto viewInfo                        = viewCI;
+		viewInfo.viewType                    = vk::ImageViewType::e2D;
+		viewInfo.subresourceRange.levelCount = 1;
+		viewInfo.subresourceRange.layerCount = 1;
+
+		for (uint32_t layer = 0; layer < viewCI.subresourceRange.layerCount; ++layer) {
+			viewInfo.subresourceRange.baseArrayLayer = layer + viewCI.subresourceRange.baseArrayLayer;
+			vk::ImageView view                       = Parent.GetDevice().createImageView(viewInfo);
+			RenderTargetViews.push_back(view);
+		}
+	}
+
+	return true;
 }
 }  // namespace Vulkan
 }  // namespace Luna

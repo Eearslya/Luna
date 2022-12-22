@@ -10,6 +10,7 @@ target_sources(Luna PRIVATE
 	Format.cpp
 	Image.cpp
 	QueryPool.cpp
+	RenderPass.cpp
 	Semaphore.cpp
 	TextureFormat.cpp
 	WSI.cpp)

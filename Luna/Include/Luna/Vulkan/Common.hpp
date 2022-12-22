@@ -34,6 +34,8 @@ class Cookie;
 class Device;
 class Fence;
 struct FenceDeleter;
+class Framebuffer;
+class FramebufferAllocator;
 class Image;
 struct ImageCreateInfo;
 struct ImageDeleter;
@@ -41,11 +43,16 @@ class ImageView;
 struct ImageViewCreateInfo;
 struct ImageViewDeleter;
 class PerformanceQueryPool;
+class Program;
+class RenderPass;
+struct RenderPassInfo;
 class QueryPool;
 class QueryPoolResult;
 struct QueryPoolResultDeleter;
 class Semaphore;
 struct SemaphoreDeleter;
+class TextureFormatLayout;
+class TransientAttachmentAllocator;
 class WSI;
 class WSIPlatform;
 
@@ -82,6 +89,18 @@ using ImageViewHandle            = IntrusivePtr<ImageView>;
 using PerformanceQueryPoolHandle = IntrusivePtr<PerformanceQueryPool>;
 using QueryPoolResultHandle      = IntrusivePtr<QueryPoolResult>;
 using SemaphoreHandle            = IntrusivePtr<Semaphore>;
+
+// ===========================
+// ===== Constant Values =====
+// ===========================
+constexpr int MaxColorAttachments   = 8;
+constexpr int MaxDescriptorBindings = 32;
+constexpr int MaxDescriptorSets     = 4;
+constexpr int MaxPushConstantSize   = 128;
+constexpr int MaxSpecConstants      = 16;
+constexpr int MaxUniformBufferSize  = 16384;
+constexpr int MaxVertexAttributes   = 16;
+constexpr int MaxVertexBindings     = 8;
 
 // ===========================
 // ===== Data Structures =====
@@ -125,7 +144,10 @@ struct DeviceInfo {
 };
 
 // Contains information describing a staging buffer holding raw image data.
-struct ImageInitialBuffer {};
+struct ImageInitialBuffer {
+	BufferHandle Buffer;
+	std::vector<vk::BufferImageCopy> Blits;
+};
 
 // Contains information describing raw image data to be uploaded to a VkImage.
 struct ImageInitialData {

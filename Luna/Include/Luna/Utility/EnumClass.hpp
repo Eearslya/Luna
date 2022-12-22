@@ -114,21 +114,21 @@ operator&(const T& a, const Luna::Enumerator<T>& b) {
 }
 template <typename T>
 constexpr typename std::enable_if_t<std::is_enum_v<T> && Luna::EnableBitmaskOperatorsV<T>, Luna::Bitmask<T>&>
-operator&=(const Luna::Bitmask<T>& a, const T& b) {
+operator&=(Luna::Bitmask<T>& a, const T& b) {
 	using UnderlyingT = typename std::underlying_type_t<T>;
 	a.Value &= static_cast<UnderlyingT>(b);
 	return a;
 }
 template <typename T>
 constexpr typename std::enable_if_t<std::is_enum_v<T> && Luna::EnableBitmaskOperatorsV<T>, Luna::Bitmask<T>&>
-operator&=(const Luna::Bitmask<T>& a, const Luna::Enumerator<T>& b) {
+operator&=(Luna::Bitmask<T>& a, const Luna::Enumerator<T>& b) {
 	using UnderlyingT = typename std::underlying_type_t<T>;
 	a.Value &= static_cast<UnderlyingT>(b.Value);
 	return a;
 }
 template <typename T>
 constexpr typename std::enable_if_t<std::is_enum_v<T> && Luna::EnableBitmaskOperatorsV<T>, Luna::Bitmask<T>&>
-operator&=(const Luna::Bitmask<T>& a, const Luna::Bitmask<T>& b) {
+operator&=(Luna::Bitmask<T>& a, const Luna::Bitmask<T>& b) {
 	a.Value &= b.Value;
 	return a;
 }
@@ -189,21 +189,21 @@ operator|(const T& a, const Luna::Enumerator<T>& b) {
 }
 template <typename T>
 constexpr typename std::enable_if_t<std::is_enum_v<T> && Luna::EnableBitmaskOperatorsV<T>, Luna::Bitmask<T>&>
-operator|=(const Luna::Bitmask<T>& a, const T& b) {
+operator|=(Luna::Bitmask<T>& a, const T& b) {
 	using UnderlyingT = typename std::underlying_type_t<T>;
 	a.Value |= static_cast<UnderlyingT>(b);
 	return a;
 }
 template <typename T>
 constexpr typename std::enable_if_t<std::is_enum_v<T> && Luna::EnableBitmaskOperatorsV<T>, Luna::Bitmask<T>&>
-operator|=(const Luna::Bitmask<T>& a, const Luna::Enumerator<T>& b) {
+operator|=(Luna::Bitmask<T>& a, const Luna::Enumerator<T>& b) {
 	using UnderlyingT = typename std::underlying_type_t<T>;
 	a.Value |= static_cast<UnderlyingT>(b.Value);
 	return a;
 }
 template <typename T>
 constexpr typename std::enable_if_t<std::is_enum_v<T> && Luna::EnableBitmaskOperatorsV<T>, Luna::Bitmask<T>&>
-operator|=(const Luna::Bitmask<T>& a, const Luna::Bitmask<T>& b) {
+operator|=(Luna::Bitmask<T>& a, const Luna::Bitmask<T>& b) {
 	a.Value |= b.Value;
 	return a;
 }
@@ -264,21 +264,21 @@ operator^(const T& a, const Luna::Enumerator<T>& b) {
 }
 template <typename T>
 constexpr typename std::enable_if_t<std::is_enum_v<T> && Luna::EnableBitmaskOperatorsV<T>, Luna::Bitmask<T>&>
-operator^=(const Luna::Bitmask<T>& a, const T& b) {
+operator^=(Luna::Bitmask<T>& a, const T& b) {
 	using UnderlyingT = typename std::underlying_type_t<T>;
 	a.Value ^= static_cast<UnderlyingT>(b);
 	return a;
 }
 template <typename T>
 constexpr typename std::enable_if_t<std::is_enum_v<T> && Luna::EnableBitmaskOperatorsV<T>, Luna::Bitmask<T>&>
-operator^=(const Luna::Bitmask<T>& a, const Luna::Enumerator<T>& b) {
+operator^=(Luna::Bitmask<T>& a, const Luna::Enumerator<T>& b) {
 	using UnderlyingT = typename std::underlying_type_t<T>;
 	a.Value ^= static_cast<UnderlyingT>(b.Value);
 	return a;
 }
 template <typename T>
 constexpr typename std::enable_if_t<std::is_enum_v<T> && Luna::EnableBitmaskOperatorsV<T>, Luna::Bitmask<T>&>
-operator^=(const Luna::Bitmask<T>& a, const Luna::Bitmask<T>& b) {
+operator^=(Luna::Bitmask<T>& a, const Luna::Bitmask<T>& b) {
 	a.Value ^= b.Value;
 	return a;
 }
