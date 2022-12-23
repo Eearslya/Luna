@@ -654,8 +654,12 @@ ImageInitialBuffer Device::CreateImageStagingBuffer(const TextureFormatLayout& l
 }
 
 ImageViewHandle Device::CreateImageView(const ImageViewCreateInfo& viewCI) {
+	ImageManager manager(*this);
 	const auto& imageCI = viewCI.Image->GetCreateInfo();
-	const vk::ImageViewCreateInfo viewInfo(
+
+	const vk::Format format = viewCI.Format == vk::Format::eUndefined ? imageCI.Format : viewCI.Format;
+
+	vk::ImageViewCreateInfo viewInfo(
 		{},
 		viewCI.Image->GetImage(),
 		viewCI.ViewType,
@@ -664,10 +668,27 @@ ImageViewHandle Device::CreateImageView(const ImageViewCreateInfo& viewCI) {
 		vk::ImageSubresourceRange(
 			FormatAspectFlags(viewCI.Format), viewCI.BaseLevel, viewCI.MipLevels, viewCI.BaseLayer, viewCI.ArrayLayers));
 
-	auto imageView = _device.createImageView(viewInfo);
-	Log::Debug("Vulkan", "Image View created.");
+	if (viewInfo.subresourceRange.levelCount == VK_REMAINING_MIP_LEVELS) {
+		viewInfo.subresourceRange.levelCount = imageCI.MipLevels - viewCI.BaseLevel;
+	}
+	if (viewInfo.subresourceRange.layerCount == VK_REMAINING_ARRAY_LAYERS) {
+		viewInfo.subresourceRange.layerCount = imageCI.ArrayLayers - viewCI.BaseLayer;
+	}
 
-	return ImageViewHandle(_imageViewPool.Allocate(*this, imageView, viewCI));
+	if (!manager.CreateDefaultViews(imageCI, &viewInfo)) { return {}; }
+
+	ImageViewCreateInfo tmpInfo = viewCI;
+	tmpInfo.Format              = format;
+	ImageViewHandle handle(_imageViewPool.Allocate(*this, manager.ImageView, tmpInfo));
+	if (handle) {
+		manager.Owned = false;
+		handle->SetAltViews(manager.DepthView, manager.StencilView);
+		handle->SetRenderTargetViews(std::move(manager.RenderTargetViews));
+
+		return handle;
+	}
+
+	return {};
 }
 
 ImageView& Device::GetSwapchainView() {
@@ -1456,9 +1477,11 @@ bool Device::ImageManager::CreateAltViews(const ImageCreateInfo& imageCI, const 
 
 			viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
 			DepthView                            = Parent.GetDevice().createImageView(viewInfo);
+			Log::Debug("Vulkan", "Image View created.");
 
 			viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eStencil;
 			StencilView                          = Parent.GetDevice().createImageView(viewInfo);
+			Log::Debug("Vulkan", "Image View created.");
 		}
 	}
 
@@ -1467,6 +1490,7 @@ bool Device::ImageManager::CreateAltViews(const ImageCreateInfo& imageCI, const 
 
 bool Device::ImageManager::CreateDefaultView(const vk::ImageViewCreateInfo& viewCI) {
 	ImageView = Parent.GetDevice().createImageView(viewCI);
+	Log::Debug("Vulkan", "Image View created.");
 
 	return true;
 }
@@ -1487,6 +1511,7 @@ bool Device::ImageManager::CreateRenderTargetViews(const ImageCreateInfo& imageC
 		for (uint32_t layer = 0; layer < viewCI.subresourceRange.layerCount; ++layer) {
 			viewInfo.subresourceRange.baseArrayLayer = layer + viewCI.subresourceRange.baseArrayLayer;
 			vk::ImageView view                       = Parent.GetDevice().createImageView(viewInfo);
+			Log::Debug("Vulkan", "Image View created.");
 			RenderTargetViews.push_back(view);
 		}
 	}
