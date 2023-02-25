@@ -204,6 +204,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 	std::vector<vk::Fence> _availableFences;
 	std::vector<vk::Semaphore> _availableSemaphores;
 	std::unique_ptr<FramebufferAllocator> _framebufferAllocator;
+	std::unique_ptr<ShaderCompiler> _shaderCompiler;
 	std::unique_ptr<TransientAttachmentAllocator> _transientAttachmentAllocator;
 
 #ifdef LUNA_VULKAN_MT

@@ -92,6 +92,53 @@ void TaskGroup::Wait() {
 	Dependencies->Condition.wait(lock, [this]() { return Dependencies->Done; });
 }
 
+void TaskComposer::AddOutgoingDependency(TaskGroup& task) {
+	Threading::Get()->AddDependency(task, *GetOutgoingTask());
+}
+
+TaskGroup& TaskComposer::BeginPipelineStage() {
+	auto* threading = Threading::Get();
+
+	auto newGroup        = threading->CreateTaskGroup();
+	auto newDependencies = threading->CreateTaskGroup();
+	if (_current) { threading->AddDependency(*newDependencies, *_current); }
+	if (_nextStageDependencies) { threading->AddDependency(*newDependencies, *_nextStageDependencies); }
+	_nextStageDependencies.Reset();
+	threading->AddDependency(*newGroup, *newDependencies);
+
+	_current              = std::move(newGroup);
+	_incomingDependencies = std::move(newDependencies);
+
+	return *_current;
+}
+
+TaskGroupHandle TaskComposer::GetDeferredEnqueueHandle() {
+	if (!_nextStageDependencies) { _nextStageDependencies = Threading::Get()->CreateTaskGroup(); }
+
+	return _nextStageDependencies;
+}
+
+TaskGroup& TaskComposer::GetGroup() {
+	return bool(_current) ? *_current : BeginPipelineStage();
+}
+
+TaskGroupHandle TaskComposer::GetOutgoingTask() {
+	BeginPipelineStage();
+	auto ret = std::move(_incomingDependencies);
+	_incomingDependencies.Reset();
+	_current.Reset();
+
+	return ret;
+}
+
+TaskGroupHandle TaskComposer::GetPipelineStageDependency() {
+	return _incomingDependencies;
+}
+
+void TaskComposer::SetIncomingTask(TaskGroupHandle group) {
+	_current = std::move(group);
+}
+
 Threading::Threading() {
 	if (_instance) { throw std::runtime_error("Cannot initialize Threading more than once!"); }
 	_instance = this;

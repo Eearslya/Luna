@@ -28,19 +28,19 @@ WSI::WSI(WSIPlatform* platform) : _platform(platform) {
 	auto formats      = physicalDevice.getSurfaceFormatsKHR(_surface);
 	auto presentModes = physicalDevice.getSurfacePresentModesKHR(_surface);
 
-	_swapchainFormat.format = vk::Format::eUndefined;
+	_swapchainConfig.Format.format = vk::Format::eUndefined;
 	for (const auto& format : formats) {
 		if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
-			_swapchainFormat = format;
+			_swapchainConfig.Format = format;
 			break;
 		}
 	}
-	if (_swapchainFormat.format == vk::Format::eUndefined) { _swapchainFormat = formats[0]; }
+	if (_swapchainConfig.Format.format == vk::Format::eUndefined) { _swapchainConfig.Format = formats[0]; }
 
-	_swapchainPresentMode = vk::PresentModeKHR::eFifo;
+	_swapchainConfig.PresentMode = vk::PresentModeKHR::eFifo;
 	for (const auto& presentMode : presentModes) {
 		if (presentMode == vk::PresentModeKHR::eMailbox) {
-			_swapchainPresentMode = presentMode;
+			_swapchainConfig.PresentMode = presentMode;
 			break;
 		}
 	}
@@ -128,26 +128,28 @@ void WSI::RecreateSwapchain() {
 	if (capabilities.maxImageExtent.width == 0 || capabilities.maxImageExtent.height == 0) { return; }
 
 	const auto fbSize = _platform->GetFramebufferSize();
-	_swapchainExtent =
+	_swapchainConfig.Extent =
 		vk::Extent2D(glm::clamp(fbSize.x, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
 	               glm::clamp(fbSize.y, capabilities.minImageExtent.height, capabilities.maxImageExtent.height));
 
 	uint32_t imageCount = glm::max(3u, capabilities.minImageCount);
 	if (capabilities.maxImageCount > 0) { imageCount = glm::min(imageCount, capabilities.maxImageCount); }
 
+	_swapchainConfig.Transform = vk::SurfaceTransformFlagBitsKHR::eIdentity;
+
 	const vk::SwapchainCreateInfoKHR swapchainCI({},
 	                                             _surface,
 	                                             imageCount,
-	                                             _swapchainFormat.format,
-	                                             _swapchainFormat.colorSpace,
-	                                             _swapchainExtent,
+	                                             _swapchainConfig.Format.format,
+	                                             _swapchainConfig.Format.colorSpace,
+	                                             _swapchainConfig.Extent,
 	                                             1,
 	                                             vk::ImageUsageFlagBits::eColorAttachment,
 	                                             vk::SharingMode::eExclusive,
 	                                             nullptr,
-	                                             vk::SurfaceTransformFlagBitsKHR::eIdentity,
+	                                             _swapchainConfig.Transform,
 	                                             vk::CompositeAlphaFlagBitsKHR::eOpaque,
-	                                             _swapchainPresentMode,
+	                                             _swapchainConfig.PresentMode,
 	                                             VK_TRUE,
 	                                             _swapchain);
 	auto newSwapchain = device.createSwapchainKHR(swapchainCI);
@@ -163,6 +165,7 @@ void WSI::RecreateSwapchain() {
 	_swapchainSuboptimal = false;
 
 	_device->SetupSwapchain(*this);
+	OnSwapchainChanged(_swapchainConfig);
 }
 }  // namespace Vulkan
 }  // namespace Luna

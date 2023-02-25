@@ -21,11 +21,13 @@ Application::~Application() noexcept {
 
 bool Application::InitializeWSI(Vulkan::WSIPlatform* platform) {
 	_wsi = std::make_unique<Vulkan::WSI>(platform);
+	_wsi->OnSwapchainChanged += [this](const Vulkan::SwapchainConfiguration& config) { OnSwapchainChanged(config); };
 
 	return true;
 }
 
 int Application::Run() {
+	Start();
 	while (_wsi->IsAlive()) {
 		_wsi->Update();
 
@@ -33,6 +35,7 @@ int Application::Run() {
 		Render();
 		_wsi->EndFrame();
 	}
+	Stop();
 
 	return 0;
 }

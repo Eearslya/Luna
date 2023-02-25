@@ -67,6 +67,22 @@ struct TaskGroup : IntrusivePtrEnabled<TaskGroup, TaskGroupDeleter, MultiThreadC
 };
 using TaskGroupHandle = IntrusivePtr<TaskGroup>;
 
+class TaskComposer {
+ public:
+	void AddOutgoingDependency(TaskGroup& task);
+	TaskGroup& BeginPipelineStage();
+	TaskGroupHandle GetDeferredEnqueueHandle();
+	TaskGroup& GetGroup();
+	TaskGroupHandle GetOutgoingTask();
+	TaskGroupHandle GetPipelineStageDependency();
+	void SetIncomingTask(TaskGroupHandle group);
+
+ private:
+	TaskGroupHandle _current;
+	TaskGroupHandle _incomingDependencies;
+	TaskGroupHandle _nextStageDependencies;
+};
+
 class Threading {
 	friend struct TaskDependenciesDeleter;
 	friend struct TaskGroup;

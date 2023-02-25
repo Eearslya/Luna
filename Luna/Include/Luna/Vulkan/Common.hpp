@@ -51,6 +51,7 @@ class QueryPoolResult;
 struct QueryPoolResultDeleter;
 class Semaphore;
 struct SemaphoreDeleter;
+class ShaderCompiler;
 class TextureFormatLayout;
 class TransientAttachmentAllocator;
 class WSI;
@@ -203,6 +204,13 @@ struct QueueInfo {
 	const vk::Queue& Queue(QueueType type) const {
 		return Queues[int(type)];
 	}
+};
+
+struct SwapchainConfiguration {
+	vk::Extent2D Extent;
+	vk::SurfaceFormatKHR Format;
+	vk::PresentModeKHR PresentMode;
+	vk::SurfaceTransformFlagBitsKHR Transform;
 };
 
 // =============================

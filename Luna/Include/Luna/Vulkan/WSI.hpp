@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Luna/Utility/Delegate.hpp>
 #include <Luna/Utility/IntrusivePtr.hpp>
 #include <Luna/Vulkan/Common.hpp>
 #include <glm/glm.hpp>
@@ -40,6 +41,8 @@ class WSI {
 	bool IsAlive();
 	void Update();
 
+	Delegate<void(const SwapchainConfiguration&)> OnSwapchainChanged;
+
  private:
 	void RecreateSwapchain();
 
@@ -50,10 +53,8 @@ class WSI {
 
 	vk::SwapchainKHR _swapchain;
 	uint32_t _swapchainAcquired = std::numeric_limits<uint32_t>::max();
-	vk::Extent2D _swapchainExtent;
-	vk::SurfaceFormatKHR _swapchainFormat;
+	SwapchainConfiguration _swapchainConfig;
 	std::vector<vk::Image> _swapchainImages;
-	vk::PresentModeKHR _swapchainPresentMode;
 	std::vector<SemaphoreHandle> _swapchainRelease;
 	bool _swapchainSuboptimal = false;
 };

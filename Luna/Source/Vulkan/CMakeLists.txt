@@ -12,5 +12,6 @@ target_sources(Luna PRIVATE
 	QueryPool.cpp
 	RenderPass.cpp
 	Semaphore.cpp
+	ShaderCompiler.cpp
 	TextureFormat.cpp
 	WSI.cpp)

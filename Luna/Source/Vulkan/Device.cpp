@@ -10,6 +10,7 @@
 #include <Luna/Vulkan/QueryPool.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
+#include <Luna/Vulkan/ShaderCompiler.hpp>
 #include <Luna/Vulkan/WSI.hpp>
 
 #ifdef Luna_VULKAN_MT
@@ -91,6 +92,7 @@ Device::Device(Context& context)
 	CreateFrameContexts(2);
 
 	_framebufferAllocator         = std::make_unique<FramebufferAllocator>(*this);
+	_shaderCompiler               = std::make_unique<ShaderCompiler>();
 	_transientAttachmentAllocator = std::make_unique<TransientAttachmentAllocator>(*this);
 
 	for (uint32_t i = 0; i < QueueTypeCount; ++i) {
@@ -106,9 +108,11 @@ Device::Device(Context& context)
 
 		if (!aliased) {
 			_queueData[i].QueryPool = MakeHandle<PerformanceQueryPool>(*this, _queueInfo.Families[i]);
+			/*
 			Log::Info("Vulkan-Performance", "Query Counters available for {}:", VulkanEnumToString(QueueType(i)));
 			PerformanceQueryPool::LogCounters(_queueData[i].QueryPool->GetCounters(),
 			                                  _queueData[i].QueryPool->GetDescriptions());
+			                                  */
 		}
 	}
 }
@@ -121,6 +125,7 @@ Device::~Device() noexcept {
 	_swapchainImages.clear();
 
 	_framebufferAllocator.reset();
+	_shaderCompiler.reset();
 	_transientAttachmentAllocator.reset();
 
 	vmaDestroyAllocator(_allocator);
@@ -927,8 +932,8 @@ void Device::SetupSwapchain(WSI& wsi) {
 	DeviceFlush();
 	WaitIdleNoLock();
 
-	const auto& extent = wsi._swapchainExtent;
-	const auto& format = wsi._swapchainFormat.format;
+	const auto& extent = wsi._swapchainConfig.Extent;
+	const auto& format = wsi._swapchainConfig.Format.format;
 	const auto& images = wsi._swapchainImages;
 	const auto imageCI = ImageCreateInfo::RenderTarget(format, extent.width, extent.height);
 
