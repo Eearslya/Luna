@@ -6,6 +6,7 @@
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
+#include <Luna/Vulkan/Sampler.hpp>
 #include <Luna/Vulkan/Shader.hpp>
 
 namespace Luna {
@@ -58,6 +59,9 @@ void CommandBufferDeleter::operator()(CommandBuffer* cmdBuf) {
 
 CommandBuffer::CommandBuffer(Device& device, vk::CommandBuffer cmdBuf, CommandBufferType type, uint32_t threadIndex)
 		: _device(device), _commandBuffer(cmdBuf), _commandBufferType(type), _threadIndex(threadIndex) {
+	ClearRenderState();
+	memset(&_bindings, 0, sizeof(_bindings));
+
 	BeginCompute();
 	SetOpaqueState();
 }
@@ -296,6 +300,30 @@ void CommandBuffer::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t 
 	if (FlushRenderState(true)) { _commandBuffer.draw(vertexCount, instanceCount, firstVertex, firstInstance); }
 }
 
+void CommandBuffer::DrawIndexed(
+	uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
+	if (FlushRenderState(true)) {
+		_commandBuffer.drawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+	}
+}
+
+void CommandBuffer::PushConstants(const void* data, vk::DeviceSize offset, vk::DeviceSize range) {
+	assert(offset + range <= MaxPushConstantSize);
+	memcpy(_bindings.PushConstantData + offset, data, range);
+	_dirty |= CommandBufferDirtyFlagBits::PushConstants;
+}
+
+void CommandBuffer::SetIndexBuffer(const Buffer& buffer, vk::DeviceSize offset, vk::IndexType indexType) {
+	if (_indexState.Buffer == buffer.GetBuffer() && _indexState.Offset == offset && _indexState.IndexType == indexType) {
+		return;
+	}
+
+	_indexState.Buffer    = buffer.GetBuffer();
+	_indexState.Offset    = offset;
+	_indexState.IndexType = indexType;
+	_commandBuffer.bindIndexBuffer(_indexState.Buffer, _indexState.Offset, _indexState.IndexType);
+}
+
 void CommandBuffer::SetProgram(Program* program) {
 	if (_pipelineState.Program == program) { return; }
 
@@ -328,6 +356,97 @@ void CommandBuffer::SetProgram(Program* program) {
 			}
 		}
 	}
+}
+
+void CommandBuffer::SetSampler(uint32_t set, uint32_t binding, const Sampler* sampler) {
+	const auto cookie = sampler->GetCookie();
+	if (cookie == _bindings.Bindings[set][binding].SecondaryCookie) { return; }
+
+	auto& bind                 = _bindings.Bindings[set][binding];
+	bind.Image.Float.sampler   = sampler->GetSampler();
+	bind.Image.Integer.sampler = sampler->GetSampler();
+	_dirtySets |= 1u << set;
+	_bindings.Bindings[set][binding].SecondaryCookie = cookie;
+}
+
+void CommandBuffer::SetSampler(uint32_t set, uint32_t binding, StockSampler sampler) {
+	SetSampler(set, binding, _device.RequestSampler(sampler));
+}
+
+void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view) {
+	const auto layout = view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
+	const auto cookie = view.GetCookie();
+	if (_bindings.Bindings[set][binding].Cookie == cookie &&
+	    _bindings.Bindings[set][binding].Image.Float.imageLayout == layout) {
+		return;
+	}
+
+	auto& bind                              = _bindings.Bindings[set][binding];
+	bind.Image.Float.imageLayout            = layout;
+	bind.Image.Float.imageView              = view.GetFloatView();
+	bind.Image.Integer.imageLayout          = layout;
+	bind.Image.Integer.imageView            = view.GetIntegerView();
+	_bindings.Bindings[set][binding].Cookie = cookie;
+	_dirtySets |= 1u << set;
+}
+
+void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler* sampler) {
+	SetTexture(set, binding, view);
+	SetSampler(set, binding, sampler);
+}
+
+void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler stockSampler) {
+	const auto sampler = _device.RequestSampler(stockSampler);
+	SetTexture(set, binding, view, sampler);
+}
+
+void CommandBuffer::SetUniformBuffer(
+	uint32_t set, uint32_t binding, const Buffer& buffer, vk::DeviceSize offset, vk::DeviceSize range) {
+	if (range == 0) { range = buffer.GetCreateInfo().Size; }
+
+	auto& bind = _bindings.Bindings[set][binding];
+
+	if (buffer.GetCookie() == _bindings.Bindings[set][binding].Cookie && bind.Buffer.range == range) {
+		if (bind.DynamicOffset != offset) {
+			_dirtySetsDynamic |= 1u << set;
+			bind.DynamicOffset = offset;
+		}
+	} else {
+		bind.Buffer                                      = vk::DescriptorBufferInfo(buffer.GetBuffer(), 0, range);
+		bind.DynamicOffset                               = offset;
+		_bindings.Bindings[set][binding].Cookie          = buffer.GetCookie();
+		_bindings.Bindings[set][binding].SecondaryCookie = 0;
+		_dirtySets |= 1u << set;
+	}
+}
+
+void CommandBuffer::SetVertexAttribute(uint32_t attribute, uint32_t binding, vk::Format format, vk::DeviceSize offset) {
+	auto& attr = _pipelineState.Attributes[attribute];
+
+	if (attr.Binding != binding || attr.Format != format || attr.Offset != offset) {
+		_dirty |= CommandBufferDirtyFlagBits::StaticVertex;
+	}
+
+	attr.Binding = binding;
+	attr.Format  = format;
+	attr.Offset  = offset;
+}
+
+void CommandBuffer::SetVertexBinding(
+	uint32_t binding, const Buffer& buffer, vk::DeviceSize offset, vk::DeviceSize stride, vk::VertexInputRate inputRate) {
+	vk::Buffer vkBuffer = buffer.GetBuffer();
+
+	if (_vertexBindings.Buffers[binding] != vkBuffer || _vertexBindings.Offsets[binding] != offset) {
+		_dirtyVBOs |= 1u << binding;
+	}
+	if (_pipelineState.Strides[binding] != stride || _pipelineState.InputRates[binding] != inputRate) {
+		_dirty |= CommandBufferDirtyFlagBits::StaticVertex;
+	}
+
+	_vertexBindings.Buffers[binding]   = vkBuffer;
+	_vertexBindings.Offsets[binding]   = offset;
+	_pipelineState.InputRates[binding] = inputRate;
+	_pipelineState.Strides[binding]    = stride;
 }
 
 void CommandBuffer::BeginRenderPass(const RenderPassInfo& info, vk::SubpassContents contents) {
@@ -589,6 +708,119 @@ Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 	return {returnedPipeline, 0};
 }
 
+void CommandBuffer::FlushDescriptorSet(uint32_t set) {
+	auto& layout = _programLayout->GetResourceLayout();
+	if (layout.BindlessDescriptorSetMask & (1u << set)) {
+		_commandBuffer.bindDescriptorSets(
+			_actualRenderPass ? vk::PipelineBindPoint::eGraphics : vk::PipelineBindPoint::eCompute,
+			_pipelineLayout,
+			set,
+			_allocatedSets[set],
+			nullptr);
+		return;
+	}
+
+	auto& setLayout             = layout.SetLayouts[set];
+	uint32_t dynamicOffsetCount = 0;
+	uint32_t dynamicOffsets[MaxDescriptorBindings];
+	Hasher h;
+
+	h(setLayout.FloatMask);
+
+	ForEachBit(setLayout.UniformBufferMask, [&](uint32_t binding) {
+		uint32_t arraySize = setLayout.ArraySizes[binding];
+		for (uint32_t i = 0; i < arraySize; ++i) {
+			h(_bindings.Bindings[set][binding + 1].Cookie);
+			h(_bindings.Bindings[set][binding + 1].Buffer.range);
+			dynamicOffsets[dynamicOffsetCount++] = _bindings.Bindings[set][binding + 1].DynamicOffset;
+		}
+	});
+
+	ForEachBit(setLayout.StorageBufferMask, [&](uint32_t binding) {
+		uint32_t arraySize = setLayout.ArraySizes[binding];
+		for (uint32_t i = 0; i < arraySize; ++i) {
+			h(_bindings.Bindings[set][binding + 1].Cookie);
+			h(_bindings.Bindings[set][binding + 1].Buffer.offset);
+			h(_bindings.Bindings[set][binding + 1].Buffer.range);
+		}
+	});
+
+	ForEachBit(setLayout.SampledTexelBufferMask | setLayout.StorageTexelBufferMask, [&](uint32_t binding) {
+		uint32_t arraySize = setLayout.ArraySizes[binding];
+		for (uint32_t i = 0; i < arraySize; ++i) { h(_bindings.Bindings[set][binding + 1].Cookie); }
+	});
+
+	ForEachBit(setLayout.SampledImageMask, [&](uint32_t binding) {
+		uint32_t arraySize = setLayout.ArraySizes[binding];
+		for (uint32_t i = 0; i < arraySize; ++i) {
+			h(_bindings.Bindings[set][binding + 1].Cookie);
+			if ((setLayout.ImmutableSamplerMask & (1u << (binding + 1))) == 0) {
+				h(_bindings.Bindings[set][binding + 1].SecondaryCookie);
+			}
+			h(_bindings.Bindings[set][binding + 1].Image.Float.imageLayout);
+		}
+	});
+
+	ForEachBit(setLayout.SeparateImageMask, [&](uint32_t binding) {
+		uint32_t arraySize = setLayout.ArraySizes[binding];
+		for (uint32_t i = 0; i < arraySize; ++i) {
+			h(_bindings.Bindings[set][binding + 1].Cookie);
+			h(_bindings.Bindings[set][binding + 1].Image.Float.imageLayout);
+		}
+	});
+
+	ForEachBit(setLayout.SamplerMask & ~setLayout.ImmutableSamplerMask, [&](uint32_t binding) {
+		uint32_t arraySize = setLayout.ArraySizes[binding];
+		for (uint32_t i = 0; i < arraySize; ++i) { h(_bindings.Bindings[set][binding + 1].SecondaryCookie); }
+	});
+
+	ForEachBit(setLayout.StorageImageMask, [&](uint32_t binding) {
+		uint32_t arraySize = setLayout.ArraySizes[binding];
+		for (uint32_t i = 0; i < arraySize; ++i) {
+			h(_bindings.Bindings[set][binding + 1].Cookie);
+			h(_bindings.Bindings[set][binding + 1].Image.Float.imageLayout);
+		}
+	});
+
+	ForEachBit(setLayout.InputAttachmentMask, [&](uint32_t binding) {
+		uint32_t arraySize = setLayout.ArraySizes[binding];
+		for (uint32_t i = 0; i < arraySize; ++i) {
+			h(_bindings.Bindings[set][binding + 1].Cookie);
+			h(_bindings.Bindings[set][binding + 1].Image.Float.imageLayout);
+		}
+	});
+
+	const auto hash = h.Get();
+	auto allocated  = _programLayout->GetAllocator(set)->Find(_threadIndex, hash);
+	if (!allocated.second) {
+		auto updateTemplate = _programLayout->GetUpdateTemplate(set);
+		_device.GetDevice().updateDescriptorSetWithTemplate(allocated.first, updateTemplate, _bindings.Bindings[set]);
+	}
+
+	_commandBuffer.bindDescriptorSets(
+		_actualRenderPass ? vk::PipelineBindPoint::eGraphics : vk::PipelineBindPoint::eCompute,
+		_pipelineLayout,
+		set,
+		1,
+		&allocated.first,
+		dynamicOffsetCount,
+		dynamicOffsets);
+	_allocatedSets[set] = allocated.first;
+}
+
+void CommandBuffer::FlushDescriptorSets() {
+	auto& layout = _programLayout->GetResourceLayout();
+
+	uint32_t setUpdate = layout.DescriptorSetMask & _dirtySets;
+	ForEachBit(setUpdate, [&](uint32_t set) { FlushDescriptorSet(set); });
+	_dirtySets &= ~setUpdate;
+	_dirtySetsDynamic &= ~setUpdate;
+
+	uint32_t dynamicSetUpdate = layout.DescriptorSetMask & _dirtySetsDynamic;
+	ForEachBit(dynamicSetUpdate, [&](uint32_t set) { RebindDescriptorSet(set); });
+	_dirtySetsDynamic &= ~dynamicSetUpdate;
+}
+
 bool CommandBuffer::FlushGraphicsPipeline(bool synchronous) {
 	_pipelineState.Hash       = _pipelineState.GetHash(_activeVBOs);
 	_currentPipeline.Pipeline = _pipelineState.Program->GetPipeline(_pipelineState.Hash);
@@ -616,13 +848,12 @@ bool CommandBuffer::FlushRenderState(bool synchronous) {
 	if (!_currentPipeline.Pipeline) { return false; }
 
 	// Flush descriptor sets.
-	// FlushDescriptorSets();
+	FlushDescriptorSets();
 
 	if (_dirty & CommandBufferDirtyFlagBits::PushConstants) {
 		const auto& range = _programLayout->GetResourceLayout().PushConstantRange;
 		if (range.stageFlags) {
-			// _commandBuffer.pushConstants(_pipelineLayout, range.stageFlags, 0, range.size,
-			// _descriptorBinding.PushConstantData);
+			_commandBuffer.pushConstants(_pipelineLayout, range.stageFlags, 0, range.size, _bindings.PushConstantData);
 		}
 	}
 	_dirty &= ~CommandBufferDirtyFlagBits::PushConstants;
@@ -646,6 +877,37 @@ bool CommandBuffer::FlushRenderState(bool synchronous) {
 	_dirtyVBOs &= ~updateVBOs;
 
 	return true;
+}
+
+void CommandBuffer::RebindDescriptorSet(uint32_t set) {
+	auto& layout = _programLayout->GetResourceLayout();
+	if (layout.BindlessDescriptorSetMask & (1u << set)) {
+		_commandBuffer.bindDescriptorSets(
+			_actualRenderPass ? vk::PipelineBindPoint::eGraphics : vk::PipelineBindPoint::eCompute,
+			_pipelineLayout,
+			set,
+			_bindlessSets[set],
+			nullptr);
+		return;
+	}
+
+	auto& setLayout             = layout.SetLayouts[set];
+	uint32_t dynamicOffsetCount = 0;
+	uint32_t dynamicOffsets[MaxDescriptorBindings];
+
+	ForEachBit(setLayout.UniformBufferMask, [&](uint32_t binding) {
+		uint32_t arraySize = setLayout.ArraySizes[binding];
+		for (uint32_t i = 0; i < arraySize; ++i) {
+			dynamicOffsets[dynamicOffsetCount++] = _bindings.Bindings[set][binding + 1].DynamicOffset;
+		}
+	});
+
+	_commandBuffer.bindDescriptorSets(
+		_actualRenderPass ? vk::PipelineBindPoint::eGraphics : vk::PipelineBindPoint::eCompute,
+		_pipelineLayout,
+		set,
+		_allocatedSets[set],
+		dynamicOffsets);
 }
 
 void CommandBuffer::SetViewportScissor(const RenderPassInfo& info, const Framebuffer* framebuffer) {

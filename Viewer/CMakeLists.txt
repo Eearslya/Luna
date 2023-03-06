@@ -1,9 +1,11 @@
 project(Luna-Viewer LANGUAGES CXX)
 
 add_executable(Viewer)
-target_link_libraries(Viewer PRIVATE Luna)
+target_link_libraries(Viewer PRIVATE fastgltf Luna mikktspace stb)
 
 target_sources(Viewer PRIVATE
+	Files.cpp
+	Model.cpp
 	Viewer.cpp)
 
 add_custom_target(Run

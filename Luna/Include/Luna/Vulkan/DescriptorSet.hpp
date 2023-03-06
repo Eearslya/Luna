@@ -12,10 +12,12 @@ struct DescriptorSetLayout {
 	uint32_t InputAttachmentMask              = 0;
 	uint32_t SampledBufferMask                = 0;
 	uint32_t SampledImageMask                 = 0;
+	uint32_t SampledTexelBufferMask           = 0;
 	uint32_t SamplerMask                      = 0;
 	uint32_t SeparateImageMask                = 0;
 	uint32_t StorageBufferMask                = 0;
 	uint32_t StorageImageMask                 = 0;
+	uint32_t StorageTexelBufferMask           = 0;
 	uint32_t UniformBufferMask                = 0;
 
 	constexpr static const uint8_t UnsizedArray = 0xff;

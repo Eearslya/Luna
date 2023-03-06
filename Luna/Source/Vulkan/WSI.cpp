@@ -48,6 +48,10 @@ WSI::~WSI() noexcept {
 	_platform->Shutdown();
 }
 
+glm::uvec2 WSI::GetFramebufferSize() const {
+	return _platform->GetFramebufferSize();
+}
+
 void WSI::BeginFrame() {
 	_platform->Update();
 	_device->NextFrame();

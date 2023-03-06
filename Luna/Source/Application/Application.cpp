@@ -42,4 +42,8 @@ int Application::Run() {
 Vulkan::Device& Application::GetDevice() {
 	return _wsi->GetDevice();
 }
+
+glm::uvec2 Application::GetFramebufferSize() const {
+	return _wsi->GetFramebufferSize();
+}
 }  // namespace Luna

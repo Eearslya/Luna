@@ -1,5 +1,6 @@
 #pragma once
 
+#include <glm/glm.hpp>
 #include <memory>
 
 namespace Luna {
@@ -24,6 +25,7 @@ class Application {
 
  protected:
 	Vulkan::Device& GetDevice();
+	glm::uvec2 GetFramebufferSize() const;
 
  private:
 	std::unique_ptr<Vulkan::WSI> _wsi;

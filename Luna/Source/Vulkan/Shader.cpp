@@ -27,7 +27,8 @@ static std::string MaskToBindings(uint32_t mask, const uint8_t* arraySizes = nul
 PipelineLayout::PipelineLayout(Hash hash, Device& device, const ProgramResourceLayout& resourceLayout)
 		: HashedObject<PipelineLayout>(hash), _device(device), _resourceLayout(resourceLayout) {
 	std::array<vk::DescriptorSetLayout, MaxDescriptorSets> layouts = {};
-	uint32_t setCount                                              = 0;
+
+	uint32_t setCount = 0;
 	for (uint32_t i = 0; i < MaxDescriptorSets; ++i) {
 		_setAllocators[i] =
 			_device.RequestDescriptorSetAllocator(resourceLayout.SetLayouts[i], resourceLayout.StagesForBindings[i]);
@@ -43,10 +44,139 @@ PipelineLayout::PipelineLayout(Hash hash, Device& device, const ProgramResourceL
 		_resourceLayout.PushConstantRange.stageFlags ? &_resourceLayout.PushConstantRange : nullptr);
 	_pipelineLayout = _device.GetDevice().createPipelineLayout(layoutCI);
 	Log::Debug("Vulkan", "Pipeline Layout created.");
+
+	CreateUpdateTemplates();
 }
 
 PipelineLayout::~PipelineLayout() noexcept {
 	if (_pipelineLayout) { _device.GetDevice().destroyPipelineLayout(_pipelineLayout); }
+	for (auto& temp : _updateTemplates) {
+		if (temp) { _device.GetDevice().destroyDescriptorUpdateTemplate(temp); }
+	}
+}
+
+void PipelineLayout::CreateUpdateTemplates() {
+	for (uint32_t set = 0; set < MaxDescriptorSets; ++set) {
+		if ((_resourceLayout.DescriptorSetMask & (1u << set)) == 0) { continue; }
+		if ((_resourceLayout.BindlessDescriptorSetMask & (1u << set)) != 0) { continue; }
+
+		const auto& setLayout = _resourceLayout.SetLayouts[set];
+
+		uint32_t updateCount = 0;
+		std::array<vk::DescriptorUpdateTemplateEntry, MaxDescriptorBindings> updateEntries;
+
+		ForEachBit(setLayout.UniformBufferMask, [&](uint32_t binding) {
+			updateEntries[updateCount++] =
+				vk::DescriptorUpdateTemplateEntry(binding,
+			                                    0,
+			                                    setLayout.ArraySizes[binding],
+			                                    vk::DescriptorType::eUniformBufferDynamic,
+			                                    offsetof(ResourceBinding, Buffer) + sizeof(ResourceBinding) * binding,
+			                                    sizeof(ResourceBinding));
+		});
+
+		ForEachBit(setLayout.StorageBufferMask, [&](uint32_t binding) {
+			updateEntries[updateCount++] =
+				vk::DescriptorUpdateTemplateEntry(binding,
+			                                    0,
+			                                    setLayout.ArraySizes[binding],
+			                                    vk::DescriptorType::eStorageBuffer,
+			                                    offsetof(ResourceBinding, Buffer) + sizeof(ResourceBinding) * binding,
+			                                    sizeof(ResourceBinding));
+		});
+
+		ForEachBit(setLayout.SampledTexelBufferMask, [&](uint32_t binding) {
+			updateEntries[updateCount++] =
+				vk::DescriptorUpdateTemplateEntry(binding,
+			                                    0,
+			                                    setLayout.ArraySizes[binding],
+			                                    vk::DescriptorType::eUniformTexelBuffer,
+			                                    offsetof(ResourceBinding, BufferView) + sizeof(ResourceBinding) * binding,
+			                                    sizeof(ResourceBinding));
+		});
+
+		ForEachBit(setLayout.StorageTexelBufferMask, [&](uint32_t binding) {
+			updateEntries[updateCount++] =
+				vk::DescriptorUpdateTemplateEntry(binding,
+			                                    0,
+			                                    setLayout.ArraySizes[binding],
+			                                    vk::DescriptorType::eStorageTexelBuffer,
+			                                    offsetof(ResourceBinding, BufferView) + sizeof(ResourceBinding) * binding,
+			                                    sizeof(ResourceBinding));
+		});
+
+		ForEachBit(setLayout.SampledImageMask, [&](uint32_t binding) {
+			updateEntries[updateCount++] = vk::DescriptorUpdateTemplateEntry(
+				binding,
+				0,
+				setLayout.ArraySizes[binding],
+				vk::DescriptorType::eCombinedImageSampler,
+				(setLayout.FloatMask & (1u << binding) ? offsetof(ResourceBinding, Image.Float)
+			                                         : offsetof(ResourceBinding, Image.Integer)) +
+					sizeof(ResourceBinding) * binding,
+				sizeof(ResourceBinding));
+		});
+
+		ForEachBit(setLayout.SeparateImageMask, [&](uint32_t binding) {
+			updateEntries[updateCount++] = vk::DescriptorUpdateTemplateEntry(
+				binding,
+				0,
+				setLayout.ArraySizes[binding],
+				vk::DescriptorType::eSampledImage,
+				(setLayout.FloatMask & (1u << binding) ? offsetof(ResourceBinding, Image.Float)
+			                                         : offsetof(ResourceBinding, Image.Integer)) +
+					sizeof(ResourceBinding) * binding,
+				sizeof(ResourceBinding));
+		});
+
+		ForEachBit(setLayout.SamplerMask & ~setLayout.ImmutableSamplerMask, [&](uint32_t binding) {
+			updateEntries[updateCount++] =
+				vk::DescriptorUpdateTemplateEntry(binding,
+			                                    0,
+			                                    setLayout.ArraySizes[binding],
+			                                    vk::DescriptorType::eSampler,
+			                                    offsetof(ResourceBinding, Image.Float) + sizeof(ResourceBinding) * binding,
+			                                    sizeof(ResourceBinding));
+		});
+
+		ForEachBit(setLayout.StorageImageMask, [&](uint32_t binding) {
+			updateEntries[updateCount++] = vk::DescriptorUpdateTemplateEntry(
+				binding,
+				0,
+				setLayout.ArraySizes[binding],
+				vk::DescriptorType::eStorageImage,
+				(setLayout.FloatMask & (1u << binding) ? offsetof(ResourceBinding, Image.Float)
+			                                         : offsetof(ResourceBinding, Image.Integer)) +
+					sizeof(ResourceBinding) * binding,
+				sizeof(ResourceBinding));
+		});
+
+		ForEachBit(setLayout.InputAttachmentMask, [&](uint32_t binding) {
+			updateEntries[updateCount++] = vk::DescriptorUpdateTemplateEntry(
+				binding,
+				0,
+				setLayout.ArraySizes[binding],
+				vk::DescriptorType::eInputAttachment,
+				(setLayout.FloatMask & (1u << binding) ? offsetof(ResourceBinding, Image.Float)
+			                                         : offsetof(ResourceBinding, Image.Integer)) +
+					sizeof(ResourceBinding) * binding,
+				sizeof(ResourceBinding));
+		});
+
+		vk::DescriptorUpdateTemplateCreateInfo templateCI(
+			{},
+			updateCount,
+			updateEntries.data(),
+			vk::DescriptorUpdateTemplateType::eDescriptorSet,
+			_setAllocators[set]->GetSetLayout(),
+			(_resourceLayout.StagesForSets[set] & uint32_t(vk::ShaderStageFlagBits::eCompute))
+				? vk::PipelineBindPoint::eCompute
+				: vk::PipelineBindPoint::eGraphics,
+			_pipelineLayout,
+			set);
+		_updateTemplates[set] = _device.GetDevice().createDescriptorUpdateTemplate(templateCI);
+		Log::Debug("Vulkan", "Descriptor Update Template created.");
+	}
 }
 
 Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)

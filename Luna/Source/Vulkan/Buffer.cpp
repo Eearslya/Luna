@@ -57,6 +57,7 @@ Buffer::Buffer(Device& device,
 			_mappedMemory(mappedMemory) {}
 
 Buffer::~Buffer() noexcept {
+	if (_mappedMemory) { vmaUnmapMemory(_device._allocator, _allocation); }
 	if (_internalSync) {
 		_device.DestroyBufferNoLock(_buffer);
 		_device.FreeAllocationNoLock(_allocation);

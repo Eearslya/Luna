@@ -117,8 +117,8 @@ DescriptorSetAllocator::DescriptorSetAllocator(Hash hash,
 			++types;
 		}
 		if (layout.UniformBufferMask & (1u << binding)) {
-			bindings.push_back({binding, vk::DescriptorType::eUniformBuffer, arraySize, stages, nullptr});
-			_poolSizes.push_back({vk::DescriptorType::eUniformBuffer, poolArraySize});
+			bindings.push_back({binding, vk::DescriptorType::eUniformBufferDynamic, arraySize, stages, nullptr});
+			_poolSizes.push_back({vk::DescriptorType::eUniformBufferDynamic, poolArraySize});
 			++types;
 		}
 		if (layout.StorageBufferMask & (1u << binding)) {

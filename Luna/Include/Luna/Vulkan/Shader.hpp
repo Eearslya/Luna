@@ -42,12 +42,18 @@ class PipelineLayout : public HashedObject<PipelineLayout> {
 	const ProgramResourceLayout& GetResourceLayout() const {
 		return _resourceLayout;
 	}
+	vk::DescriptorUpdateTemplate GetUpdateTemplate(uint32_t set) const {
+		return _updateTemplates[set];
+	}
 
  private:
+	void CreateUpdateTemplates();
+
 	Device& _device;
 	vk::PipelineLayout _pipelineLayout;
 	ProgramResourceLayout _resourceLayout;
 	std::array<DescriptorSetAllocator*, MaxDescriptorSets> _setAllocators;
+	std::array<vk::DescriptorUpdateTemplate, MaxDescriptorSets> _updateTemplates;
 };
 
 class Shader : public HashedObject<Shader> {

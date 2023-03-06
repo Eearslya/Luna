@@ -34,6 +34,8 @@ class WSI {
 		return *_device;
 	}
 
+	glm::uvec2 GetFramebufferSize() const;
+
 	void BeginFrame();
 	void EndFrame();
 	bool IsAlive();

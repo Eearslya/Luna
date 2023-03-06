@@ -20,6 +20,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 	friend struct ImageDeleter;
 	friend class ImageView;
 	friend struct ImageViewDeleter;
+	friend class Sampler;
 	friend class Semaphore;
 	friend struct SemaphoreDeleter;
 	friend class TransientAttachmentAllocator;
@@ -33,6 +34,15 @@ class Device : public IntrusivePtrEnabled<Device> {
 
 	vk::Device GetDevice() const {
 		return _device;
+	}
+	const DeviceInfo& GetDeviceInfo() const {
+		return _deviceInfo;
+	}
+	uint32_t GetFrameIndex() const {
+		return _currentFrameContext;
+	}
+	uint32_t GetFramesInFlight() const {
+		return _frameContexts.size();
 	}
 
 	vk::Format GetDefaultDepthFormat() const;
@@ -76,6 +86,8 @@ class Device : public IntrusivePtrEnabled<Device> {
 	Program* RequestProgram(const std::string& computeGlsl);
 	Program* RequestProgram(Shader* vertex, Shader* fragment);
 	Program* RequestProgram(const std::string& vertexGlsl, const std::string& fragmentGlsl);
+	Sampler* RequestSampler(const SamplerCreateInfo& createInfo);
+	Sampler* RequestSampler(StockSampler type);
 	Shader* RequestShader(size_t codeSize, const void* code);
 	Shader* RequestShader(vk::ShaderStageFlagBits stage, const std::string& glsl);
 	PipelineLayout* RequestPipelineLayout(const ProgramResourceLayout& layout);
@@ -161,6 +173,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 	vk::Fence AllocateFence();
 	vk::Semaphore AllocateSemaphore();
 	void CreateFrameContexts(uint32_t count);
+	void CreateStockSamplers();
 	void CreateTimelineSemaphores();
 	SemaphoreHandle ConsumeReleaseSemaphore();
 	void DestroyTimelineSemaphores();
@@ -248,7 +261,10 @@ class Device : public IntrusivePtrEnabled<Device> {
 	VulkanCache<PipelineLayout> _pipelineLayouts;
 	VulkanCache<Program> _programs;
 	VulkanCache<RenderPass> _renderPasses;
+	VulkanCache<Sampler> _samplers;
 	VulkanCache<Shader> _shaders;
+
+	std::array<Sampler*, StockSamplerCount> _stockSamplers;
 };
 }  // namespace Vulkan
 }  // namespace Luna

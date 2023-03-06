@@ -44,6 +44,8 @@ class Program;
 struct ProgramResourceLayout;
 class RenderPass;
 struct RenderPassInfo;
+class Sampler;
+struct SamplerCreateInfo;
 class Semaphore;
 class Shader;
 class ShaderCompiler;
@@ -203,6 +205,25 @@ struct QueueInfo {
 	const vk::Queue& Queue(QueueType type) const {
 		return Queues[int(type)];
 	}
+};
+
+struct ResourceBinding {
+	union {
+		vk::DescriptorBufferInfo Buffer;
+		struct {
+			vk::DescriptorImageInfo Float;
+			vk::DescriptorImageInfo Integer;
+		} Image;
+		vk::BufferView BufferView;
+	};
+	vk::DeviceSize DynamicOffset;
+	uint64_t Cookie          = 0;
+	uint64_t SecondaryCookie = 0;
+};
+
+struct ResourceBindings {
+	ResourceBinding Bindings[MaxDescriptorSets][MaxDescriptorBindings] = {};
+	uint8_t PushConstantData[MaxPushConstantSize]                      = {0};
 };
 
 struct SwapchainConfiguration {

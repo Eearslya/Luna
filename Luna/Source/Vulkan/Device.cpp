@@ -8,6 +8,7 @@
 #include <Luna/Vulkan/Fence.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
+#include <Luna/Vulkan/Sampler.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
 #include <Luna/Vulkan/Shader.hpp>
 #include <Luna/Vulkan/ShaderCompiler.hpp>
@@ -85,6 +86,7 @@ Device::Device(Context& context)
 	}
 
 	CreateFrameContexts(2);
+	CreateStockSamplers();
 	CreateTimelineSemaphores();
 
 	_framebufferAllocator         = std::make_unique<FramebufferAllocator>(*this);
@@ -805,6 +807,19 @@ Program* Device::RequestProgram(const std::string& vertexGlsl, const std::string
 	}
 }
 
+Sampler* Device::RequestSampler(const SamplerCreateInfo& createInfo) {
+	Hasher h(createInfo);
+	const auto hash = h.Get();
+	auto* ret       = _samplers.Find(hash);
+	if (!ret) { ret = _samplers.EmplaceYield(hash, hash, *this, createInfo); }
+
+	return ret;
+}
+
+Sampler* Device::RequestSampler(StockSampler type) {
+	return _stockSamplers[static_cast<int>(type)];
+}
+
 Shader* Device::RequestShader(size_t codeSize, const void* code) {
 	Hasher h;
 	h(codeSize);
@@ -890,6 +905,50 @@ void Device::CreateFrameContexts(uint32_t count) {
 
 	_frameContexts.clear();
 	for (uint32_t i = 0; i < count; ++i) { _frameContexts.push_back(std::make_unique<FrameContext>(*this, i)); }
+}
+
+void Device::CreateStockSamplers() {
+	for (int i = 0; i < StockSamplerCount; ++i) {
+		const auto type = static_cast<StockSampler>(i);
+		SamplerCreateInfo info{};
+		info.MinLod = 0.0f;
+		info.MaxLod = 12.0f;
+
+		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::DefaultGeometryFilterWrap ||
+		    type == StockSampler::LinearClamp || type == StockSampler::LinearShadow || type == StockSampler::LinearWrap ||
+		    type == StockSampler::TrilinearClamp || type == StockSampler::TrilinearWrap) {
+			info.MagFilter = vk::Filter::eLinear;
+			info.MinFilter = vk::Filter::eLinear;
+		}
+
+		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::DefaultGeometryFilterWrap ||
+		    type == StockSampler::LinearClamp || type == StockSampler::TrilinearClamp ||
+		    type == StockSampler::TrilinearWrap) {
+			info.MipmapMode = vk::SamplerMipmapMode::eLinear;
+		}
+
+		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::LinearClamp ||
+		    type == StockSampler::LinearShadow || type == StockSampler::NearestClamp ||
+		    type == StockSampler::NearestShadow || type == StockSampler::TrilinearClamp) {
+			info.AddressModeU = vk::SamplerAddressMode::eClampToEdge;
+			info.AddressModeV = vk::SamplerAddressMode::eClampToEdge;
+			info.AddressModeW = vk::SamplerAddressMode::eClampToEdge;
+		}
+
+		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::DefaultGeometryFilterWrap) {
+			if (_deviceInfo.EnabledFeatures.Core.samplerAnisotropy) {
+				info.AnisotropyEnable = VK_TRUE;
+				info.MaxAnisotropy    = std::min(_deviceInfo.Properties.Core.limits.maxSamplerAnisotropy, 16.0f);
+			}
+		}
+
+		if (type == StockSampler::LinearShadow || type == StockSampler::NearestShadow) {
+			info.CompareEnable = VK_TRUE;
+			info.CompareOp     = vk::CompareOp::eLessOrEqual;
+		}
+
+		_stockSamplers[i] = RequestSampler(info);
+	}
 }
 
 SemaphoreHandle Device::ConsumeReleaseSemaphore() {
