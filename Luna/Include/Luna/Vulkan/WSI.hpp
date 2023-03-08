@@ -18,6 +18,8 @@ class WSIPlatform {
 	virtual InputAction GetKey(Key) const                                  = 0;
 	virtual std::vector<const char*> GetRequiredDeviceExtensions() const   = 0;
 	virtual std::vector<const char*> GetRequiredInstanceExtensions() const = 0;
+	virtual double GetTime() const                                         = 0;
+	virtual glm::uvec2 GetWindowSize() const                               = 0;
 	virtual bool IsAlive() const                                           = 0;
 
 	virtual VkSurfaceKHR CreateSurface(VkInstance instance) = 0;
@@ -40,6 +42,8 @@ class WSI {
 	InputAction GetButton(MouseButton) const;
 	glm::uvec2 GetFramebufferSize() const;
 	InputAction GetKey(Key) const;
+	double GetTime() const;
+	glm::uvec2 GetWindowSize() const;
 
 	void BeginFrame();
 	void EndFrame();

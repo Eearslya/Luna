@@ -19,6 +19,8 @@ class GlfwPlatform : public Vulkan::WSIPlatform {
 	virtual InputAction GetKey(Key key) const override;
 	virtual std::vector<const char*> GetRequiredDeviceExtensions() const override;
 	virtual std::vector<const char*> GetRequiredInstanceExtensions() const override;
+	virtual double GetTime() const override;
+	virtual glm::uvec2 GetWindowSize() const override;
 	virtual bool IsAlive() const override;
 
 	virtual VkSurfaceKHR CreateSurface(VkInstance instance) override;

@@ -45,6 +45,21 @@ std::vector<const char*> GlfwPlatform::GetRequiredInstanceExtensions() const {
 	return std::vector<const char*>(extensions, extensions + extensionCount);
 }
 
+double GlfwPlatform::GetTime() const {
+	return glfwGetTime();
+}
+
+glm::uvec2 GlfwPlatform::GetWindowSize() const {
+	if (_window) {
+		int width, height;
+		glfwGetWindowSize(_window, &width, &height);
+
+		return {width, height};
+	}
+
+	return {0, 0};
+}
+
 bool GlfwPlatform::IsAlive() const {
 	if (_window) { return !glfwWindowShouldClose(_window); }
 

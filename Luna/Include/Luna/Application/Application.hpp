@@ -6,6 +6,7 @@
 namespace Luna {
 namespace Vulkan {
 class Device;
+class ImGuiRenderer;
 class WSI;
 class WSIPlatform;
 }  // namespace Vulkan
@@ -21,6 +22,7 @@ class Application {
 
 	virtual void OnStart() {}
 	virtual void OnUpdate() = 0;
+	virtual void OnImGuiRender() {}
 	virtual void OnStop() {}
 
 	bool InitializeWSI(Vulkan::WSIPlatform* platform);
@@ -34,11 +36,13 @@ class Application {
  protected:
 	Vulkan::Device& GetDevice();
 	glm::uvec2 GetFramebufferSize() const;
+	void UpdateImGuiFontAtlas();
 
  private:
 	static Application* _instance;
 
 	std::unique_ptr<Vulkan::WSI> _wsi;
+	std::unique_ptr<Vulkan::ImGuiRenderer> _imguiRenderer;
 };
 
 extern Application* CreateApplication(int argc, const char** argv);

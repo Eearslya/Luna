@@ -1,3 +1,4 @@
+#include <imgui.h>
 #include <stb_image.h>
 
 #include <Luna/Application/Input.hpp>
@@ -15,6 +16,7 @@
 
 #include "Environment.hpp"
 #include "Files.hpp"
+#include "IconsFontAwesome6.h"
 #include "Model.hpp"
 
 struct UniformBuffer {
@@ -77,6 +79,8 @@ class ViewerApplication : public Luna::Application {
  public:
 	virtual void OnStart() override {
 		auto& device = GetDevice();
+
+		StyleImGui();
 
 		// Default Images
 		{
@@ -252,6 +256,13 @@ class ViewerApplication : public Luna::Application {
 		device.Submit(cmd);
 	}
 
+	virtual void OnImGuiRender() override {
+		ImGui::ShowDemoWindow();
+
+		if (ImGui::Begin("Window")) {}
+		ImGui::End();
+	}
+
  private:
 	struct DefaultImages {
 		Luna::Vulkan::ImageHandle Black2D;
@@ -268,6 +279,53 @@ class ViewerApplication : public Luna::Application {
 			device.RequestProgram(ReadFile("Resources/Shaders/PBR.vert.glsl"), ReadFile("Resources/Shaders/PBR.frag.glsl"));
 		_programSkybox = device.RequestProgram(ReadFile("Resources/Shaders/Skybox.vert.glsl"),
 		                                       ReadFile("Resources/Shaders/Skybox.frag.glsl"));
+	}
+
+	void StyleImGui() {
+		ImGuiIO& io = ImGui::GetIO();
+
+		io.ConfigWindowsMoveFromTitleBarOnly = true;
+
+		// Style
+		{
+			auto& style = ImGui::GetStyle();
+
+			// Main
+			style.WindowPadding = ImVec2(8.0f, 8.0f);
+			style.FramePadding  = ImVec2(5.0f, 3.0f);
+			style.CellPadding   = ImVec2(4.0f, 2.0f);
+
+			// Rounding
+			style.WindowRounding    = 8.0f;
+			style.ChildRounding     = 8.0f;
+			style.FrameRounding     = 8.0f;
+			style.PopupRounding     = 2.0f;
+			style.ScrollbarRounding = 12.0f;
+			style.GrabRounding      = 0.0f;
+			style.LogSliderDeadzone = 4.0f;
+			style.TabRounding       = 4.0f;
+		}
+
+		// Fonts
+		{
+			io.Fonts->Clear();
+
+			io.Fonts->AddFontFromFileTTF("Resources/Fonts/Roboto-SemiMedium.ttf", 16.0f);
+
+			ImFontConfig jpConfig;
+			jpConfig.MergeMode = true;
+			io.Fonts->AddFontFromFileTTF(
+				"Resources/Fonts/NotoSansJP-Medium.otf", 18.0f, &jpConfig, io.Fonts->GetGlyphRangesJapanese());
+
+			ImFontConfig faConfig;
+			faConfig.MergeMode                 = true;
+			faConfig.PixelSnapH                = true;
+			static const ImWchar fontAwesome[] = {ICON_MIN_FA, ICON_MAX_16_FA, 0};
+			io.Fonts->AddFontFromFileTTF("Resources/Fonts/FontAwesome6Free-Regular-400.otf", 16.0f, &faConfig, fontAwesome);
+			io.Fonts->AddFontFromFileTTF("Resources/Fonts/FontAwesome6Free-Solid-900.otf", 16.0f, &faConfig, fontAwesome);
+		}
+
+		UpdateImGuiFontAtlas();
 	}
 
 	Luna::Vulkan::Program* _program       = nullptr;

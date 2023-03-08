@@ -1,5 +1,7 @@
 #include <Luna/Application/Application.hpp>
 #include <Luna/Utility/Log.hpp>
+#include <Luna/Vulkan/ImGuiRenderer.hpp>
+#include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/WSI.hpp>
 #include <Tracy/Tracy.hpp>
 
@@ -17,6 +19,7 @@ Application::Application() {
 
 Application::~Application() noexcept {
 	Log::Info("Luna", "Luna Engine shutting down...");
+	_imguiRenderer.reset();
 	_wsi.reset();
 	Log::Shutdown();
 
@@ -26,6 +29,8 @@ Application::~Application() noexcept {
 bool Application::InitializeWSI(Vulkan::WSIPlatform* platform) {
 	_wsi = std::make_unique<Vulkan::WSI>(platform);
 	Log::Info("Luna", "WSI initialized.");
+
+	_imguiRenderer = std::make_unique<Vulkan::ImGuiRenderer>(*_wsi);
 
 	return true;
 }
@@ -40,6 +45,12 @@ int Application::Run() {
 		{
 			ZoneScopedN("Application::OnUpdate");
 			OnUpdate();
+		}
+		{
+			ZoneScopedN("Application::OnImGuiRender");
+			_imguiRenderer->BeginFrame();
+			OnImGuiRender();
+			_imguiRenderer->Render(false);
 		}
 		_wsi->EndFrame();
 
@@ -57,5 +68,9 @@ Vulkan::Device& Application::GetDevice() {
 
 glm::uvec2 Application::GetFramebufferSize() const {
 	return _wsi->GetFramebufferSize();
+}
+
+void Application::UpdateImGuiFontAtlas() {
+	_imguiRenderer->UpdateFontAtlas();
 }
 }  // namespace Luna

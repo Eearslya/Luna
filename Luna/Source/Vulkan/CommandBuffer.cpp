@@ -333,6 +333,29 @@ void CommandBuffer::SetOpaqueState() {
 	_dirty |= CommandBufferDirtyFlagBits::StaticState;
 }
 
+void CommandBuffer::SetTransparentSpriteState() {
+	ClearRenderState();
+	auto& state            = _pipelineState.StaticState;
+	state.FrontFace        = static_cast<unsigned>(vk::FrontFace::eCounterClockwise);
+	state.CullMode         = static_cast<unsigned>(vk::CullModeFlagBits::eNone);
+	state.BlendEnable      = true;
+	state.DepthTest        = true;
+	state.DepthCompare     = static_cast<unsigned>(vk::CompareOp::eLess);
+	state.DepthWrite       = false;
+	state.DepthBiasEnable  = false;
+	state.PrimitiveRestart = false;
+	state.StencilTest      = false;
+	state.Topology         = static_cast<unsigned>(vk::PrimitiveTopology::eTriangleList);
+	state.WriteMask        = ~0u;
+	state.SrcColorBlend    = static_cast<unsigned>(vk::BlendFactor::eSrcAlpha);
+	state.DstColorBlend    = static_cast<unsigned>(vk::BlendFactor::eOneMinusSrcAlpha);
+	state.ColorBlendOp     = static_cast<unsigned>(vk::BlendOp::eAdd);
+	state.SrcAlphaBlend    = static_cast<unsigned>(vk::BlendFactor::eZero);
+	state.DstAlphaBlend    = static_cast<unsigned>(vk::BlendFactor::eOneMinusSrcAlpha);
+	state.AlphaBlendOp     = static_cast<unsigned>(vk::BlendOp::eAdd);
+	_dirty |= CommandBufferDirtyFlagBits::StaticState;
+}
+
 #define SetStaticState(field, value)                                        \
 	do {                                                                      \
 		if (_pipelineState.StaticState.field != static_cast<unsigned>(value)) { \
@@ -436,6 +459,11 @@ void CommandBuffer::SetSampler(uint32_t set, uint32_t binding, const Sampler* sa
 
 void CommandBuffer::SetSampler(uint32_t set, uint32_t binding, StockSampler sampler) {
 	SetSampler(set, binding, _device.RequestSampler(sampler));
+}
+
+void CommandBuffer::SetScissor(const vk::Rect2D& scissor) {
+	_scissor = scissor;
+	_dirty |= CommandBufferDirtyFlagBits::Scissor;
 }
 
 void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view) {

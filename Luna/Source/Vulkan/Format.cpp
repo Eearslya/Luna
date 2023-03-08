@@ -41,6 +41,10 @@ void FormatBlockCount(vk::Format format, uint32_t& width, uint32_t& height) {
 	height = (height + h - 1) / h;
 }
 
+int FormatChannelCount(vk::Format format) {
+	return vk::componentCount(format);
+}
+
 bool FormatHasDepth(vk::Format format) {
 	switch (format) {
 		case vk::Format::eD16Unorm:

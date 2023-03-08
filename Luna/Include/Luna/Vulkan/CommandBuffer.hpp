@@ -221,6 +221,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 
 	void ClearRenderState();
 	void SetOpaqueState();
+	void SetTransparentSpriteState();
 
 	void SetCullMode(vk::CullModeFlagBits mode);
 	void SetDepthCompareOp(vk::CompareOp op);
@@ -237,6 +238,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void SetProgram(Program* program);
 	void SetSampler(uint32_t set, uint32_t binding, const Sampler* sampler);
 	void SetSampler(uint32_t set, uint32_t binding, StockSampler sampler);
+	void SetScissor(const vk::Rect2D& scissor);
 	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view);
 	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler* sampler);
 	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler);

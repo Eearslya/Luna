@@ -61,6 +61,14 @@ InputAction WSI::GetKey(Key key) const {
 	return _platform->GetKey(key);
 }
 
+double WSI::GetTime() const {
+	return _platform->GetTime();
+}
+
+glm::uvec2 WSI::GetWindowSize() const {
+	return _platform->GetWindowSize();
+}
+
 void WSI::BeginFrame() {
 	ZoneScopedN("WSI::BeginFrame");
 
