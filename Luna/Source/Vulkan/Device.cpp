@@ -88,6 +88,7 @@ Device::Device(Context& context)
 	CreateFrameContexts(2);
 	CreateStockSamplers();
 	CreateTimelineSemaphores();
+	CreateTracingContexts();
 
 	_framebufferAllocator         = std::make_unique<FramebufferAllocator>(*this);
 	_shaderCompiler               = std::make_unique<ShaderCompiler>();
@@ -108,6 +109,7 @@ Device::~Device() noexcept {
 	vmaDestroyAllocator(_allocator);
 
 	DestroyTimelineSemaphores();
+	DestroyTracingContexts();
 
 	_frameContexts.clear();
 
@@ -163,7 +165,7 @@ vk::ImageViewType Device::GetImageViewType(const ImageCreateInfo& imageCI, const
 			break;
 
 		case vk::ImageType::e2D:
-			if ((imageCI.MiscFlags & ImageCreateFlagBits::CubeCompatible) && (layers % 6) == 0) {
+			if ((imageCI.Flags & vk::ImageCreateFlagBits::eCubeCompatible) && (layers % 6) == 0) {
 				if (layers > 6 || forceArray) {
 					return vk::ImageViewType::eCubeArray;
 				} else {
@@ -297,9 +299,11 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& bufferInfo, const void
 				auto stagingBuffer = CreateBuffer(stagingInfo, initial);
 
 				cmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
+				LunaCmdZone(cmd, "Copy Initial Buffer Data");
 				cmd->CopyBuffer(*handle, *stagingBuffer);
 			} else {
 				cmd = RequestCommandBuffer(CommandBufferType::AsyncCompute);
+				LunaCmdZone(cmd, "Fill Initial Buffer Data");
 				cmd->FillBuffer(*handle, 0);
 			}
 
@@ -364,8 +368,6 @@ ImageHandle Device::CreateImageFromStagingBuffer(const ImageCreateInfo& imageCI,
 	   ImageCreateFlagBits::ConcurrentQueueAsyncGraphics | ImageCreateFlagBits::ConcurrentQueueAsyncTransfer);
 	const bool concurrentQueue = bool(queueFlags) || buffer || imageCI.InitialLayout != vk::ImageLayout::eUndefined;
 	if (concurrentQueue) {
-		createInfo.sharingMode = vk::SharingMode::eConcurrent;
-
 		if (buffer && !bool(queueFlags)) {
 			queueFlags |= ImageCreateFlagBits::ConcurrentQueueGraphics;
 			queueFlags |= ImageCreateFlagBits::ConcurrentQueueAsyncGraphics;
@@ -394,8 +396,10 @@ ImageHandle Device::CreateImageFromStagingBuffer(const ImageCreateInfo& imageCI,
 
 		sharingIndices = std::vector<uint32_t>(uniqueIndices.begin(), uniqueIndices.end());
 		if (sharingIndices.size() > 1) {
+			createInfo.sharingMode = vk::SharingMode::eConcurrent;
 			createInfo.setQueueFamilyIndices(sharingIndices);
 		} else {
+			createInfo.sharingMode = vk::SharingMode::eExclusive;
 			createInfo.setQueueFamilyIndices(nullptr);
 		}
 	}
@@ -452,6 +456,7 @@ ImageHandle Device::CreateImageFromStagingBuffer(const ImageCreateInfo& imageCI,
 		const bool generateMips = imageCI.MiscFlags & ImageCreateFlagBits::GenerateMipmaps;
 
 		auto transferCmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
+		LunaCmdZone(transferCmd, "Upload Image Data");
 
 		transferCmd->ImageBarrier(*handle,
 		                          vk::ImageLayout::eUndefined,
@@ -464,6 +469,7 @@ ImageHandle Device::CreateImageFromStagingBuffer(const ImageCreateInfo& imageCI,
 
 		if (generateMips) {
 			auto graphicsCmd = RequestCommandBuffer(CommandBufferType::Generic);
+			LunaCmdZone(graphicsCmd, "Generate Mipmaps");
 
 			std::vector<SemaphoreHandle> semaphores(1);
 			Submit(transferCmd, nullptr, &semaphores);
@@ -967,6 +973,45 @@ void Device::CreateTimelineSemaphores() {
 	}
 }
 
+void Device::CreateTracingContexts() {
+	for (uint32_t i = 0; i < QueueTypeCount; ++i) {
+		const auto type = static_cast<QueueType>(i);
+		auto& queue     = _queueData[i];
+		auto& frame     = Frame();
+		auto& pool      = frame.CommandPools[i][0];
+		auto cmd        = pool->RequestCommandBuffer();
+
+		if (_extensions.CalibratedTimestamps) {
+			queue.TracingContext =
+				TracyVkContextCalibrated(_deviceInfo.PhysicalDevice,
+			                           _device,
+			                           _queueInfo.Queue(type),
+			                           cmd,
+			                           VULKAN_HPP_DEFAULT_DISPATCHER.vkGetPhysicalDeviceCalibrateableTimeDomainsEXT,
+			                           VULKAN_HPP_DEFAULT_DISPATCHER.vkGetCalibratedTimestampsEXT);
+		} else {
+			queue.TracingContext = TracyVkContext(_deviceInfo.PhysicalDevice, _device, _queueInfo.Queue(type), cmd);
+		}
+
+		if (queue.TracingContext) {
+			std::vector<std::string> types;
+			if (_queueInfo.Queue(type) == _queueInfo.Queue(QueueType::Graphics)) {
+				types.push_back(VulkanEnumToString(QueueType::Graphics));
+			}
+			if (_queueInfo.Queue(type) == _queueInfo.Queue(QueueType::Transfer)) {
+				types.push_back(VulkanEnumToString(QueueType::Transfer));
+			}
+			if (_queueInfo.Queue(type) == _queueInfo.Queue(QueueType::Compute)) {
+				types.push_back(VulkanEnumToString(QueueType::Compute));
+			}
+			const std::string name = fmt::format("{} Queue", fmt::join(types, ", "));
+			TracyVkContextName(queue.TracingContext, name.c_str(), name.size());
+		}
+	}
+
+	WaitIdle();
+}
+
 void Device::DestroyTimelineSemaphores() {
 	if (!_deviceInfo.EnabledFeatures.Vulkan12.timelineSemaphore) { return; }
 
@@ -975,6 +1020,12 @@ void Device::DestroyTimelineSemaphores() {
 			_device.destroySemaphore(queue.TimelineSemaphore);
 			queue.TimelineSemaphore = nullptr;
 		}
+	}
+}
+
+void Device::DestroyTracingContexts() {
+	for (auto& queue : _queueData) {
+		if (queue.TracingContext) { TracyVkDestroy(queue.TracingContext); }
 	}
 }
 
@@ -1011,6 +1062,7 @@ const RenderPass& Device::RequestRenderPass(const RenderPassInfo& rpInfo, bool c
 	Hasher h;
 
 	std::array<vk::Format, MaxColorAttachments> colorFormats;
+	colorFormats.fill(vk::Format::eUndefined);
 	vk::Format depthFormat = vk::Format::eUndefined;
 	uint32_t lazy          = 0;
 	uint32_t optimal       = 0;
@@ -1031,8 +1083,13 @@ const RenderPass& Device::RequestRenderPass(const RenderPassInfo& rpInfo, bool c
 		}
 	}
 
-	h(rpInfo.BaseLayer);
-	h(rpInfo.ArrayLayers);
+	if (rpInfo.ArrayLayers > 1) {
+		h(rpInfo.BaseLayer);
+		h(rpInfo.ArrayLayers);
+	} else {
+		h(uint32_t(0));
+		h(rpInfo.ArrayLayers);
+	}
 	h(rpInfo.Subpasses.size());
 	for (const auto& subpass : rpInfo.Subpasses) {
 		h(subpass.ColorAttachmentCount);
@@ -1138,7 +1195,8 @@ CommandBufferHandle Device::RequestCommandBufferNoLock(uint32_t threadIndex, Com
 	const vk::CommandBufferBeginInfo cmdBI(vk::CommandBufferUsageFlagBits::eOneTimeSubmit, nullptr);
 	cmdBuf.begin(cmdBI);
 	_lock.Counter++;
-	CommandBufferHandle handle(_commandBufferPool.Allocate(*this, cmdBuf, type, threadIndex));
+	CommandBufferHandle handle(
+		_commandBufferPool.Allocate(*this, cmdBuf, type, threadIndex, _queueData[int(queueType)].TracingContext));
 
 	return handle;
 }
@@ -1621,7 +1679,8 @@ bool Device::ImageManager::CreateAltViews(const ImageCreateInfo& imageCI, const 
 }
 
 bool Device::ImageManager::CreateDefaultView(const vk::ImageViewCreateInfo& viewCI) {
-	ImageView = Parent.GetDevice().createImageView(viewCI);
+	DefaultViewType = viewCI.viewType;
+	ImageView       = Parent.GetDevice().createImageView(viewCI);
 	Log::Debug("Vulkan", "Image View created.");
 
 	return true;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Luna/Vulkan/Common.hpp>
+#include <Luna/Vulkan/Tracing.hpp>
 #include <atomic>
 
 namespace Luna {
@@ -163,6 +164,8 @@ class Device : public IntrusivePtrEnabled<Device> {
 		uint64_t TimelineValue = 0;
 		std::vector<SemaphoreHandle> WaitSemaphores;
 		std::vector<vk::PipelineStageFlags2> WaitStages;
+
+		TracyVkCtx TracingContext;
 	};
 
 	void AddWaitSemaphoreNoLock(QueueType queueType,
@@ -175,8 +178,10 @@ class Device : public IntrusivePtrEnabled<Device> {
 	void CreateFrameContexts(uint32_t count);
 	void CreateStockSamplers();
 	void CreateTimelineSemaphores();
+	void CreateTracingContexts();
 	SemaphoreHandle ConsumeReleaseSemaphore();
 	void DestroyTimelineSemaphores();
+	void DestroyTracingContexts();
 	FrameContext& Frame();
 	QueueType GetQueueType(CommandBufferType cmdType) const;
 	void ReleaseFence(vk::Fence fence);

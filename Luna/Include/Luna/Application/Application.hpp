@@ -15,6 +15,10 @@ class Application {
 	Application();
 	virtual ~Application() noexcept;
 
+	Vulkan::WSI& GetWSI() {
+		return *_wsi;
+	}
+
 	virtual void OnStart() {}
 	virtual void OnUpdate() = 0;
 	virtual void OnStop() {}
@@ -23,11 +27,17 @@ class Application {
 
 	int Run();
 
+	static Application* Get() {
+		return _instance;
+	}
+
  protected:
 	Vulkan::Device& GetDevice();
 	glm::uvec2 GetFramebufferSize() const;
 
  private:
+	static Application* _instance;
+
 	std::unique_ptr<Vulkan::WSI> _wsi;
 };
 

@@ -15,6 +15,10 @@ GlfwPlatform::~GlfwPlatform() noexcept {
 	glfwTerminate();
 }
 
+InputAction GlfwPlatform::GetButton(MouseButton button) const {
+	return static_cast<InputAction>(glfwGetMouseButton(_window, int(button)));
+}
+
 glm::uvec2 GlfwPlatform::GetFramebufferSize() const {
 	if (_window) {
 		int width, height;
@@ -24,6 +28,10 @@ glm::uvec2 GlfwPlatform::GetFramebufferSize() const {
 	}
 
 	return {0, 0};
+}
+
+InputAction GlfwPlatform::GetKey(Key key) const {
+	return static_cast<InputAction>(glfwGetKey(_window, int(key)));
 }
 
 std::vector<const char*> GlfwPlatform::GetRequiredDeviceExtensions() const {
@@ -80,6 +88,12 @@ void GlfwPlatform::Initialize() {
 	}
 
 	glfwSetWindowUserPointer(_window, this);
+	glfwSetMouseButtonCallback(_window, CallbackButton);
+	glfwSetCharCallback(_window, CallbackChar);
+	glfwSetKeyCallback(_window, CallbackKey);
+	glfwSetCursorPosCallback(_window, CallbackPosition);
+	glfwSetScrollCallback(_window, CallbackScroll);
+
 	glfwShowWindow(_window);
 	glfwFocusWindow(_window);
 }
@@ -90,5 +104,25 @@ void GlfwPlatform::Update() {
 
 void GlfwPlatform::Shutdown() {
 	if (_window) { glfwDestroyWindow(_window); }
+}
+
+void GlfwPlatform::CallbackButton(GLFWwindow* window, int32_t button, int32_t action, int32_t mods) {
+	Input::MouseButtonEvent(static_cast<MouseButton>(button), static_cast<InputAction>(action), InputMods(mods));
+}
+
+void GlfwPlatform::CallbackChar(GLFWwindow* window, uint32_t codepoint) {
+	Input::CharEvent(codepoint);
+}
+
+void GlfwPlatform::CallbackKey(GLFWwindow* window, int32_t key, int32_t scancode, int32_t action, int32_t mods) {
+	Input::KeyEvent(static_cast<Key>(key), static_cast<InputAction>(action), InputMods(mods));
+}
+
+void GlfwPlatform::CallbackPosition(GLFWwindow* window, double x, double y) {
+	Input::MouseMovedEvent({x, y});
+}
+
+void GlfwPlatform::CallbackScroll(GLFWwindow* window, double xOffset, double yOffset) {
+	Input::MouseScrolledEvent({xOffset, yOffset});
 }
 }  // namespace Luna

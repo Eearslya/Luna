@@ -1,4 +1,5 @@
 target_sources(Luna PRIVATE
 	Application.cpp
 	EntryPoint.cpp
-	GlfwPlatform.cpp)
+	GlfwPlatform.cpp
+  Input.cpp)

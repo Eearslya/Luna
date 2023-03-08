@@ -15,7 +15,9 @@ class Hasher {
 	Hasher() = default;
 	explicit Hasher(Hash h) : _hash(h) {}
 	template <typename T>
-	Hasher(const T& data) {}
+	Hasher(const T& data) {
+		operator()(data);
+	}
 
 	Hash Get() const {
 		return _hash;

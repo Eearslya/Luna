@@ -57,8 +57,13 @@ void CommandBufferDeleter::operator()(CommandBuffer* cmdBuf) {
 	cmdBuf->_device._commandBufferPool.Free(cmdBuf);
 }
 
-CommandBuffer::CommandBuffer(Device& device, vk::CommandBuffer cmdBuf, CommandBufferType type, uint32_t threadIndex)
-		: _device(device), _commandBuffer(cmdBuf), _commandBufferType(type), _threadIndex(threadIndex) {
+CommandBuffer::CommandBuffer(
+	Device& device, vk::CommandBuffer cmdBuf, CommandBufferType type, uint32_t threadIndex, TracyVkCtx tracingContext)
+		: _device(device),
+			_commandBuffer(cmdBuf),
+			_commandBufferType(type),
+			_threadIndex(threadIndex),
+			_tracingContext(tracingContext) {
 	ClearRenderState();
 	memset(&_bindings, 0, sizeof(_bindings));
 
@@ -68,8 +73,25 @@ CommandBuffer::CommandBuffer(Device& device, vk::CommandBuffer cmdBuf, CommandBu
 
 CommandBuffer::~CommandBuffer() noexcept {}
 
+void CommandBuffer::BeginZone(const std::string& name) {
+	if (_device._extensions.DebugUtils) {
+		const vk::DebugUtilsLabelEXT label(name.c_str());
+		_commandBuffer.beginDebugUtilsLabelEXT(label);
+	}
+	_tracingDepth++;
+}
+
 void CommandBuffer::End() {
+	while (_tracingDepth > 0) { EndZone(); }
+	if (_tracingContext) { TracyVkCollect(_tracingContext, _commandBuffer); }
 	_commandBuffer.end();
+}
+
+void CommandBuffer::EndZone() {
+	if (_tracingDepth == 0) { return; }
+
+	if (_device._extensions.DebugUtils) { _commandBuffer.endDebugUtilsLabelEXT(); }
+	_tracingDepth--;
 }
 
 void CommandBuffer::Barrier(const vk::DependencyInfo& dep) {
@@ -235,6 +257,21 @@ void CommandBuffer::CopyBufferToImage(const Image& dst,
 		src.GetBuffer(), dst.GetImage(), dst.GetLayout(vk::ImageLayout::eTransferDstOptimal), blit);
 }
 
+void CommandBuffer::CopyImage(Image& dst,
+                              Image& src,
+                              const vk::Offset3D& dstOffset,
+                              const vk::Offset3D& srcOffset,
+                              const vk::Extent3D& extent,
+                              const vk::ImageSubresourceLayers& dstSubresource,
+                              const vk::ImageSubresourceLayers& srcSubresource) {
+	const vk::ImageCopy region(srcSubresource, srcOffset, dstSubresource, dstOffset, extent);
+	_commandBuffer.copyImage(src.GetImage(),
+	                         src.GetLayout(vk::ImageLayout::eTransferSrcOptimal),
+	                         dst.GetImage(),
+	                         dst.GetLayout(vk::ImageLayout::eTransferDstOptimal),
+	                         region);
+}
+
 void CommandBuffer::FillBuffer(const Buffer& dst, uint8_t value) {
 	FillBuffer(dst, value, 0, dst.GetCreateInfo().Size);
 }
@@ -296,6 +333,34 @@ void CommandBuffer::SetOpaqueState() {
 	_dirty |= CommandBufferDirtyFlagBits::StaticState;
 }
 
+#define SetStaticState(field, value)                                        \
+	do {                                                                      \
+		if (_pipelineState.StaticState.field != static_cast<unsigned>(value)) { \
+			_pipelineState.StaticState.field = static_cast<unsigned>(value);      \
+			_dirty |= CommandBufferDirtyFlagBits::StaticState;                    \
+		}                                                                       \
+	} while (0)
+
+#define SetDynamicState(field, value, dirtyFlag) \
+	do {                                           \
+		if (_dynamicState.field != value) {          \
+			_dynamicState.field = value;               \
+			_dirty |= dirtyFlag;                       \
+		}                                            \
+	} while (0)
+
+void CommandBuffer::SetCullMode(vk::CullModeFlagBits mode) {
+	SetStaticState(CullMode, mode);
+}
+
+void CommandBuffer::SetDepthCompareOp(vk::CompareOp op) {
+	SetStaticState(DepthCompare, op);
+}
+
+void CommandBuffer::SetDepthWrite(bool write) {
+	SetStaticState(DepthWrite, write);
+}
+
 void CommandBuffer::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
 	if (FlushRenderState(true)) { _commandBuffer.draw(vertexCount, instanceCount, firstVertex, firstInstance); }
 }
@@ -336,9 +401,6 @@ void CommandBuffer::SetProgram(Program* program) {
 	if (!_programLayout) {
 		_dirty |= CommandBufferDirtyFlagBits::PushConstants;
 		_dirtySets = ~0u;
-
-		_programLayout  = program->GetPipelineLayout();
-		_pipelineLayout = _programLayout->GetPipelineLayout();
 	} else if (program->GetPipelineLayout()->GetHash() != _programLayout->GetHash()) {
 		auto& newLayout = program->GetPipelineLayout()->GetResourceLayout();
 		auto& oldLayout = _programLayout->GetResourceLayout();
@@ -356,6 +418,9 @@ void CommandBuffer::SetProgram(Program* program) {
 			}
 		}
 	}
+
+	_programLayout  = program->GetPipelineLayout();
+	_pipelineLayout = _programLayout->GetPipelineLayout();
 }
 
 void CommandBuffer::SetSampler(uint32_t set, uint32_t binding, const Sampler* sampler) {
@@ -535,6 +600,8 @@ void CommandBuffer::BindPipeline(vk::PipelineBindPoint bindPoint, vk::Pipeline p
 }
 
 Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
+	ZoneScopedN("Vulkan::CommandBuffer::BuildGraphicsPipeline()");
+
 	const auto& rp    = _pipelineState.CompatibleRenderPass;
 	const auto& state = _pipelineState.StaticState;
 
@@ -730,8 +797,8 @@ void CommandBuffer::FlushDescriptorSet(uint32_t set) {
 	ForEachBit(setLayout.UniformBufferMask, [&](uint32_t binding) {
 		uint32_t arraySize = setLayout.ArraySizes[binding];
 		for (uint32_t i = 0; i < arraySize; ++i) {
-			h(_bindings.Bindings[set][binding + 1].Cookie);
-			h(_bindings.Bindings[set][binding + 1].Buffer.range);
+			h(_bindings.Bindings[set][binding + i].Cookie);
+			h(_bindings.Bindings[set][binding + i].Buffer.range);
 			dynamicOffsets[dynamicOffsetCount++] = _bindings.Bindings[set][binding + 1].DynamicOffset;
 		}
 	});
@@ -739,54 +806,54 @@ void CommandBuffer::FlushDescriptorSet(uint32_t set) {
 	ForEachBit(setLayout.StorageBufferMask, [&](uint32_t binding) {
 		uint32_t arraySize = setLayout.ArraySizes[binding];
 		for (uint32_t i = 0; i < arraySize; ++i) {
-			h(_bindings.Bindings[set][binding + 1].Cookie);
-			h(_bindings.Bindings[set][binding + 1].Buffer.offset);
-			h(_bindings.Bindings[set][binding + 1].Buffer.range);
+			h(_bindings.Bindings[set][binding + i].Cookie);
+			h(_bindings.Bindings[set][binding + i].Buffer.offset);
+			h(_bindings.Bindings[set][binding + i].Buffer.range);
 		}
 	});
 
 	ForEachBit(setLayout.SampledTexelBufferMask | setLayout.StorageTexelBufferMask, [&](uint32_t binding) {
 		uint32_t arraySize = setLayout.ArraySizes[binding];
-		for (uint32_t i = 0; i < arraySize; ++i) { h(_bindings.Bindings[set][binding + 1].Cookie); }
+		for (uint32_t i = 0; i < arraySize; ++i) { h(_bindings.Bindings[set][binding + i].Cookie); }
 	});
 
 	ForEachBit(setLayout.SampledImageMask, [&](uint32_t binding) {
 		uint32_t arraySize = setLayout.ArraySizes[binding];
 		for (uint32_t i = 0; i < arraySize; ++i) {
-			h(_bindings.Bindings[set][binding + 1].Cookie);
-			if ((setLayout.ImmutableSamplerMask & (1u << (binding + 1))) == 0) {
-				h(_bindings.Bindings[set][binding + 1].SecondaryCookie);
+			h(_bindings.Bindings[set][binding + i].Cookie);
+			if ((setLayout.ImmutableSamplerMask & (1u << (binding + i))) == 0) {
+				h(_bindings.Bindings[set][binding + i].SecondaryCookie);
 			}
-			h(_bindings.Bindings[set][binding + 1].Image.Float.imageLayout);
+			h(_bindings.Bindings[set][binding + i].Image.Float.imageLayout);
 		}
 	});
 
 	ForEachBit(setLayout.SeparateImageMask, [&](uint32_t binding) {
 		uint32_t arraySize = setLayout.ArraySizes[binding];
 		for (uint32_t i = 0; i < arraySize; ++i) {
-			h(_bindings.Bindings[set][binding + 1].Cookie);
-			h(_bindings.Bindings[set][binding + 1].Image.Float.imageLayout);
+			h(_bindings.Bindings[set][binding + i].Cookie);
+			h(_bindings.Bindings[set][binding + i].Image.Float.imageLayout);
 		}
 	});
 
 	ForEachBit(setLayout.SamplerMask & ~setLayout.ImmutableSamplerMask, [&](uint32_t binding) {
 		uint32_t arraySize = setLayout.ArraySizes[binding];
-		for (uint32_t i = 0; i < arraySize; ++i) { h(_bindings.Bindings[set][binding + 1].SecondaryCookie); }
+		for (uint32_t i = 0; i < arraySize; ++i) { h(_bindings.Bindings[set][binding + i].SecondaryCookie); }
 	});
 
 	ForEachBit(setLayout.StorageImageMask, [&](uint32_t binding) {
 		uint32_t arraySize = setLayout.ArraySizes[binding];
 		for (uint32_t i = 0; i < arraySize; ++i) {
-			h(_bindings.Bindings[set][binding + 1].Cookie);
-			h(_bindings.Bindings[set][binding + 1].Image.Float.imageLayout);
+			h(_bindings.Bindings[set][binding + i].Cookie);
+			h(_bindings.Bindings[set][binding + i].Image.Float.imageLayout);
 		}
 	});
 
 	ForEachBit(setLayout.InputAttachmentMask, [&](uint32_t binding) {
 		uint32_t arraySize = setLayout.ArraySizes[binding];
 		for (uint32_t i = 0; i < arraySize; ++i) {
-			h(_bindings.Bindings[set][binding + 1].Cookie);
-			h(_bindings.Bindings[set][binding + 1].Image.Float.imageLayout);
+			h(_bindings.Bindings[set][binding + i].Cookie);
+			h(_bindings.Bindings[set][binding + i].Image.Float.imageLayout);
 		}
 	});
 
@@ -920,7 +987,7 @@ void CommandBuffer::SetViewportScissor(const RenderPassInfo& info, const Framebu
 	rect.extent.height = std::min(extent.height - rect.offset.y, rect.extent.height);
 
 	_viewport = vk::Viewport(
-		float(rect.offset.x), float(rect.offset.y), float(rect.extent.width), float(rect.extent.height), 0.0f, 1.0f);
+		float(rect.offset.x), float(rect.extent.height), float(rect.extent.width), -float(rect.extent.height), 0.0f, 1.0f);
 	_scissor = rect;
 }
 }  // namespace Vulkan

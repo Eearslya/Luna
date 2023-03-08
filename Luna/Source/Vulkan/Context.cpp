@@ -304,7 +304,8 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 		}
 	}
 
-	_extensions.Synchronization2 = TryExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+	_extensions.CalibratedTimestamps = TryExtension(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
+	_extensions.Synchronization2     = TryExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
 
 	// Determine our queue family assignments.
 	auto familyProps = _deviceInfo.QueueFamilies;

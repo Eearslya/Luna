@@ -3,6 +3,7 @@
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
 #include <Luna/Vulkan/WSI.hpp>
+#include <Tracy/Tracy.hpp>
 
 namespace Luna {
 namespace Vulkan {
@@ -48,11 +49,21 @@ WSI::~WSI() noexcept {
 	_platform->Shutdown();
 }
 
+InputAction WSI::GetButton(MouseButton button) const {
+	return _platform->GetButton(button);
+}
+
 glm::uvec2 WSI::GetFramebufferSize() const {
 	return _platform->GetFramebufferSize();
 }
 
+InputAction WSI::GetKey(Key key) const {
+	return _platform->GetKey(key);
+}
+
 void WSI::BeginFrame() {
+	ZoneScopedN("WSI::BeginFrame");
+
 	_platform->Update();
 	_device->NextFrame();
 
@@ -61,33 +72,39 @@ void WSI::BeginFrame() {
 
 	auto device = _context->GetDevice();
 
-	int retry = 0;
-	while (retry < 3) {
-		auto acquire = _device->RequestSemaphore();
+	{
+		ZoneScopedN("AcquireNextImage");
 
-		try {
-			const auto acquireResult =
-				device.acquireNextImageKHR(_swapchain, std::numeric_limits<uint64_t>::max(), acquire->GetSemaphore(), nullptr);
+		int retry = 0;
+		while (retry < 3) {
+			auto acquire = _device->RequestSemaphore();
 
-			if (acquireResult.result == vk::Result::eSuboptimalKHR) { _swapchainSuboptimal = true; }
+			try {
+				const auto acquireResult = device.acquireNextImageKHR(
+					_swapchain, std::numeric_limits<uint64_t>::max(), acquire->GetSemaphore(), nullptr);
 
-			acquire->SignalExternal();
-			// acquire->SetForeignQueue();
-			_swapchainAcquired = acquireResult.value;
-			_swapchainRelease[_swapchainAcquired].Reset();
-			_device->SetAcquireSemaphore(_swapchainAcquired, acquire);
+				if (acquireResult.result == vk::Result::eSuboptimalKHR) { _swapchainSuboptimal = true; }
 
-			break;
-		} catch (const vk::OutOfDateKHRError& e) {
-			RecreateSwapchain();
-			++retry;
+				acquire->SignalExternal();
+				// acquire->SetForeignQueue();
+				_swapchainAcquired = acquireResult.value;
+				_swapchainRelease[_swapchainAcquired].Reset();
+				_device->SetAcquireSemaphore(_swapchainAcquired, acquire);
 
-			continue;
+				break;
+			} catch (const vk::OutOfDateKHRError& e) {
+				RecreateSwapchain();
+				++retry;
+
+				continue;
+			}
 		}
 	}
 }
 
 void WSI::EndFrame() {
+	ZoneScopedN("WSI::EndFrame");
+
 	if (_swapchainAcquired == NotAcquired) { return; }
 
 	auto device        = _context->GetDevice();

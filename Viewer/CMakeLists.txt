@@ -4,6 +4,7 @@ add_executable(Viewer)
 target_link_libraries(Viewer PRIVATE fastgltf Luna mikktspace stb)
 
 target_sources(Viewer PRIVATE
+	Environment.cpp
 	Files.cpp
 	Model.cpp
 	Viewer.cpp)

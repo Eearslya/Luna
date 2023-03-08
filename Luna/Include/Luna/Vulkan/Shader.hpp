@@ -123,8 +123,26 @@ struct std::hash<Luna::Vulkan::ProgramResourceLayout> {
 	size_t operator()(const Luna::Vulkan::ProgramResourceLayout& layout) {
 		Luna::Hasher h;
 
-		h.Data(sizeof(layout.SetLayouts), layout.SetLayouts);
-		h.Data(sizeof(layout.StagesForBindings), layout.StagesForBindings);
+		for (uint32_t i = 0; i < Luna::Vulkan::MaxDescriptorSets; ++i) {
+			auto& set = layout.SetLayouts[i];
+			h(set.FloatMask);
+			h(set.ImmutableSamplerMask);
+			h(set.InputAttachmentMask);
+			h(set.SampledBufferMask);
+			h(set.SampledImageMask);
+			h(set.SampledTexelBufferMask);
+			h(set.SamplerMask);
+			h(set.SeparateImageMask);
+			h(set.StorageBufferMask);
+			h(set.StorageImageMask);
+			h(set.StorageTexelBufferMask);
+			h(set.UniformBufferMask);
+
+			for (uint32_t j = 0; j < Luna::Vulkan::MaxDescriptorBindings; ++j) {
+				h(set.ArraySizes[j]);
+				h(layout.StagesForBindings[i][j]);
+			}
+		}
 		h.Data(sizeof(layout.SpecConstantMask), layout.SpecConstantMask);
 		h(layout.PushConstantRange.stageFlags);
 		h(layout.PushConstantRange.size);

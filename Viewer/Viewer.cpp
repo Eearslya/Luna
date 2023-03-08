@@ -1,5 +1,6 @@
 #include <stb_image.h>
 
+#include <Luna/Application/Input.hpp>
 #include <Luna/Luna.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
@@ -12,44 +13,9 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <utility>
 
+#include "Environment.hpp"
+#include "Files.hpp"
 #include "Model.hpp"
-
-constexpr const char* vertex = R"VERTEX(
-#version 460 core
-
-layout(location = 0) in vec3 inPosition;
-layout(location = 1) in vec2 inUV;
-
-layout(set = 0, binding = 0) uniform UniformData {
-  mat4 Projection;
-  mat4 View;
-} Uniform;
-
-layout(push_constant) uniform PushConstantData {
-  mat4 Node;
-} PC;
-
-layout(location = 0) out vec2 outUV;
-
-void main() {
-  outUV = inUV;
-  gl_Position = Uniform.Projection * Uniform.View * PC.Node * vec4(inPosition, 1.0f);
-}
-)VERTEX";
-
-constexpr const char* fragment = R"FRAGMENT(
-#version 460 core
-
-layout(location = 0) in vec2 inUV;
-
-layout(set = 0, binding = 1) uniform sampler2D TexAlbedo;
-
-layout(location = 0) out vec4 outColor;
-
-void main() {
-  outColor = texture(TexAlbedo, inUV);
-}
-)FRAGMENT";
 
 struct UniformBuffer {
 	glm::mat4 Projection;
@@ -57,14 +23,54 @@ struct UniformBuffer {
 	glm::mat4 Model;
 };
 
+struct SceneUBO {
+	glm::mat4 Projection;
+	glm::mat4 View;
+	glm::mat4 ViewProjection;
+	glm::vec4 ViewPosition;
+	glm::vec4 SunPosition;
+	float Exposure;
+	float Gamma;
+	float PrefilteredMipLevels;
+	float IBLStrength;
+};
+
 struct PushConstant {
 	glm::mat4 Node = glm::mat4(1.0f);
 };
 
-struct SimpleVertex {
-	glm::vec3 Position;
-	glm::vec2 UV;
-	glm::vec3 Color;
+template <typename T>
+class UniformBufferSet {
+ public:
+	UniformBufferSet(Luna::Vulkan::Device& device) : _device(device) {
+		const uint32_t frames = device.GetFramesInFlight();
+		const Luna::Vulkan::BufferCreateInfo bufferCI{
+			Luna::Vulkan::BufferDomain::Host, sizeof(T), vk::BufferUsageFlagBits::eUniformBuffer};
+		for (uint32_t i = 0; i < frames; ++i) { _buffers.push_back(_device.CreateBuffer(bufferCI)); }
+	}
+
+	T& Data() {
+		return _data;
+	}
+	const T& Data() const {
+		return _data;
+	}
+
+	void Bind(Luna::Vulkan::CommandBufferHandle& cmd, uint32_t set, uint32_t binding) {
+		Flush();
+		cmd->SetUniformBuffer(set, binding, *_buffers[_device.GetFrameIndex()], 0, sizeof(T));
+	}
+
+	void Flush() {
+		const auto& buffer = _buffers[_device.GetFrameIndex()];
+		void* bufferData   = buffer->Map();
+		memcpy(bufferData, &_data, sizeof(T));
+	}
+
+ private:
+	Luna::Vulkan::Device& _device;
+	std::vector<Luna::Vulkan::BufferHandle> _buffers;
+	T _data;
 };
 
 class ViewerApplication : public Luna::Application {
@@ -72,26 +78,63 @@ class ViewerApplication : public Luna::Application {
 	virtual void OnStart() override {
 		auto& device = GetDevice();
 
-		_program = device.RequestProgram(vertex, fragment);
+		// Default Images
+		{
+			uint32_t pixel;
+			std::array<Luna::Vulkan::ImageInitialData, 6> initialImages;
+			for (int i = 0; i < 6; ++i) { initialImages[i] = Luna::Vulkan::ImageInitialData{.Data = &pixel}; }
+			const Luna::Vulkan::ImageCreateInfo imageCI2D = {
+				.Domain        = Luna::Vulkan::ImageDomain::Physical,
+				.Width         = 1,
+				.Height        = 1,
+				.Depth         = 1,
+				.MipLevels     = 1,
+				.ArrayLayers   = 1,
+				.Format        = vk::Format::eR8G8B8A8Unorm,
+				.InitialLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+				.Type          = vk::ImageType::e2D,
+				.Usage         = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eInputAttachment,
+				.Samples       = vk::SampleCountFlagBits::e1,
+			};
+			const Luna::Vulkan::ImageCreateInfo imageCICube = {
+				.Domain        = Luna::Vulkan::ImageDomain::Physical,
+				.Width         = 1,
+				.Height        = 1,
+				.Depth         = 1,
+				.MipLevels     = 1,
+				.ArrayLayers   = 6,
+				.Format        = vk::Format::eR8G8B8A8Unorm,
+				.InitialLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+				.Type          = vk::ImageType::e2D,
+				.Usage         = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eInputAttachment,
+				.Samples       = vk::SampleCountFlagBits::e1,
+				.Flags         = vk::ImageCreateFlagBits::eCubeCompatible,
+			};
 
-		_model = std::make_unique<Model>(device, "deccer-cubes-main/SM_Deccer_Cubes_Textured.gltf");
+			pixel                    = 0xff000000;
+			_defaultImages.Black2D   = device.CreateImage(imageCI2D, initialImages.data());
+			_defaultImages.BlackCube = device.CreateImage(imageCICube, initialImages.data());
 
-		std::vector<SimpleVertex> vertices;
-		vertices.push_back({{0.0f, -1.0f, 0.0f}, {0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}});
-		vertices.push_back({{-1.0f, 1.0f, 0.0f}, {0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}});
-		vertices.push_back({{1.0f, 1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}});
-		const Luna::Vulkan::BufferCreateInfo bufferCI{Luna::Vulkan::BufferDomain::Device,
-		                                              sizeof(SimpleVertex) * vertices.size(),
-		                                              vk::BufferUsageFlagBits::eVertexBuffer};
-		_vbo = device.CreateBuffer(bufferCI, vertices.data());
+			pixel                 = 0xff888888;
+			_defaultImages.Gray2D = device.CreateImage(imageCI2D, initialImages.data());
 
-		int width, height, channels;
-		stbi_uc* pixels = stbi_load("wall.jpg", &width, &height, &channels, 4);
-		const Luna::Vulkan::ImageCreateInfo imageCI =
-			Luna::Vulkan::ImageCreateInfo::Immutable2D(vk::Format::eR8G8B8A8Srgb, width, height, true);
-		const Luna::Vulkan::ImageInitialData imageData{.Data = pixels};
-		_texture = device.CreateImage(imageCI, &imageData);
-		stbi_image_free(pixels);
+			pixel                   = 0xffff8888;
+			_defaultImages.Normal2D = device.CreateImage(imageCI2D, initialImages.data());
+
+			pixel                    = 0xffffffff;
+			_defaultImages.White2D   = device.CreateImage(imageCI2D, initialImages.data());
+			_defaultImages.WhiteCube = device.CreateImage(imageCICube, initialImages.data());
+		}
+
+		_sceneUBO = std::make_unique<UniformBufferSet<SceneUBO>>(device);
+
+		_environment = std::make_unique<Environment>(device, "Assets/Environments/TokyoBigSight.hdr");
+		_model       = std::make_unique<Model>(device, "Assets/Models/DamagedHelmet/DamagedHelmet.gltf");
+
+		Luna::Input::OnKey += [&](Luna::Key key, Luna::InputAction action, Luna::InputMods mods) {
+			if (action == Luna::InputAction::Press && key == Luna::Key::F5) { LoadShaders(); }
+		};
+		LoadShaders();
 	}
 
 	virtual void OnUpdate() override {
@@ -99,44 +142,53 @@ class ViewerApplication : public Luna::Application {
 		const auto frameIndex = device.GetFrameIndex();
 		const auto fbSize     = GetFramebufferSize();
 
-		UniformBuffer uniformData = {};
-		uniformData.Projection = glm::perspective(glm::radians(60.0f), float(fbSize.x) / float(fbSize.y), 0.01f, 1000.0f);
-		uniformData.Projection[1][1] *= -1.0f;
-		uniformData.View = glm::lookAt(glm::vec3(4, 3, 10), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
-
 		PushConstant pushConstant = {};
 
 		// Update Uniform Buffer
-		if (_ubos.size() <= frameIndex) { _ubos.resize(frameIndex + 1); }
-		auto& ubo = _ubos[frameIndex];
-		if (!ubo) {
-			const Luna::Vulkan::BufferCreateInfo bufferCI{
-				Luna::Vulkan::BufferDomain::Host, sizeof(UniformBuffer), vk::BufferUsageFlagBits::eUniformBuffer};
-			ubo = device.CreateBuffer(bufferCI);
-		}
-		void* uboData = ubo->Map();
-		memcpy(uboData, &uniformData, sizeof(UniformBuffer));
+		auto& sceneData          = _sceneUBO->Data();
+		sceneData.Projection     = glm::perspective(glm::radians(60.0f), float(fbSize.x) / float(fbSize.y), 0.01f, 1000.0f);
+		sceneData.View           = glm::lookAt(glm::vec3(1, 0.5f, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+		sceneData.ViewProjection = sceneData.Projection * sceneData.View;
+		sceneData.ViewPosition   = glm::vec4(1, 0.5f, 2, 1.0f);
+		sceneData.SunPosition    = glm::vec4(10.0f, 10.0f, 10.0f, 1.0f);
+		sceneData.Exposure       = 4.5f;
+		sceneData.Gamma          = 2.2f;
+		sceneData.PrefilteredMipLevels = _environment ? _environment->Prefiltered->GetCreateInfo().MipLevels : 1;
+		sceneData.IBLStrength          = _environment ? 1.0f : 0.0f;
 
 		auto cmd                   = device.RequestCommandBuffer();
 		auto rpInfo                = device.GetSwapchainRenderPass(Luna::Vulkan::SwapchainRenderPassType::Depth);
 		rpInfo.ColorClearValues[0] = vk::ClearColorValue(0.36f, 0.0f, 0.63f, 1.0f);
 		cmd->BeginRenderPass(rpInfo);
-		cmd->SetProgram(_program);
-		cmd->SetVertexBinding(0, *_vbo, 0, sizeof(SimpleVertex), vk::VertexInputRate::eVertex);
-		cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, Position));
-		cmd->SetVertexAttribute(1, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, Texcoord0));
-		cmd->SetUniformBuffer(0, 0, *ubo);
+		_sceneUBO->Bind(cmd, 0, 0);
+
+		const auto SetTexture = [&](uint32_t set, uint32_t binding, Texture& texture, Luna::Vulkan::ImageHandle& fallback) {
+			if (texture.Image) {
+				cmd->SetTexture(set, binding, texture.Image->Image->GetView(), texture.Sampler->Sampler);
+			} else {
+				cmd->SetTexture(set, binding, fallback->GetView(), Luna::Vulkan::StockSampler::NearestWrap);
+			}
+		};
+
+		cmd->SetTexture(0,
+		                1,
+		                _environment ? _environment->Irradiance->GetView() : _defaultImages.BlackCube->GetView(),
+		                Luna::Vulkan::StockSampler::LinearClamp);
+		cmd->SetTexture(0,
+		                2,
+		                _environment ? _environment->Prefiltered->GetView() : _defaultImages.BlackCube->GetView(),
+		                Luna::Vulkan::StockSampler::LinearClamp);
+		cmd->SetTexture(0,
+		                3,
+		                _environment ? _environment->BrdfLut->GetView() : _defaultImages.Black2D->GetView(),
+		                Luna::Vulkan::StockSampler::LinearClamp);
 
 		std::function<void(Model&, const Node*)> IterateNode = [&](Model& model, const Node* node) {
 			if (node->Mesh) {
 				const auto mesh   = node->Mesh;
-				const auto skinId = node->Skin;
-				const auto* skin  = skinId >= 0 ? model.Skins[skinId].get() : nullptr;
-				pushConstant.Node = model.Animate ? node->GetAnimGlobalTransform() : node->GetGlobalTransform();
-				// pushConstant.Skinned = skin ? 1 : 0;
+				pushConstant.Node = node->GetGlobalTransform();
 
 				cmd->SetVertexBinding(0, *mesh->Buffer, 0, sizeof(Vertex), vk::VertexInputRate::eVertex);
-				// cmd->SetStorageBuffer(1, 0, skin ? *skin->Buffer : *defaultJointMatrices);
 				if (mesh->TotalIndexCount > 0) {
 					cmd->SetIndexBuffer(*mesh->Buffer, mesh->IndexOffset, vk::IndexType::eUint32);
 				}
@@ -147,10 +199,13 @@ class ViewerApplication : public Luna::Application {
 					const auto* material = submesh.Material;
 					material->Update(device);
 					cmd->PushConstants(&pushConstant, 0, sizeof(PushConstant));
-					cmd->SetSampler(0, 4, device.RequestSampler(Luna::Vulkan::StockSampler::LinearWrap));
 
-					// cmd->SetUniformBuffer(2, 0, *material->DataBuffer);
-					cmd->SetTexture(0, 1, material->Albedo->Image->Image->GetView(), material->Albedo->Sampler->Sampler);
+					cmd->SetUniformBuffer(1, 0, *material->DataBuffer);
+					SetTexture(1, 1, *material->Albedo, _defaultImages.White2D);
+					SetTexture(1, 2, *material->Normal, _defaultImages.Normal2D);
+					SetTexture(1, 3, *material->PBR, _defaultImages.White2D);
+					SetTexture(1, 4, *material->Occlusion, _defaultImages.White2D);
+					SetTexture(1, 5, *material->Emissive, _defaultImages.Black2D);
 
 					if (submesh.IndexCount == 0) {
 						cmd->Draw(submesh.VertexCount, 1, submesh.FirstVertex, 0);
@@ -164,20 +219,63 @@ class ViewerApplication : public Luna::Application {
 		};
 
 		auto RenderModel = [&](Model& model) {
+			LunaCmdZone(cmd, "Render Model");
+
+			cmd->SetProgram(_program);
+			cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, Position));
+			cmd->SetVertexAttribute(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, Normal));
+			cmd->SetVertexAttribute(2, 0, vk::Format::eR32G32B32A32Sfloat, offsetof(Vertex, Tangent));
+			cmd->SetVertexAttribute(3, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, Texcoord0));
+			cmd->SetVertexAttribute(4, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, Texcoord1));
+			cmd->SetVertexAttribute(5, 0, vk::Format::eR32G32B32A32Sfloat, offsetof(Vertex, Color0));
+			cmd->SetVertexAttribute(6, 0, vk::Format::eR32G32B32A32Uint, offsetof(Vertex, Joints0));
+			cmd->SetVertexAttribute(7, 0, vk::Format::eR32G32B32A32Sfloat, offsetof(Vertex, Weights0));
+
 			for (const auto* node : model.RootNodes) { IterateNode(model, node); }
 		};
 		if (_model) { RenderModel(*_model); }
+
+		if (_environment) {
+			LunaCmdZone(cmd, "Render Skybox");
+
+			cmd->SetOpaqueState();
+			cmd->SetProgram(_programSkybox);
+			cmd->SetDepthCompareOp(vk::CompareOp::eLessOrEqual);
+			cmd->SetDepthWrite(false);
+			cmd->SetCullMode(vk::CullModeFlagBits::eFront);
+			_sceneUBO->Bind(cmd, 0, 0);
+			cmd->SetTexture(1, 0, _environment->Skybox->GetView(), Luna::Vulkan::StockSampler::LinearClamp);
+			cmd->Draw(36);
+		}
 
 		cmd->EndRenderPass();
 		device.Submit(cmd);
 	}
 
  private:
-	Luna::Vulkan::Program* _program = nullptr;
-	Luna::Vulkan::ImageHandle _texture;
-	Luna::Vulkan::BufferHandle _vbo;
-	std::vector<Luna::Vulkan::BufferHandle> _ubos;
+	struct DefaultImages {
+		Luna::Vulkan::ImageHandle Black2D;
+		Luna::Vulkan::ImageHandle BlackCube;
+		Luna::Vulkan::ImageHandle Gray2D;
+		Luna::Vulkan::ImageHandle Normal2D;
+		Luna::Vulkan::ImageHandle White2D;
+		Luna::Vulkan::ImageHandle WhiteCube;
+	};
+
+	void LoadShaders() {
+		auto& device = GetDevice();
+		_program =
+			device.RequestProgram(ReadFile("Resources/Shaders/PBR.vert.glsl"), ReadFile("Resources/Shaders/PBR.frag.glsl"));
+		_programSkybox = device.RequestProgram(ReadFile("Resources/Shaders/Skybox.vert.glsl"),
+		                                       ReadFile("Resources/Shaders/Skybox.frag.glsl"));
+	}
+
+	Luna::Vulkan::Program* _program       = nullptr;
+	Luna::Vulkan::Program* _programSkybox = nullptr;
+	std::unique_ptr<Environment> _environment;
 	std::unique_ptr<Model> _model;
+	std::unique_ptr<UniformBufferSet<SceneUBO>> _sceneUBO;
+	DefaultImages _defaultImages;
 };
 
 Luna::Application* Luna::CreateApplication(int argc, const char** argv) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Luna/Vulkan/Common.hpp>
+#include <Luna/Vulkan/Tracing.hpp>
 
 namespace Luna {
 namespace Vulkan {
@@ -127,6 +128,20 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	friend struct CommandBufferDeleter;
 
  public:
+	class TracingZone {
+	 public:
+		TracingZone(CommandBuffer& parent, const std::string& name) : _parent(parent) {
+			_parent.BeginZone(name);
+		}
+
+		~TracingZone() noexcept {
+			_parent.EndZone();
+		}
+
+	 private:
+		CommandBuffer& _parent;
+	};
+
 	~CommandBuffer() noexcept;
 
 	vk::CommandBuffer GetCommandBuffer() const {
@@ -135,11 +150,19 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	vk::PipelineStageFlags2 GetSwapchainStages() const {
 		return _swapchainStages;
 	}
+	TracyVkCtx GetTracingContext() const {
+		return _tracingContext;
+	}
 	CommandBufferType GetType() const {
 		return _commandBufferType;
 	}
+	TracingZone Zone(const std::string& name) {
+		return TracingZone(*this, name);
+	}
 
+	void BeginZone(const std::string& name);
 	void End();
+	void EndZone();
 
 	void Barrier(const vk::DependencyInfo& dep);
 	void BarrierPrepareGenerateMipmaps(const Image& image,
@@ -185,12 +208,23 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	                       uint32_t rowLength,
 	                       uint32_t sliceHeight,
 	                       const vk::ImageSubresourceLayers& subresource);
+	void CopyImage(Image& dst,
+	               Image& src,
+	               const vk::Offset3D& dstOffset,
+	               const vk::Offset3D& srcOffset,
+	               const vk::Extent3D& extent,
+	               const vk::ImageSubresourceLayers& dstSubresource,
+	               const vk::ImageSubresourceLayers& srcSubresource);
 	void FillBuffer(const Buffer& dst, uint8_t value);
 	void FillBuffer(const Buffer& dst, uint8_t value, vk::DeviceSize offset, vk::DeviceSize size);
 	void GenerateMipmaps(const Image& image);
 
 	void ClearRenderState();
 	void SetOpaqueState();
+
+	void SetCullMode(vk::CullModeFlagBits mode);
+	void SetDepthCompareOp(vk::CompareOp op);
+	void SetDepthWrite(bool write);
 
 	void Draw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);
 	void DrawIndexed(uint32_t indexCount,
@@ -220,7 +254,8 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void EndRenderPass();
 
  private:
-	CommandBuffer(Device& device, vk::CommandBuffer cmdBuf, CommandBufferType type, uint32_t threadIndex);
+	CommandBuffer(
+		Device& device, vk::CommandBuffer cmdBuf, CommandBufferType type, uint32_t threadIndex, TracyVkCtx tracingContext);
 
 	void BeginCompute();
 	void BeginContext();
@@ -238,6 +273,8 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	vk::CommandBuffer _commandBuffer;
 	CommandBufferType _commandBufferType;
 	uint32_t _threadIndex;
+	TracyVkCtx _tracingContext;
+	uint32_t _tracingDepth = 0;
 
 	uint32_t _activeVBOs                                            = 0;
 	std::array<vk::DescriptorSet, MaxDescriptorSets> _allocatedSets = {};

@@ -1,9 +1,14 @@
 #include <Luna/Application/Application.hpp>
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Vulkan/WSI.hpp>
+#include <Tracy/Tracy.hpp>
 
 namespace Luna {
+Application* Application::_instance = nullptr;
+
 Application::Application() {
+	_instance = this;
+
 	Log::Initialize();
 	Log::SetLevel(Log::Level::Trace);
 
@@ -14,6 +19,8 @@ Application::~Application() noexcept {
 	Log::Info("Luna", "Luna Engine shutting down...");
 	_wsi.reset();
 	Log::Shutdown();
+
+	_instance = nullptr;
 }
 
 bool Application::InitializeWSI(Vulkan::WSIPlatform* platform) {
@@ -30,8 +37,13 @@ int Application::Run() {
 		_wsi->Update();
 
 		_wsi->BeginFrame();
-		OnUpdate();
+		{
+			ZoneScopedN("Application::OnUpdate");
+			OnUpdate();
+		}
 		_wsi->EndFrame();
+
+		FrameMark;
 	}
 	OnStop();
 	Log::Info("Luna", "Stopping application.");

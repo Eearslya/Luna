@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Luna/Application/Input.hpp>
 #include <Luna/Vulkan/Common.hpp>
 #include <glm/glm.hpp>
 #include <vector>
@@ -12,7 +13,9 @@ class WSIPlatform {
  public:
 	virtual ~WSIPlatform() noexcept = default;
 
+	virtual InputAction GetButton(MouseButton) const                       = 0;
 	virtual glm::uvec2 GetFramebufferSize() const                          = 0;
+	virtual InputAction GetKey(Key) const                                  = 0;
 	virtual std::vector<const char*> GetRequiredDeviceExtensions() const   = 0;
 	virtual std::vector<const char*> GetRequiredInstanceExtensions() const = 0;
 	virtual bool IsAlive() const                                           = 0;
@@ -34,7 +37,9 @@ class WSI {
 		return *_device;
 	}
 
+	InputAction GetButton(MouseButton) const;
 	glm::uvec2 GetFramebufferSize() const;
+	InputAction GetKey(Key) const;
 
 	void BeginFrame();
 	void EndFrame();

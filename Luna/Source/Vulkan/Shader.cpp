@@ -2,6 +2,7 @@
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Shader.hpp>
+#include <Luna/Vulkan/Tracing.hpp>
 #include <spirv_cross.hpp>
 
 namespace Luna {
@@ -26,6 +27,8 @@ static std::string MaskToBindings(uint32_t mask, const uint8_t* arraySizes = nul
 
 PipelineLayout::PipelineLayout(Hash hash, Device& device, const ProgramResourceLayout& resourceLayout)
 		: HashedObject<PipelineLayout>(hash), _device(device), _resourceLayout(resourceLayout) {
+	ZoneScopedN("Vulkan::PipelineLayout()");
+
 	std::array<vk::DescriptorSetLayout, MaxDescriptorSets> layouts = {};
 
 	uint32_t setCount = 0;
@@ -181,6 +184,8 @@ void PipelineLayout::CreateUpdateTemplates() {
 
 Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 		: HashedObject<Shader>(hash), _device(device) {
+	ZoneScopedN("Vulkan::Shader()");
+
 	const vk::ShaderModuleCreateInfo shaderCI({}, codeSize, reinterpret_cast<const uint32_t*>(code));
 	_shaderModule = _device.GetDevice().createShaderModule(shaderCI);
 	Log::Debug("Vulkan", "Shader Module created.");
@@ -446,6 +451,8 @@ ProgramBuilder& ProgramBuilder::AddStage(ShaderStage stage, Shader* shader) {
 
 Program::Program(Hash hash, Device& device, Shader* vertex, Shader* fragment)
 		: HashedObject<Program>(hash), _device(device) {
+	ZoneScopedN("Vulkan::Program()");
+
 	std::fill(_shaders.begin(), _shaders.end(), nullptr);
 	_shaders[static_cast<int>(ShaderStage::Vertex)]   = vertex;
 	_shaders[static_cast<int>(ShaderStage::Fragment)] = fragment;
@@ -454,6 +461,8 @@ Program::Program(Hash hash, Device& device, Shader* vertex, Shader* fragment)
 }
 
 Program::Program(Hash hash, Device& device, Shader* compute) : HashedObject<Program>(hash), _device(device) {
+	ZoneScopedN("Vulkan::Program()");
+
 	std::fill(_shaders.begin(), _shaders.end(), nullptr);
 	_shaders[static_cast<int>(ShaderStage::Compute)] = compute;
 
@@ -461,6 +470,8 @@ Program::Program(Hash hash, Device& device, Shader* compute) : HashedObject<Prog
 }
 
 Program::Program(Hash hash, Device& device, ProgramBuilder& builder) : HashedObject<Program>(hash), _device(device) {
+	ZoneScopedN("Vulkan::Program()");
+
 	std::fill(_shaders.begin(), _shaders.end(), nullptr);
 	for (int stage = 0; stage < ShaderStageCount; ++stage) { _shaders[stage] = builder._shaders[stage]; }
 

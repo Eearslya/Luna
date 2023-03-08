@@ -1116,9 +1116,9 @@ void Model::ImportSamplers(const fastgltf::Asset& gltfModel, Luna::Vulkan::Devic
 		auto& sampler           = Samplers.emplace_back(std::make_shared<Sampler>());
 
 		Luna::Vulkan::SamplerCreateInfo samplerCI{
-			.MagFilter        = vk::Filter::eNearest,
-			.MinFilter        = vk::Filter::eNearest,
-			.MipmapMode       = vk::SamplerMipmapMode::eNearest,
+			.MagFilter        = vk::Filter::eLinear,
+			.MinFilter        = vk::Filter::eLinear,
+			.MipmapMode       = vk::SamplerMipmapMode::eLinear,
 			.AddressModeU     = vk::SamplerAddressMode::eRepeat,
 			.AddressModeV     = vk::SamplerAddressMode::eRepeat,
 			.AnisotropyEnable = device.GetDeviceInfo().EnabledFeatures.Core.samplerAnisotropy,
@@ -1205,18 +1205,18 @@ void Model::ImportSamplers(const fastgltf::Asset& gltfModel, Luna::Vulkan::Devic
 		sampler->Sampler = device.RequestSampler(samplerCI);
 	}
 
-	_defaultSampler = Samplers.emplace_back(new Sampler()).get();
+	DefaultSampler = Samplers.emplace_back(new Sampler()).get();
 	const Luna::Vulkan::SamplerCreateInfo samplerCI{
-		.MagFilter        = vk::Filter::eNearest,
-		.MinFilter        = vk::Filter::eNearest,
-		.MipmapMode       = vk::SamplerMipmapMode::eNearest,
+		.MagFilter        = vk::Filter::eLinear,
+		.MinFilter        = vk::Filter::eLinear,
+		.MipmapMode       = vk::SamplerMipmapMode::eLinear,
 		.AddressModeU     = vk::SamplerAddressMode::eRepeat,
 		.AddressModeV     = vk::SamplerAddressMode::eRepeat,
 		.AnisotropyEnable = device.GetDeviceInfo().EnabledFeatures.Core.samplerAnisotropy,
 		.MaxAnisotropy    = device.GetDeviceInfo().Properties.Core.limits.maxSamplerAnisotropy,
 		.MinLod           = 0.0f,
 		.MaxLod           = 16.0f};
-	_defaultSampler->Sampler = device.RequestSampler(samplerCI);
+	DefaultSampler->Sampler = device.RequestSampler(samplerCI);
 }
 
 void Model::ImportSkins(const fastgltf::Asset& gltfModel, Luna::Vulkan::Device& device) {
@@ -1253,7 +1253,7 @@ void Model::ImportTextures(const fastgltf::Asset& gltfModel) {
 		if (gltfTexture.samplerIndex) {
 			texture->Sampler = Samplers[gltfTexture.samplerIndex.value()].get();
 		} else {
-			texture->Sampler = _defaultSampler;
+			texture->Sampler = DefaultSampler;
 		}
 	}
 }

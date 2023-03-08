@@ -14,7 +14,9 @@ class GlfwPlatform : public Vulkan::WSIPlatform {
 	void operator=(GlfwPlatform&&)      = delete;
 	~GlfwPlatform() noexcept;
 
+	virtual InputAction GetButton(MouseButton button) const override;
 	virtual glm::uvec2 GetFramebufferSize() const override;
+	virtual InputAction GetKey(Key key) const override;
 	virtual std::vector<const char*> GetRequiredDeviceExtensions() const override;
 	virtual std::vector<const char*> GetRequiredInstanceExtensions() const override;
 	virtual bool IsAlive() const override;
@@ -25,6 +27,12 @@ class GlfwPlatform : public Vulkan::WSIPlatform {
 	virtual void Shutdown() override;
 
  private:
+	static void CallbackButton(GLFWwindow* window, int32_t button, int32_t action, int32_t mods);
+	static void CallbackChar(GLFWwindow* window, uint32_t codepoint);
+	static void CallbackKey(GLFWwindow* window, int32_t key, int32_t scancode, int32_t action, int32_t mods);
+	static void CallbackPosition(GLFWwindow* window, double x, double y);
+	static void CallbackScroll(GLFWwindow* window, double xOffset, double yOffset);
+
 	GLFWwindow* _window = nullptr;
 };
 }  // namespace Luna

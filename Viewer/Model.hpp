@@ -353,6 +353,7 @@ class Model {
 
 	bool Animate             = true;
 	uint32_t ActiveAnimation = 0;
+	Sampler* DefaultSampler  = nullptr;
 
  private:
 	void CalculateBounds(Node* node, Node* parent);
@@ -370,7 +371,6 @@ class Model {
 	void ImportMesh(const fastgltf::Asset& gltfModel, const fastgltf::Mesh& gltfMesh, Mesh& mesh);
 
 	Material* _defaultMaterial = nullptr;
-	Sampler* _defaultSampler   = nullptr;
 	std::vector<std::shared_ptr<Node>> _nodes;
 	glm::vec3 _minDim = glm::vec3(std::numeric_limits<float>::max());
 	glm::vec3 _maxDim = glm::vec3(std::numeric_limits<float>::lowest());
