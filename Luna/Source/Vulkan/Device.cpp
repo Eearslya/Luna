@@ -188,6 +188,19 @@ vk::ImageViewType Device::GetImageViewType(const ImageCreateInfo& imageCI, const
 	}
 }
 
+QueueType Device::GetQueueType(CommandBufferType cmdType) const {
+	if (cmdType != CommandBufferType::AsyncGraphics) {
+		return static_cast<QueueType>(cmdType);
+	} else {
+		if (_queueInfo.SameFamily(QueueType::Graphics, QueueType::Compute) &&
+		    !_queueInfo.SameQueue(QueueType::Graphics, QueueType::Compute)) {
+			return QueueType::Compute;
+		} else {
+			return QueueType::Graphics;
+		}
+	}
+}
+
 bool Device::IsFormatSupported(vk::Format format, vk::FormatFeatureFlags features, vk::ImageTiling tiling) const {
 	const auto props = _deviceInfo.PhysicalDevice.getFormatProperties(format);
 	const auto featureFlags =
@@ -207,6 +220,11 @@ void Device::AddWaitSemaphore(CommandBufferType cbType,
 void Device::EndFrame() {
 	DeviceFlush();
 	EndFrameNoLock();
+}
+
+void Device::FlushFrame() {
+	DeviceLock();
+	FlushFrameNoLock();
 }
 
 void Device::NextFrame() {
@@ -299,11 +317,11 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& bufferInfo, const void
 				auto stagingBuffer = CreateBuffer(stagingInfo, initial);
 
 				cmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
-				LunaCmdZone(cmd, "Copy Initial Buffer Data");
+				LunaCmdZone(*cmd, "Copy Initial Buffer Data");
 				cmd->CopyBuffer(*handle, *stagingBuffer);
 			} else {
 				cmd = RequestCommandBuffer(CommandBufferType::AsyncCompute);
-				LunaCmdZone(cmd, "Fill Initial Buffer Data");
+				LunaCmdZone(*cmd, "Fill Initial Buffer Data");
 				cmd->FillBuffer(*handle, 0);
 			}
 
@@ -456,7 +474,7 @@ ImageHandle Device::CreateImageFromStagingBuffer(const ImageCreateInfo& imageCI,
 		const bool generateMips = imageCI.MiscFlags & ImageCreateFlagBits::GenerateMipmaps;
 
 		auto transferCmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
-		LunaCmdZone(transferCmd, "Upload Image Data");
+		LunaCmdZone(*transferCmd, "Upload Image Data");
 
 		transferCmd->ImageBarrier(*handle,
 		                          vk::ImageLayout::eUndefined,
@@ -469,7 +487,7 @@ ImageHandle Device::CreateImageFromStagingBuffer(const ImageCreateInfo& imageCI,
 
 		if (generateMips) {
 			auto graphicsCmd = RequestCommandBuffer(CommandBufferType::Generic);
-			LunaCmdZone(graphicsCmd, "Generate Mipmaps");
+			LunaCmdZone(*graphicsCmd, "Generate Mipmaps");
 
 			std::vector<SemaphoreHandle> semaphores(1);
 			Submit(transferCmd, nullptr, &semaphores);
@@ -1033,19 +1051,6 @@ Device::FrameContext& Device::Frame() {
 	return *_frameContexts[_currentFrameContext];
 }
 
-QueueType Device::GetQueueType(CommandBufferType cmdType) const {
-	if (cmdType != CommandBufferType::AsyncGraphics) {
-		return static_cast<QueueType>(cmdType);
-	} else {
-		if (_queueInfo.SameFamily(QueueType::Graphics, QueueType::Compute) &&
-		    !_queueInfo.SameQueue(QueueType::Graphics, QueueType::Compute)) {
-			return QueueType::Compute;
-		} else {
-			return QueueType::Graphics;
-		}
-	}
-}
-
 void Device::ReleaseFence(vk::Fence fence) {
 	_availableFences.push_back(fence);
 }
@@ -1185,6 +1190,10 @@ void Device::EndFrameNoLock() {
 void Device::FlushFrame(QueueType queueType) {
 	if (!_queueInfo.Queue(queueType)) { return; }
 	SubmitQueue(queueType, nullptr, nullptr);
+}
+
+void Device::FlushFrameNoLock() {
+	for (const auto& t : QueueFlushOrder) { FlushFrame(t); }
 }
 
 CommandBufferHandle Device::RequestCommandBufferNoLock(uint32_t threadIndex, CommandBufferType type) {

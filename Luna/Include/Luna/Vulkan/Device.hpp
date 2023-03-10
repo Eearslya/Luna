@@ -49,6 +49,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 	vk::Format GetDefaultDepthFormat() const;
 	vk::Format GetDefaultDepthStencilFormat() const;
 	vk::ImageViewType GetImageViewType(const ImageCreateInfo& imageCI, const ImageViewCreateInfo* viewCI) const;
+	QueueType GetQueueType(CommandBufferType cmdType) const;
 	bool IsFormatSupported(vk::Format format, vk::FormatFeatureFlags features, vk::ImageTiling tiling) const;
 
 	void AddWaitSemaphore(CommandBufferType cbType,
@@ -56,6 +57,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 	                      vk::PipelineStageFlags2 stages,
 	                      bool flush);
 	void EndFrame();
+	void FlushFrame();
 	void NextFrame();
 	CommandBufferHandle RequestCommandBuffer(CommandBufferType type = CommandBufferType::Generic);
 	CommandBufferHandle RequestCommandBufferForThread(uint32_t threadIndex,
@@ -183,7 +185,6 @@ class Device : public IntrusivePtrEnabled<Device> {
 	void DestroyTimelineSemaphores();
 	void DestroyTracingContexts();
 	FrameContext& Frame();
-	QueueType GetQueueType(CommandBufferType cmdType) const;
 	void ReleaseFence(vk::Fence fence);
 	void ReleaseSemaphore(vk::Semaphore semaphore);
 	const Framebuffer& RequestFramebuffer(const RenderPassInfo& rpInfo);
@@ -193,6 +194,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 
 	void EndFrameNoLock();
 	void FlushFrame(QueueType queueType);
+	void FlushFrameNoLock();
 	CommandBufferHandle RequestCommandBufferNoLock(uint32_t threadIndex, CommandBufferType type);
 	void SubmitNoLock(CommandBufferHandle cmd, FenceHandle* fence, std::vector<SemaphoreHandle>* semaphores);
 	void SubmitQueue(QueueType queueType, InternalFence* submitFence, std::vector<SemaphoreHandle>* semaphores);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Luna/Application/Input.hpp>
+#include <Luna/Utility/Delegate.hpp>
 #include <Luna/Vulkan/Common.hpp>
 #include <glm/glm.hpp>
 #include <vector>
@@ -38,6 +39,9 @@ class WSI {
 	Vulkan::Device& GetDevice() {
 		return *_device;
 	}
+	const SwapchainConfiguration& GetSwapchainConfig() const {
+		return _swapchainConfig;
+	}
 
 	InputAction GetButton(MouseButton) const;
 	glm::uvec2 GetFramebufferSize() const;
@@ -49,6 +53,8 @@ class WSI {
 	void EndFrame();
 	bool IsAlive();
 	void Update();
+
+	Delegate<void(const SwapchainConfiguration&)> OnSwapchainChanged;
 
  private:
 	static constexpr uint32_t NotAcquired = std::numeric_limits<uint32_t>::max();

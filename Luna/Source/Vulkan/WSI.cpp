@@ -190,6 +190,8 @@ void WSI::RecreateSwapchain() {
 	_swapchainSuboptimal = false;
 
 	_device->SetupSwapchain(*this);
+
+	OnSwapchainChanged(_swapchainConfig);
 }
 }  // namespace Vulkan
 }  // namespace Luna

@@ -1,5 +1,6 @@
 #include <Luna/Application/Application.hpp>
 #include <Luna/Utility/Log.hpp>
+#include <Luna/Utility/Threading.hpp>
 #include <Luna/Vulkan/ImGuiRenderer.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/WSI.hpp>
@@ -15,12 +16,15 @@ Application::Application() {
 	Log::SetLevel(Log::Level::Trace);
 
 	Log::Info("Luna", "Luna Engine initializing...");
+
+	_threading = std::make_unique<Threading>();
 }
 
 Application::~Application() noexcept {
 	Log::Info("Luna", "Luna Engine shutting down...");
 	_imguiRenderer.reset();
 	_wsi.reset();
+	_threading.reset();
 	Log::Shutdown();
 
 	_instance = nullptr;
@@ -29,6 +33,8 @@ Application::~Application() noexcept {
 bool Application::InitializeWSI(Vulkan::WSIPlatform* platform) {
 	_wsi = std::make_unique<Vulkan::WSI>(platform);
 	Log::Info("Luna", "WSI initialized.");
+
+	_wsi->OnSwapchainChanged += [&](const Luna::Vulkan::SwapchainConfiguration& config) { OnSwapchainChanged(config); };
 
 	_imguiRenderer = std::make_unique<Vulkan::ImGuiRenderer>(*_wsi);
 
@@ -48,9 +54,9 @@ int Application::Run() {
 		}
 		{
 			ZoneScopedN("Application::OnImGuiRender");
-			_imguiRenderer->BeginFrame();
-			OnImGuiRender();
-			_imguiRenderer->Render(false);
+			// _imguiRenderer->BeginFrame();
+			// OnImGuiRender();
+			// _imguiRenderer->Render(false);
 		}
 		_wsi->EndFrame();
 
@@ -68,6 +74,10 @@ Vulkan::Device& Application::GetDevice() {
 
 glm::uvec2 Application::GetFramebufferSize() const {
 	return _wsi->GetFramebufferSize();
+}
+
+const Vulkan::SwapchainConfiguration& Application::GetSwapchainConfig() const {
+	return _wsi->GetSwapchainConfig();
 }
 
 void Application::UpdateImGuiFontAtlas() {

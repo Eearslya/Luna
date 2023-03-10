@@ -1,12 +1,16 @@
 #pragma once
 
+#include <Luna/Utility/Delegate.hpp>
 #include <glm/glm.hpp>
 #include <memory>
 
 namespace Luna {
+class Threading;
+
 namespace Vulkan {
 class Device;
 class ImGuiRenderer;
+struct SwapchainConfiguration;
 class WSI;
 class WSIPlatform;
 }  // namespace Vulkan
@@ -36,11 +40,15 @@ class Application {
  protected:
 	Vulkan::Device& GetDevice();
 	glm::uvec2 GetFramebufferSize() const;
+	const Vulkan::SwapchainConfiguration& GetSwapchainConfig() const;
 	void UpdateImGuiFontAtlas();
+
+	Delegate<void(const Luna::Vulkan::SwapchainConfiguration&)> OnSwapchainChanged;
 
  private:
 	static Application* _instance;
 
+	std::unique_ptr<Threading> _threading;
 	std::unique_ptr<Vulkan::WSI> _wsi;
 	std::unique_ptr<Vulkan::ImGuiRenderer> _imguiRenderer;
 };

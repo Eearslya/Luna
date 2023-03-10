@@ -107,7 +107,7 @@ Environment::Environment(Luna::Vulkan::Device& device, const std::filesystem::pa
 	};
 
 	auto cmd = device.RequestCommandBuffer();
-	LunaCmdZone(cmd, "Generate Environment Map");
+	LunaCmdZone(*cmd, "Generate Environment Map");
 	const auto ProcessCubeMap = [&](Luna::Vulkan::Program* program,
 	                                Luna::Vulkan::ImageHandle& src,
 	                                Luna::Vulkan::ImageHandle& dst) {
@@ -186,20 +186,20 @@ Environment::Environment(Luna::Vulkan::Device& device, const std::filesystem::pa
 	};
 
 	{
-		LunaCmdZone(cmd, "Cubemap Conversion");
+		LunaCmdZone(*cmd, "Cubemap Conversion");
 		ProcessCubeMap(progCubemap, baseHdr, Skybox);
 	}
 	{
-		LunaCmdZone(cmd, "Irradiance Map");
+		LunaCmdZone(*cmd, "Irradiance Map");
 		ProcessCubeMap(progIrradiance, Skybox, Irradiance);
 	}
 	{
-		LunaCmdZone(cmd, "Prefiltering");
+		LunaCmdZone(*cmd, "Prefiltering");
 		ProcessCubeMap(progPrefilter, Skybox, Prefiltered);
 	}
 
 	{
-		LunaCmdZone(cmd, "BRDF LUT");
+		LunaCmdZone(*cmd, "BRDF LUT");
 
 		auto imageCI          = Luna::Vulkan::ImageCreateInfo::RenderTarget(vk::Format::eR16G16Sfloat, 512, 512);
 		imageCI.Usage         = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled;

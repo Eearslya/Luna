@@ -147,6 +147,9 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	vk::CommandBuffer GetCommandBuffer() const {
 		return _commandBuffer;
 	}
+	Device& GetDevice() {
+		return _device;
+	}
 	vk::PipelineStageFlags2 GetSwapchainStages() const {
 		return _swapchainStages;
 	}
