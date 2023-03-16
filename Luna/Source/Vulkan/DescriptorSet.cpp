@@ -1,4 +1,5 @@
 #include <Luna/Utility/Log.hpp>
+#include <Luna/Utility/Threading.hpp>
 #include <Luna/Vulkan/DescriptorSet.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Image.hpp>
@@ -80,8 +81,7 @@ DescriptorSetAllocator::DescriptorSetAllocator(Hash hash,
 	vk::DescriptorSetLayoutCreateInfo layoutCI;
 
 	if (!_bindless) {
-		// const uint32_t threadCount = Threading::Get()->GetThreadCount();
-		const uint32_t threadCount = 1;
+		const uint32_t threadCount = Threading::Get()->GetThreadCount() + 1;
 		for (uint32_t i = 0; i < threadCount; ++i) { _perThread.emplace_back(new PerThread()); }
 	}
 

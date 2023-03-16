@@ -18,10 +18,10 @@ class ImGuiRenderer {
 		return _instance;
 	}
 
-	void BeginFrame();
-	void Render(bool clear = false);
-	ImGuiTextureId Texture(ImageViewHandle view, Sampler* sampler, uint32_t arrayLayer = VK_REMAINING_ARRAY_LAYERS);
-	ImGuiTextureId Texture(ImageViewHandle view,
+	void BeginFrame(const vk::Extent2D& fbSize);
+	void Render(CommandBuffer& cmd, bool clear = false);
+	ImGuiTextureId Texture(ImageView& view, Sampler* sampler, uint32_t arrayLayer = VK_REMAINING_ARRAY_LAYERS);
+	ImGuiTextureId Texture(ImageView& view,
 	                       StockSampler sampler = StockSampler::LinearClamp,
 	                       uint32_t arrayLayer  = VK_REMAINING_ARRAY_LAYERS);
 
@@ -31,15 +31,15 @@ class ImGuiRenderer {
 
  private:
 	struct ImGuiTexture : TemporaryHashMapEnabled<ImGuiTexture>, IntrusiveListEnabled<ImGuiTexture> {
-		ImGuiTexture(ImageViewHandle view, Sampler* sampler, uint32_t arrayLayer = VK_REMAINING_ARRAY_LAYERS)
-				: View(view), Sampler(sampler), ArrayLayer(arrayLayer) {}
+		ImGuiTexture(ImageView& view, Sampler* sampler, uint32_t arrayLayer = VK_REMAINING_ARRAY_LAYERS)
+				: View(&view), Sampler(sampler), ArrayLayer(arrayLayer) {}
 
-		ImageViewHandle View;
+		ImageView* View     = nullptr;
 		Sampler* Sampler    = nullptr;
 		uint32_t ArrayLayer = VK_REMAINING_ARRAY_LAYERS;
 	};
 
-	void SetRenderState(CommandBufferHandle& cmd, ImDrawData* drawData, uint32_t frameIndex) const;
+	void SetRenderState(CommandBuffer& cmd, ImDrawData* drawData, uint32_t frameIndex) const;
 
 	static ImGuiRenderer* _instance;
 

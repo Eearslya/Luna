@@ -107,128 +107,131 @@ Environment::Environment(Luna::Vulkan::Device& device, const std::filesystem::pa
 	};
 
 	auto cmd = device.RequestCommandBuffer();
-	LunaCmdZone(*cmd, "Generate Environment Map");
-	const auto ProcessCubeMap = [&](Luna::Vulkan::Program* program,
-	                                Luna::Vulkan::ImageHandle& src,
-	                                Luna::Vulkan::ImageHandle& dst) {
-		auto rpInfo                 = Luna::Vulkan::RenderPassInfo{};
-		rpInfo.ColorAttachmentCount = 1;
-		rpInfo.ColorAttachments[0]  = &renderTarget->GetView();
-		rpInfo.StoreAttachmentMask  = 1 << 0;
+	{
+		LunaCmdZone(*cmd, "Generate Environment Map");
+		const auto ProcessCubeMap = [&](Luna::Vulkan::Program* program,
+		                                Luna::Vulkan::ImageHandle& src,
+		                                Luna::Vulkan::ImageHandle& dst) {
+			auto rpInfo                 = Luna::Vulkan::RenderPassInfo{};
+			rpInfo.ColorAttachmentCount = 1;
+			rpInfo.ColorAttachments[0]  = &renderTarget->GetView();
+			rpInfo.StoreAttachmentMask  = 1 << 0;
 
-		const uint32_t mips = dst->GetCreateInfo().MipLevels;
-		const uint32_t dim  = dst->GetCreateInfo().Width;
+			const uint32_t mips = dst->GetCreateInfo().MipLevels;
+			const uint32_t dim  = dst->GetCreateInfo().Width;
 
-		for (uint32_t mip = 0; mip < mips; ++mip) {
-			const uint32_t mipDim = static_cast<float>(dim * std::pow(0.5f, mip));
+			for (uint32_t mip = 0; mip < mips; ++mip) {
+				const uint32_t mipDim = static_cast<float>(dim * std::pow(0.5f, mip));
 
-			for (uint32_t i = 0; i < 6; ++i) {
-				const PushConstant pc{.ViewProjection = captureProjection * captureViews[i],
-				                      .Roughness      = static_cast<float>(mip) / static_cast<float>(mips - 1)};
-				rpInfo.RenderArea = vk::Rect2D({0, 0}, {mipDim, mipDim});
-				cmd->BeginRenderPass(rpInfo);
-				cmd->SetProgram(program);
-				cmd->SetCullMode(vk::CullModeFlagBits::eNone);
-				cmd->SetTexture(0, 0, src->GetView(), Luna::Vulkan::StockSampler::LinearClamp);
-				cmd->PushConstants(&pc, 0, sizeof(pc));
-				cmd->Draw(36);
-				cmd->EndRenderPass();
+				for (uint32_t i = 0; i < 6; ++i) {
+					const PushConstant pc{.ViewProjection = captureProjection * captureViews[i],
+					                      .Roughness      = static_cast<float>(mip) / static_cast<float>(mips - 1)};
+					rpInfo.RenderArea = vk::Rect2D({0, 0}, {mipDim, mipDim});
+					cmd->BeginRenderPass(rpInfo);
+					cmd->SetProgram(program);
+					cmd->SetCullMode(vk::CullModeFlagBits::eNone);
+					cmd->SetTexture(0, 0, src->GetView(), Luna::Vulkan::StockSampler::LinearClamp);
+					cmd->PushConstants(&pc, 0, sizeof(pc));
+					cmd->Draw(36);
+					cmd->EndRenderPass();
 
-				const vk::ImageMemoryBarrier2 barrier(vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-				                                      vk::AccessFlagBits2::eColorAttachmentWrite,
-				                                      vk::PipelineStageFlagBits2::eCopy,
-				                                      vk::AccessFlagBits2::eTransferRead,
-				                                      vk::ImageLayout::eColorAttachmentOptimal,
-				                                      vk::ImageLayout::eTransferSrcOptimal,
-				                                      VK_QUEUE_FAMILY_IGNORED,
-				                                      VK_QUEUE_FAMILY_IGNORED,
-				                                      renderTarget->GetImage(),
-				                                      vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
-				const vk::DependencyInfo dep({}, nullptr, nullptr, barrier);
-				cmd->Barrier(dep);
+					const vk::ImageMemoryBarrier2 barrier(vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+					                                      vk::AccessFlagBits2::eColorAttachmentWrite,
+					                                      vk::PipelineStageFlagBits2::eCopy,
+					                                      vk::AccessFlagBits2::eTransferRead,
+					                                      vk::ImageLayout::eColorAttachmentOptimal,
+					                                      vk::ImageLayout::eTransferSrcOptimal,
+					                                      VK_QUEUE_FAMILY_IGNORED,
+					                                      VK_QUEUE_FAMILY_IGNORED,
+					                                      renderTarget->GetImage(),
+					                                      vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+					const vk::DependencyInfo dep({}, nullptr, nullptr, barrier);
+					cmd->Barrier(dep);
 
-				cmd->CopyImage(*dst,
-				               *renderTarget,
-				               {},
-				               {},
-				               vk::Extent3D(mipDim, mipDim, 1),
-				               vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, mip, i, 1),
-				               vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1));
+					cmd->CopyImage(*dst,
+					               *renderTarget,
+					               {},
+					               {},
+					               vk::Extent3D(mipDim, mipDim, 1),
+					               vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, mip, i, 1),
+					               vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1));
 
-				const vk::ImageMemoryBarrier2 barrier2(vk::PipelineStageFlagBits2::eCopy,
-				                                       vk::AccessFlagBits2::eTransferRead,
-				                                       vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-				                                       vk::AccessFlagBits2::eColorAttachmentWrite,
-				                                       vk::ImageLayout::eTransferSrcOptimal,
-				                                       vk::ImageLayout::eColorAttachmentOptimal,
-				                                       VK_QUEUE_FAMILY_IGNORED,
-				                                       VK_QUEUE_FAMILY_IGNORED,
-				                                       renderTarget->GetImage(),
-				                                       vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
-				const vk::DependencyInfo dep2({}, nullptr, nullptr, barrier2);
-				cmd->Barrier(dep2);
+					const vk::ImageMemoryBarrier2 barrier2(
+						vk::PipelineStageFlagBits2::eCopy,
+						vk::AccessFlagBits2::eTransferRead,
+						vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+						vk::AccessFlagBits2::eColorAttachmentWrite,
+						vk::ImageLayout::eTransferSrcOptimal,
+						vk::ImageLayout::eColorAttachmentOptimal,
+						VK_QUEUE_FAMILY_IGNORED,
+						VK_QUEUE_FAMILY_IGNORED,
+						renderTarget->GetImage(),
+						vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+					const vk::DependencyInfo dep2({}, nullptr, nullptr, barrier2);
+					cmd->Barrier(dep2);
+				}
 			}
+
+			const vk::ImageMemoryBarrier2 barrier(
+				vk::PipelineStageFlagBits2::eCopy,
+				vk::AccessFlagBits2::eTransferWrite,
+				vk::PipelineStageFlagBits2::eFragmentShader,
+				vk::AccessFlagBits2::eShaderRead,
+				vk::ImageLayout::eTransferDstOptimal,
+				vk::ImageLayout::eShaderReadOnlyOptimal,
+				VK_QUEUE_FAMILY_IGNORED,
+				VK_QUEUE_FAMILY_IGNORED,
+				dst->GetImage(),
+				vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, dst->GetCreateInfo().MipLevels, 0, 6));
+			const vk::DependencyInfo dep({}, nullptr, nullptr, barrier);
+			cmd->Barrier(dep);
+		};
+
+		{
+			LunaCmdZone(*cmd, "Cubemap Conversion");
+			ProcessCubeMap(progCubemap, baseHdr, Skybox);
+		}
+		{
+			LunaCmdZone(*cmd, "Irradiance Map");
+			ProcessCubeMap(progIrradiance, Skybox, Irradiance);
+		}
+		{
+			LunaCmdZone(*cmd, "Prefiltering");
+			ProcessCubeMap(progPrefilter, Skybox, Prefiltered);
 		}
 
-		const vk::ImageMemoryBarrier2 barrier(
-			vk::PipelineStageFlagBits2::eCopy,
-			vk::AccessFlagBits2::eTransferWrite,
-			vk::PipelineStageFlagBits2::eFragmentShader,
-			vk::AccessFlagBits2::eShaderRead,
-			vk::ImageLayout::eTransferDstOptimal,
-			vk::ImageLayout::eShaderReadOnlyOptimal,
-			VK_QUEUE_FAMILY_IGNORED,
-			VK_QUEUE_FAMILY_IGNORED,
-			dst->GetImage(),
-			vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, dst->GetCreateInfo().MipLevels, 0, 6));
-		const vk::DependencyInfo dep({}, nullptr, nullptr, barrier);
-		cmd->Barrier(dep);
-	};
+		{
+			LunaCmdZone(*cmd, "BRDF LUT");
 
-	{
-		LunaCmdZone(*cmd, "Cubemap Conversion");
-		ProcessCubeMap(progCubemap, baseHdr, Skybox);
-	}
-	{
-		LunaCmdZone(*cmd, "Irradiance Map");
-		ProcessCubeMap(progIrradiance, Skybox, Irradiance);
-	}
-	{
-		LunaCmdZone(*cmd, "Prefiltering");
-		ProcessCubeMap(progPrefilter, Skybox, Prefiltered);
-	}
+			auto imageCI          = Luna::Vulkan::ImageCreateInfo::RenderTarget(vk::Format::eR16G16Sfloat, 512, 512);
+			imageCI.Usage         = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled;
+			imageCI.InitialLayout = vk::ImageLayout::eColorAttachmentOptimal;
+			BrdfLut               = device.CreateImage(imageCI);
 
-	{
-		LunaCmdZone(*cmd, "BRDF LUT");
+			auto rpInfo                 = Luna::Vulkan::RenderPassInfo{};
+			rpInfo.ColorAttachmentCount = 1;
+			rpInfo.ColorAttachments[0]  = &BrdfLut->GetView();
+			rpInfo.StoreAttachmentMask  = 1 << 0;
 
-		auto imageCI          = Luna::Vulkan::ImageCreateInfo::RenderTarget(vk::Format::eR16G16Sfloat, 512, 512);
-		imageCI.Usage         = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled;
-		imageCI.InitialLayout = vk::ImageLayout::eColorAttachmentOptimal;
-		BrdfLut               = device.CreateImage(imageCI);
+			cmd->BeginRenderPass(rpInfo);
+			cmd->SetProgram(progBrdf);
+			cmd->SetCullMode(vk::CullModeFlagBits::eNone);
+			cmd->Draw(3);
+			cmd->EndRenderPass();
 
-		auto rpInfo                 = Luna::Vulkan::RenderPassInfo{};
-		rpInfo.ColorAttachmentCount = 1;
-		rpInfo.ColorAttachments[0]  = &BrdfLut->GetView();
-		rpInfo.StoreAttachmentMask  = 1 << 0;
-
-		cmd->BeginRenderPass(rpInfo);
-		cmd->SetProgram(progBrdf);
-		cmd->SetCullMode(vk::CullModeFlagBits::eNone);
-		cmd->Draw(3);
-		cmd->EndRenderPass();
-
-		const vk::ImageMemoryBarrier2 barrier(vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		                                      vk::AccessFlagBits2::eColorAttachmentWrite,
-		                                      vk::PipelineStageFlagBits2::eFragmentShader,
-		                                      vk::AccessFlagBits2::eShaderRead,
-		                                      vk::ImageLayout::eColorAttachmentOptimal,
-		                                      vk::ImageLayout::eShaderReadOnlyOptimal,
-		                                      VK_QUEUE_FAMILY_IGNORED,
-		                                      VK_QUEUE_FAMILY_IGNORED,
-		                                      BrdfLut->GetImage(),
-		                                      vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
-		const vk::DependencyInfo dep({}, nullptr, nullptr, barrier);
-		cmd->Barrier(dep);
+			const vk::ImageMemoryBarrier2 barrier(vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			                                      vk::AccessFlagBits2::eColorAttachmentWrite,
+			                                      vk::PipelineStageFlagBits2::eFragmentShader,
+			                                      vk::AccessFlagBits2::eShaderRead,
+			                                      vk::ImageLayout::eColorAttachmentOptimal,
+			                                      vk::ImageLayout::eShaderReadOnlyOptimal,
+			                                      VK_QUEUE_FAMILY_IGNORED,
+			                                      VK_QUEUE_FAMILY_IGNORED,
+			                                      BrdfLut->GetImage(),
+			                                      vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+			const vk::DependencyInfo dep({}, nullptr, nullptr, barrier);
+			cmd->Barrier(dep);
+		}
 	}
 
 	device.Submit(cmd);

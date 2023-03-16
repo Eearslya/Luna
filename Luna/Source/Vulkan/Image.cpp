@@ -29,6 +29,32 @@ vk::AccessFlags ImageLayoutToAccess(vk::ImageLayout layout) {
 	}
 }
 
+vk::AccessFlags2 ImageLayoutToAccess2(vk::ImageLayout layout) {
+	switch (layout) {
+		case vk::ImageLayout::eColorAttachmentOptimal:
+			return vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite;
+
+		case vk::ImageLayout::eShaderReadOnlyOptimal:
+			return vk::AccessFlagBits2::eShaderSampledRead | vk::AccessFlagBits2::eInputAttachmentRead;
+
+		case vk::ImageLayout::eDepthStencilAttachmentOptimal:
+			return vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite;
+
+		case vk::ImageLayout::eDepthAttachmentStencilReadOnlyOptimal:
+			return vk::AccessFlagBits2::eInputAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentRead;
+
+		case vk::ImageLayout::eTransferSrcOptimal:
+			return vk::AccessFlagBits2::eTransferRead;
+
+		case vk::ImageLayout::eTransferDstOptimal:
+			return vk::AccessFlagBits2::eTransferWrite;
+
+		default:
+			// When unknown, simply return all access bits, to be safe.
+			return static_cast<vk::AccessFlagBits2>(~0u);
+	}
+}
+
 vk::AccessFlags ImageUsageToAccess(vk::ImageUsageFlags usage) {
 	vk::AccessFlags access = {};
 
@@ -55,6 +81,8 @@ vk::AccessFlags ImageUsageToAccess(vk::ImageUsageFlags usage) {
 
 	return access;
 }
+
+vk::AccessFlags2 ImageUsageToAccess2(vk::ImageUsageFlags usage) {}
 
 vk::FormatFeatureFlags ImageUsageToFeatures(vk::ImageUsageFlags usage) {
 	vk::FormatFeatureFlags features = {};
@@ -98,6 +126,8 @@ vk::PipelineStageFlags ImageUsageToStages(vk::ImageUsageFlags usage) {
 
 	return stages;
 }
+
+vk::PipelineStageFlags2 ImageUsageToStages2(vk::ImageUsageFlags usage) {}
 
 void ImageDeleter::operator()(Image* image) {
 	image->_device._imagePool.Free(image);

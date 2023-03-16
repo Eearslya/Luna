@@ -40,6 +40,7 @@ class Application {
  protected:
 	Vulkan::Device& GetDevice();
 	glm::uvec2 GetFramebufferSize() const;
+	Vulkan::ImGuiRenderer& GetImGui();
 	const Vulkan::SwapchainConfiguration& GetSwapchainConfig() const;
 	void UpdateImGuiFontAtlas();
 

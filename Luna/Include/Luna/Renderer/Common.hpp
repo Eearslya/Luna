@@ -27,6 +27,27 @@ struct AttachmentInfo {
 	uint32_t Layers              = 1;
 	vk::ImageUsageFlags AuxUsage = {};
 	AttachmentInfoFlags Flags    = AttachmentInfoFlagBits::Persistent;
+
+	AttachmentInfo Copy() const {
+		return *this;
+	}
+
+	AttachmentInfo& SetWidth(float width) {
+		Width = width;
+		return *this;
+	}
+	AttachmentInfo& SetHeight(float height) {
+		Height = height;
+		return *this;
+	}
+	AttachmentInfo& SetDepth(float depth) {
+		Depth = depth;
+		return *this;
+	}
+	AttachmentInfo& SetFormat(vk::Format format) {
+		Format = format;
+		return *this;
+	}
 };
 
 /**

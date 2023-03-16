@@ -1,5 +1,6 @@
 #include <Luna/Renderer/RenderGraph.hpp>
 #include <Luna/Renderer/RenderPass.hpp>
+#include <Luna/Utility/BitOps.hpp>
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
@@ -106,7 +107,7 @@ void RenderGraph::Bake() {
 void RenderGraph::EnqueueRenderPasses(Vulkan::Device& device, TaskComposer& composer) {
 	auto* threading = Threading::Get();
 
-	size_t count = _physicalPasses.size();
+	const size_t count = _physicalPasses.size();
 	_passSubmissionStates.clear();
 	_passSubmissionStates.resize(count);
 
@@ -131,7 +132,10 @@ void RenderGraph::EnqueueRenderPasses(Vulkan::Device& device, TaskComposer& comp
 
 	if (_swapchainPhysicalIndex == RenderResource::Unused) {
 		auto& group = composer.BeginPipelineStage();
-		group.Enqueue([this, &device]() { device.FlushFrame(); });
+		group.Enqueue([this, &device]() {
+			SwapchainScalePass();
+			device.FlushFrame();
+		});
 	} else {
 		auto& group = composer.BeginPipelineStage();
 		group.Enqueue([this, &device]() { device.FlushFrame(); });
@@ -291,6 +295,7 @@ void RenderGraph::SetupAttachments(Vulkan::ImageView* swapchain) {
 		if (att.BufferInfo.Size != 0) {
 		} else {
 			if (att.IsStorageImage()) {
+				SetupPhysicalImage(i);
 			} else if (i == _swapchainPhysicalIndex) {
 				_physicalAttachments[i] = swapchain;
 			} else if (att.Flags & AttachmentInfoFlagBits::InternalTransient) {
@@ -298,6 +303,7 @@ void RenderGraph::SetupAttachments(Vulkan::ImageView* swapchain) {
 					vk::Extent2D(att.Width, att.Height), att.Format, i, vk::SampleCountFlagBits::e1, att.Layers);
 				_physicalAttachments[i] = &_physicalImageAttachments[i]->GetView();
 			} else {
+				SetupPhysicalImage(i);
 			}
 		}
 	}
@@ -367,6 +373,10 @@ RenderBufferResource& RenderGraph::GetBufferResource(const std::string& name) {
 	_resourceToIndex[name] = index;
 
 	return static_cast<RenderBufferResource&>(*_resources.back());
+}
+
+Vulkan::ImageView& RenderGraph::GetPhysicalTextureResource(uint32_t index) {
+	return *_physicalAttachments[index];
 }
 
 RenderResource& RenderGraph::GetProxyResource(const std::string& name) {
@@ -472,9 +482,18 @@ void RenderGraph::SetBackbufferSource(const std::string& name) {
 	_backbufferSource = name;
 }
 
-void RenderGraph::BuildAliases() {}
+void RenderGraph::BuildAliases() {
+	_physicalAliases.resize(_physicalDimensions.size());
+	std::fill(_physicalAliases.begin(), _physicalAliases.end(), RenderResource::Unused);
+}
 
 void RenderGraph::BuildBarriers() {
+	// Here we handle the memory barriers and dependencies to keep our graph executing properly.
+	// Each resource may need a flush barrier, an invalidate barrier, or both.
+	// An Invalidate barrier is used for inputs, to invalidate the cache and ensure all pending writes have finished
+	// before we read it.
+	// A flush barrier is used for outputs, to flush the cache and ensure the new data is visible to any future reads.
+
 	_passBarriers.clear();
 	_passBarriers.reserve(_passStack.size());
 
@@ -505,6 +524,93 @@ void RenderGraph::BuildBarriers() {
 			barrier.Stages |= input.Stages;
 			if (barrier.Layout != vk::ImageLayout::eUndefined) { throw std::logic_error("[RenderGraph] Layout mismatch."); }
 			barrier.Layout = input.Layout;
+		}
+
+		for (auto& input : pass.GetGenericTextureInputs()) {
+			auto& barrier = GetInvalidateAccess(input.Texture->GetPhysicalIndex(), false);
+			barrier.Access |= input.Access;
+			barrier.Stages |= input.Stages;
+			if (barrier.Layout != vk::ImageLayout::eUndefined) { throw std::logic_error("[RenderGraph] Layout mismatch."); }
+			barrier.Layout = input.Layout;
+		}
+
+		for (auto* input : pass.GetAttachmentInputs()) {
+			if (pass.GetQueue() & ComputeQueues) {
+				throw std::logic_error("[RenderGraph] Only graphics passes can have input attachments.");
+			}
+
+			auto& barrier = GetInvalidateAccess(input->GetPhysicalIndex(), false);
+			barrier.Access |= vk::AccessFlagBits2::eInputAttachmentRead;
+			barrier.Stages |= vk::PipelineStageFlagBits2::eFragmentShader;
+			if (Vulkan::FormatHasDepthOrStencil(input->GetAttachmentInfo().Format)) {
+				barrier.Access |= vk::AccessFlagBits2::eDepthStencilAttachmentRead;
+				barrier.Stages |=
+					vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests;
+			} else {
+				barrier.Access |= vk::AccessFlagBits2::eColorAttachmentRead;
+				barrier.Stages |= vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+			}
+			if (barrier.Layout != vk::ImageLayout::eUndefined) { throw std::logic_error("[RenderGraph] Layout mismatch."); }
+			barrier.Layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+		}
+
+		for (auto* input : pass.GetColorInputs()) {
+			if (!input) { continue; }
+
+			if (pass.GetQueue() & ComputeQueues) {
+				throw std::logic_error("[RenderGraph] Only graphics passes can have color inputs.");
+			}
+
+			auto& barrier = GetInvalidateAccess(input->GetPhysicalIndex(), false);
+			barrier.Access |= vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite;
+			barrier.Stages |= vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+			if (barrier.Layout == vk::ImageLayout::eDepthAttachmentStencilReadOnlyOptimal) {
+				barrier.Layout = vk::ImageLayout::eGeneral;
+			} else if (barrier.Layout != vk::ImageLayout::eUndefined) {
+				throw std::logic_error("[RenderGraph] Layout mismatch.");
+			} else {
+				barrier.Layout = vk::ImageLayout::eColorAttachmentOptimal;
+			}
+		}
+
+		for (auto* input : pass.GetColorScaleInputs()) {
+			if (!input) { continue; }
+
+			if (pass.GetQueue() & ComputeQueues) {
+				throw std::logic_error("[RenderGraph] Only graphics passes can have scaled color inputs.");
+			}
+
+			auto& barrier = GetInvalidateAccess(input->GetPhysicalIndex(), false);
+			barrier.Access |= vk::AccessFlagBits2::eShaderSampledRead;
+			barrier.Stages |= vk::PipelineStageFlagBits2::eFragmentShader;
+			if (barrier.Layout != vk::ImageLayout::eUndefined) { throw std::logic_error("[RenderGraph] Layout mismatch."); }
+			barrier.Layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+		}
+
+		for (auto* input : pass.GetHistoryInputs()) {
+			auto& barrier = GetInvalidateAccess(input->GetPhysicalIndex(), true);
+			barrier.Access |= vk::AccessFlagBits2::eShaderSampledRead;
+			if (pass.GetQueue() & ComputeQueues) {
+				barrier.Stages |= vk::PipelineStageFlagBits2::eComputeShader;
+			} else {
+				barrier.Stages |= vk::PipelineStageFlagBits2::eFragmentShader;
+			}
+			if (barrier.Layout != vk::ImageLayout::eUndefined) { throw std::logic_error("[RenderGraph] Layout mismatch."); }
+			barrier.Layout = vk::ImageLayout::eShaderReadOnlyOptimal;
+		}
+
+		for (auto* input : pass.GetStorageInputs()) {
+			if (!input) { continue; }
+
+			auto& barrier = GetInvalidateAccess(input->GetPhysicalIndex(), false);
+			barrier.Access |= vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite;
+			if (pass.GetQueue() & ComputeQueues) {
+				barrier.Stages |= vk::PipelineStageFlagBits2::eComputeShader;
+			} else {
+				barrier.Stages |= vk::PipelineStageFlagBits2::eFragmentShader;
+			}
+			if (barrier.Layout != vk::ImageLayout::eUndefined) { throw std::logic_error("[RenderGraph] Layout mismatch."); }
+			barrier.Layout = vk::ImageLayout::eGeneral;
 		}
 
 		// Handle all of our outputs (flush barriers).
@@ -593,7 +699,150 @@ void RenderGraph::BuildBarriers() {
 	}
 }
 
-void RenderGraph::BuildPhysicalBarriers() {}
+void RenderGraph::BuildPhysicalBarriers() {
+	auto barrierIt = _passBarriers.begin();
+
+	const auto FlushAccessToInvalidate = [](vk::AccessFlags2 flags) -> vk::AccessFlags2 {
+		if (flags & vk::AccessFlagBits2::eColorAttachmentWrite) { flags |= vk::AccessFlagBits2::eColorAttachmentRead; }
+		if (flags & vk::AccessFlagBits2::eDepthStencilAttachmentWrite) {
+			flags |= vk::AccessFlagBits2::eDepthStencilAttachmentRead;
+		}
+		if (flags & vk::AccessFlagBits2::eShaderWrite) { flags |= vk::AccessFlagBits2::eShaderRead; }
+		if (flags & vk::AccessFlagBits2::eShaderStorageWrite) { flags |= vk::AccessFlagBits2::eShaderStorageRead; }
+
+		return flags;
+	};
+	const auto FlushStageToInvalidate = [](vk::PipelineStageFlags2 flags) -> vk::PipelineStageFlags2 {
+		if (flags & vk::PipelineStageFlagBits2::eLateFragmentTests) {
+			flags |= vk::PipelineStageFlagBits2::eEarlyFragmentTests;
+		}
+
+		return flags;
+	};
+
+	struct ResourceState {
+		vk::ImageLayout InitialLayout             = vk::ImageLayout::eUndefined;
+		vk::ImageLayout FinalLayout               = vk::ImageLayout::eUndefined;
+		vk::AccessFlags2 InvalidatedTypes         = {};
+		vk::AccessFlags2 FlushedTypes             = {};
+		vk::PipelineStageFlags2 InvalidatedStages = {};
+		vk::PipelineStageFlags2 FlushedStages     = {};
+	};
+	std::vector<ResourceState> resourceStates(_physicalDimensions.size());
+
+	for (auto& physicalPass : _physicalPasses) {
+		std::fill(resourceStates.begin(), resourceStates.end(), ResourceState{});
+
+		for (uint32_t i = 0; i < physicalPass.Passes.size(); ++i, ++barrierIt) {
+			auto& barriers    = *barrierIt;
+			auto& invalidates = barriers.Invalidate;
+			auto& flushes     = barriers.Flush;
+
+			for (auto& invalidate : invalidates) {
+				auto& res = resourceStates[invalidate.ResourceIndex];
+
+				if (_physicalDimensions[invalidate.ResourceIndex].Flags & AttachmentInfoFlagBits::InternalTransient ||
+				    invalidate.ResourceIndex == _swapchainPhysicalIndex) {
+					continue;
+				}
+
+				if (invalidate.History) {
+					auto it =
+						std::find_if(physicalPass.Invalidate.begin(), physicalPass.Invalidate.end(), [&](const Barrier& b) -> bool {
+							return b.ResourceIndex == invalidate.ResourceIndex && b.History;
+						});
+					if (it == physicalPass.Invalidate.end()) {
+						auto layout = _physicalDimensions[invalidate.ResourceIndex].IsStorageImage() ? vk::ImageLayout::eGeneral
+						                                                                             : invalidate.Layout;
+						physicalPass.Invalidate.push_back(
+							{invalidate.ResourceIndex, layout, invalidate.Access, invalidate.Stages, true});
+						physicalPass.Flush.push_back({invalidate.ResourceIndex, layout, {}, invalidate.Stages, true});
+					}
+
+					continue;
+				}
+
+				if (res.InitialLayout == vk::ImageLayout::eUndefined) {
+					res.InvalidatedTypes |= invalidate.Access;
+					res.InvalidatedStages |= invalidate.Stages;
+
+					if (_physicalDimensions[invalidate.ResourceIndex].IsStorageImage()) {
+						res.InitialLayout = vk::ImageLayout::eGeneral;
+					} else {
+						res.InitialLayout = invalidate.Layout;
+					}
+				}
+
+				if (_physicalDimensions[invalidate.ResourceIndex].IsStorageImage()) {
+					res.FinalLayout = vk::ImageLayout::eGeneral;
+				} else {
+					res.FinalLayout = invalidate.Layout;
+				}
+
+				res.FlushedTypes  = {};
+				res.FlushedStages = {};
+			}
+
+			for (auto& flush : flushes) {
+				auto& res = resourceStates[flush.ResourceIndex];
+
+				if (_physicalDimensions[flush.ResourceIndex].Flags & AttachmentInfoFlagBits::InternalTransient ||
+				    flush.ResourceIndex == _swapchainPhysicalIndex) {
+					continue;
+				}
+
+				res.FlushedTypes |= flush.Access;
+				res.FlushedStages |= flush.Stages;
+
+				if (_physicalDimensions[flush.ResourceIndex].IsStorageImage()) {
+					res.FinalLayout = vk::ImageLayout::eGeneral;
+				} else {
+					res.FinalLayout = flush.Layout;
+				}
+
+				if (res.InitialLayout == vk::ImageLayout::eUndefined) {
+					if (flush.Layout == vk::ImageLayout::eTransferSrcOptimal) {
+						res.InitialLayout     = vk::ImageLayout::eColorAttachmentOptimal;
+						res.InvalidatedStages = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+						res.InvalidatedTypes =
+							vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite;
+					} else {
+						res.InitialLayout     = flush.Layout;
+						res.InvalidatedStages = FlushStageToInvalidate(flush.Stages);
+						res.InvalidatedTypes  = FlushAccessToInvalidate(flush.Access);
+					}
+
+					physicalPass.Discards.push_back(flush.ResourceIndex);
+				}
+			}
+		}
+
+		for (uint32_t i = 0; i < resourceStates.size(); ++i) {
+			const auto& resource = resourceStates[i];
+
+			if (resource.FinalLayout == vk::ImageLayout::eUndefined &&
+			    resource.InitialLayout == vk::ImageLayout::eUndefined) {
+				continue;
+			}
+
+			physicalPass.Invalidate.push_back(
+				{i, resource.InitialLayout, resource.InvalidatedTypes, resource.InvalidatedStages, false});
+
+			if (resource.FlushedTypes) {
+				physicalPass.Flush.push_back({i, resource.FinalLayout, resource.FlushedTypes, resource.FlushedStages, false});
+			} else if (resource.InvalidatedTypes) {
+				physicalPass.Flush.push_back({i, resource.FinalLayout, {}, resource.InvalidatedStages, false});
+			}
+
+			if (resource.FinalLayout == vk::ImageLayout::eTransferSrcOptimal) {
+				physicalPass.MipmapRequests.push_back({i,
+				                                       vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+				                                       vk::AccessFlagBits2::eColorAttachmentWrite,
+				                                       vk::ImageLayout::eColorAttachmentOptimal});
+			}
+		}
+	}
+}
 
 void RenderGraph::BuildPhysicalPasses() {
 	_physicalPasses.clear();
@@ -1088,11 +1337,13 @@ void RenderGraph::BuildRenderPassInfo() {
 					const bool hasScaledColorInput = !pass.GetColorScaleInputs().empty() && pass.GetColorScaleInputs()[i];
 
 					if (!hasColorInput && !hasScaledColorInput) {
+						// We have no input, so the operation is either don't care or clear.
 						if (pass.GetClearColor(i)) {
 							rp.ClearAttachmentMask |= 1u << res.first;
 							physicalPass.ColorClearRequests.push_back({&pass, &rp.ColorClearValues[res.first], i});
 						}
 					} else {
+						// We have a color input, so the operation is either load, or we need to add a scaled clear.
 						if (hasScaledColorInput) {
 							scaledClearRequests.push_back({i, pass.GetColorScaleInputs()[i]->GetPhysicalIndex()});
 						} else {
@@ -1349,6 +1600,61 @@ void RenderGraph::GetQueueType(Vulkan::CommandBufferType& queueType,
 	}
 }
 
+bool RenderGraph::NeedsInvalidate(const Barrier& barrier, const PipelineEvent& event) const {
+	bool needsInvalidate = false;
+	ForEachBit64(uint64_t(barrier.Stages), [&](uint32_t bit) {
+		if (barrier.Access & ~event.InvalidatedInStage[bit]) { needsInvalidate = true; }
+	});
+
+	return needsInvalidate;
+}
+
+void RenderGraph::PerformScaleRequests(Vulkan::CommandBuffer& cmd, const std::vector<ScaledClearRequest>& requests) {
+	if (requests.empty()) { return; }
+
+	const char* scaleShaderVert = R"VERTEX(
+#version 460 core
+layout(location = 0) out vec2 outUV;
+void main() {
+  outUV = vec2((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2);
+  gl_Position = vec4(outUV.x * 2.0f - 1.0f, 1.0f - (outUV.y * 2.0f - 1.0f), 0.0f, 1.0f);
+}
+)VERTEX";
+
+	constexpr const char* scaleShaderFragFmt = R"FRAGMENT(
+#version 460 core
+layout(location = 0) in vec2 inUV;
+{}
+void main() {{
+  {}
+}}
+)FRAGMENT";
+
+	constexpr const char* scaleInputFmt = R"INPUT(
+layout(set = 0, binding = {0}) uniform sampler2D input{0};
+layout(location = {0}) out vec4 output{0};
+)INPUT";
+
+	constexpr const char* scaleOutputFmt = R"OUTPUT(
+  output{0} = textureLod(input{0}, inUV, 0);
+)OUTPUT";
+
+	std::vector<std::string> fragmentInputs(requests.size());
+	std::vector<std::string> fragmentOutputs(requests.size());
+
+	for (auto& req : requests) {
+		fragmentInputs[req.Target]  = fmt::format(scaleInputFmt, req.Target);
+		fragmentOutputs[req.Target] = fmt::format(scaleOutputFmt, req.Target);
+		cmd.SetTexture(0, req.Target, *_physicalAttachments[req.PhysicalResource], Vulkan::StockSampler::LinearClamp);
+	}
+
+	const std::string scaleShaderFrag =
+		fmt::format(scaleShaderFragFmt, fmt::join(fragmentInputs, "\n"), fmt::join(fragmentOutputs, "\n"));
+	auto* program = _device.RequestProgram(scaleShaderVert, scaleShaderFrag);
+	cmd.SetProgram(program);
+	cmd.Draw(3);
+}
+
 void RenderGraph::PhysicalPassEnqueueGraphicsCommands(const PhysicalPass& physicalPass, PassSubmissionState& state) {
 	auto& cmd = *state.Cmd;
 
@@ -1371,6 +1677,7 @@ void RenderGraph::PhysicalPassEnqueueGraphicsCommands(const PhysicalPass& physic
 		for (auto& subpass : physicalPass.Passes) {
 			auto subpassIndex    = uint32_t(&subpass - physicalPass.Passes.data());
 			auto& scaledRequests = physicalPass.ScaledClearRequests[subpassIndex];
+			PerformScaleRequests(cmd, scaledRequests);
 
 			auto& pass = *_passes[subpass];
 			pass.BuildRenderPass(cmd, layer);
@@ -1387,13 +1694,17 @@ void RenderGraph::PhysicalPassHandleCPU(Vulkan::Device& device,
                                         PassSubmissionState& state,
                                         TaskComposer& incomingComposer) {
 	GetQueueType(state.QueueType, state.Graphics, _passes[physicalPass.Passes.front()]->GetQueue());
+
 	PhysicalPassInvalidateAttachments(physicalPass);
+
 	for (auto& barrier : physicalPass.Invalidate) {
 		bool physicalGraphics = device.GetQueueType(state.QueueType) == Vulkan::QueueType::Graphics;
 		PhysicalPassInvalidateBarrier(barrier, state, physicalGraphics);
 	}
+
 	PhysicalPassHandleSignal(device, physicalPass, state);
 	for (auto& barrier : physicalPass.Flush) { PhysicalPassHandleFlushBarrier(barrier, state); }
+
 	PhysicalPassTransferOwnership(physicalPass);
 
 	state.SubpassContents.resize(physicalPass.Passes.size());
@@ -1409,7 +1720,27 @@ void RenderGraph::PhysicalPassHandleCPU(Vulkan::Device& device,
 	state.RenderingDependency = composer.GetOutgoingTask();
 }
 
-void RenderGraph::PhysicalPassHandleFlushBarrier(const Barrier& barrier, PassSubmissionState& state) {}
+void RenderGraph::PhysicalPassHandleFlushBarrier(const Barrier& barrier, PassSubmissionState& state) {
+	auto& event =
+		barrier.History ? _physicalHistoryEvents[barrier.ResourceIndex] : _physicalEvents[barrier.ResourceIndex];
+
+	if (!_physicalDimensions[barrier.ResourceIndex].BufferInfo.Size) {
+		auto* image = barrier.History ? _physicalHistoryImageAttachments[barrier.ResourceIndex].Get()
+		                              : _physicalAttachments[barrier.ResourceIndex]->GetImage();
+		if (!image) { return; }
+		_physicalEvents[barrier.ResourceIndex].Layout = barrier.Layout;
+	}
+
+	event.ToFlushAccess = barrier.Access;
+
+	if (_physicalDimensions[barrier.ResourceIndex].UsesSemaphore()) {
+		event.WaitGraphicsSemaphore    = state.ProxySemaphores[0];
+		event.WaitComputeSemaphore     = state.ProxySemaphores[1];
+		event.PipelineBarrierSrcStages = {};
+	} else {
+		event.PipelineBarrierSrcStages = barrier.Stages;
+	}
+}
 
 void RenderGraph::PhysicalPassHandleGPU(Vulkan::Device& device, const PhysicalPass& pass, PassSubmissionState& state) {
 	auto* threading = Threading::Get();
@@ -1417,6 +1748,7 @@ void RenderGraph::PhysicalPassHandleGPU(Vulkan::Device& device, const PhysicalPa
 
 	group->Enqueue([&]() {
 		state.Cmd = device.RequestCommandBuffer(state.QueueType);
+		state.EmitPrePassBarriers();
 
 		if (state.Graphics) {
 			PhysicalPassEnqueueGraphicsCommands(pass, state);
@@ -1440,7 +1772,85 @@ void RenderGraph::PhysicalPassInvalidateAttachments(const PhysicalPass& physical
 
 void RenderGraph::PhysicalPassInvalidateBarrier(const Barrier& barrier,
                                                 PassSubmissionState& state,
-                                                bool physicalGraphics) {}
+                                                bool physicalGraphics) {
+	auto& event =
+		barrier.History ? _physicalHistoryEvents[barrier.ResourceIndex] : _physicalEvents[barrier.ResourceIndex];
+	bool needsPipelineBarrier = false;
+	bool layoutChange         = false;
+	bool needsWaitSemaphore   = false;
+	auto& waitSemaphore       = physicalGraphics ? event.WaitGraphicsSemaphore : event.WaitComputeSemaphore;
+
+	auto& phys = _physicalDimensions[barrier.ResourceIndex];
+	if (phys.BufferInfo.Size || phys.Flags & AttachmentInfoFlagBits::InternalTransient) {
+	} else {
+		const Vulkan::Image* image = barrier.History ? _physicalHistoryImageAttachments[barrier.ResourceIndex].Get()
+		                                             : _physicalAttachments[barrier.ResourceIndex]->GetImage();
+		if (!image) { return; }
+
+		vk::ImageMemoryBarrier2 imageBarrier(
+			{},
+			event.ToFlushAccess,
+			barrier.Stages,
+			barrier.Access,
+			event.Layout,
+			barrier.Layout,
+			VK_QUEUE_FAMILY_IGNORED,
+			VK_QUEUE_FAMILY_IGNORED,
+			image->GetImage(),
+			vk::ImageSubresourceRange(Vulkan::FormatAspectFlags(image->GetCreateInfo().Format),
+		                            0,
+		                            image->GetCreateInfo().MipLevels,
+		                            0,
+		                            image->GetCreateInfo().ArrayLayers));
+
+		event.Layout = barrier.Layout;
+		layoutChange = imageBarrier.oldLayout != imageBarrier.newLayout;
+
+		const bool needsSync = layoutChange || event.ToFlushAccess || NeedsInvalidate(barrier, event);
+		if (needsSync) {
+			if (event.PipelineBarrierSrcStages) {
+				imageBarrier.srcStageMask = event.PipelineBarrierSrcStages;
+				state.ImageBarriers.push_back(imageBarrier);
+				needsPipelineBarrier = true;
+			} else if (waitSemaphore) {
+				if (layoutChange) {
+					imageBarrier.srcAccessMask = vk::AccessFlagBits2::eNone;
+					imageBarrier.srcStageMask  = imageBarrier.dstStageMask;
+					state.ImageBarriers.push_back(imageBarrier);
+				}
+				needsWaitSemaphore = true;
+			} else {
+				imageBarrier.srcStageMask  = vk::PipelineStageFlagBits2::eNone;
+				imageBarrier.srcAccessMask = vk::AccessFlagBits2::eNone;
+				state.ImageBarriers.push_back(imageBarrier);
+				if (imageBarrier.oldLayout != vk::ImageLayout::eUndefined) {
+					throw std::logic_error(
+						"[RenderGraph] Cannot do immediate image barriers from a layout other than Undefined.");
+				}
+			}
+		}
+	}
+
+	if (event.ToFlushAccess || layoutChange) {
+		for (auto& e : event.InvalidatedInStage) { e = vk::AccessFlagBits2::eNone; }
+	}
+	event.ToFlushAccess = {};
+
+	if (needsPipelineBarrier) {
+		ForEachBit64(uint64_t(barrier.Stages), [&](uint32_t bit) { event.InvalidatedInStage[bit] |= barrier.Access; });
+	} else if (needsWaitSemaphore) {
+		state.WaitSemaphores.push_back(waitSemaphore);
+		state.WaitStages.push_back(barrier.Stages);
+
+		ForEachBit64(uint64_t(barrier.Stages), [&](uint32_t bit) {
+			if (layoutChange) {
+				event.InvalidatedInStage[bit] |= barrier.Access;
+			} else {
+				event.InvalidatedInStage[bit] |= vk::AccessFlagBits2(~0ull);
+			}
+		});
+	}
+}
 
 bool RenderGraph::PhysicalPassRequiresWork(const PhysicalPass& physicalPass) const {
 	for (auto& pass : physicalPass.Passes) {
@@ -1461,6 +1871,149 @@ void RenderGraph::PhysicalPassTransferOwnership(const PhysicalPass& physicalPass
 }
 
 void RenderGraph::ReorderPasses() {}
+
+void RenderGraph::SetupPhysicalImage(uint32_t attachment) {
+	auto& att = _physicalDimensions[attachment];
+
+	if (_physicalAliases[attachment] != RenderResource::Unused) {
+		_physicalImageAttachments[attachment] = _physicalImageAttachments[_physicalAliases[attachment]];
+		_physicalAttachments[attachment]      = &_physicalImageAttachments[attachment]->GetView();
+		_physicalEvents[attachment]           = {};
+
+		return;
+	}
+
+	bool needsImage                    = true;
+	vk::ImageUsageFlags usage          = att.ImageUsage;
+	Vulkan::ImageCreateFlags miscFlags = {};
+	vk::ImageCreateFlags flags         = {};
+
+	if (att.Flags & AttachmentInfoFlagBits::UnormSrgbAlias) { miscFlags |= Vulkan::ImageCreateFlagBits::MutableSrgb; }
+	if (att.IsStorageImage()) { flags |= vk::ImageCreateFlagBits::eMutableFormat; }
+
+	if (_physicalImageAttachments[attachment]) {
+		const auto& info = _physicalImageAttachments[attachment]->GetCreateInfo();
+		if (att.Flags & AttachmentInfoFlagBits::Persistent && info.Format == att.Format && info.Width == att.Width &&
+		    info.Height == att.Height && info.Depth == att.Depth && (info.Usage & usage) == usage &&
+		    (info.Flags & flags) == flags) {
+			needsImage = false;
+		}
+	}
+
+	if (needsImage) {
+		Vulkan::ImageCreateInfo imageCI{.Domain        = Vulkan::ImageDomain::Physical,
+		                                .Width         = att.Width,
+		                                .Height        = att.Height,
+		                                .Depth         = att.Depth,
+		                                .MipLevels     = att.Levels,
+		                                .ArrayLayers   = att.Layers,
+		                                .Format        = att.Format,
+		                                .InitialLayout = vk::ImageLayout::eUndefined,
+		                                .Type          = att.Depth > 1 ? vk::ImageType::e3D : vk::ImageType::e2D,
+		                                .Usage         = usage,
+		                                .Samples       = vk::SampleCountFlagBits::e1,
+		                                .Flags         = flags,
+		                                .MiscFlags     = miscFlags};
+		if (Vulkan::FormatHasDepthOrStencil(imageCI.Format)) { imageCI.Usage &= ~vk::ImageUsageFlagBits::eColorAttachment; }
+
+		if (att.Queues & (RenderGraphQueueFlagBits::Graphics | RenderGraphQueueFlagBits::Compute)) {
+			imageCI.MiscFlags |= Vulkan::ImageCreateFlagBits::ConcurrentQueueGraphics;
+		}
+		if (att.Queues & RenderGraphQueueFlagBits::AsyncCompute) {
+			imageCI.MiscFlags |= Vulkan::ImageCreateFlagBits::ConcurrentQueueAsyncCompute;
+		}
+		if (att.Queues & RenderGraphQueueFlagBits::AsyncGraphics) {
+			imageCI.MiscFlags |= Vulkan::ImageCreateFlagBits::ConcurrentQueueAsyncGraphics;
+		}
+
+		_physicalImageAttachments[attachment] = _device.CreateImage(imageCI);
+		_physicalEvents[attachment]           = {};
+	}
+
+	_physicalAttachments[attachment] = &_physicalImageAttachments[attachment]->GetView();
+}
+
+void RenderGraph::SwapchainScalePass() {
+	uint32_t resourceIndex = _resourceToIndex[_backbufferSource];
+	auto& sourceResource   = *_resources[resourceIndex];
+	const uint32_t index   = sourceResource.GetPhysicalIndex();
+
+	const auto queueType         = (_physicalDimensions[index].Queues & RenderGraphQueueFlagBits::Graphics)
+	                                 ? Vulkan::CommandBufferType::Generic
+	                                 : Vulkan::CommandBufferType::AsyncGraphics;
+	const auto physicalQueueType = _device.GetQueueType(queueType);
+
+	auto cmd = _device.RequestCommandBuffer(queueType);
+
+	const auto& image   = _physicalAttachments[index]->GetImage();
+	auto& waitSemaphore = physicalQueueType == Vulkan::QueueType::Graphics ? _physicalEvents[index].WaitGraphicsSemaphore
+	                                                                       : _physicalEvents[index].WaitComputeSemaphore;
+	auto targetLayout =
+		_physicalDimensions[index].IsStorageImage() ? vk::ImageLayout::eGeneral : vk::ImageLayout::eShaderReadOnlyOptimal;
+
+	if (_physicalEvents[index].PipelineBarrierSrcStages) {
+		const vk::ImageMemoryBarrier2 barrier(
+			_physicalEvents[index].PipelineBarrierSrcStages,
+			_physicalEvents[index].ToFlushAccess,
+			vk::PipelineStageFlagBits2::eFragmentShader,
+			vk::AccessFlagBits2::eShaderSampledRead,
+			_physicalEvents[index].Layout,
+			targetLayout,
+			VK_QUEUE_FAMILY_IGNORED,
+			VK_QUEUE_FAMILY_IGNORED,
+			image->GetImage(),
+			vk::ImageSubresourceRange(Vulkan::FormatAspectFlags(_physicalAttachments[index]->GetFormat()),
+		                            0,
+		                            image->GetCreateInfo().MipLevels,
+		                            0,
+		                            image->GetCreateInfo().ArrayLayers));
+
+		cmd->ImageBarriers({barrier});
+		_physicalEvents[index].Layout = targetLayout;
+	} else if (waitSemaphore) {
+		if (waitSemaphore->GetSemaphore() && !waitSemaphore->IsPendingWait()) {
+			_device.AddWaitSemaphore(queueType, waitSemaphore, vk::PipelineStageFlagBits2::eFragmentShader, true);
+		}
+
+		if (_physicalEvents[index].Layout != targetLayout) {
+			cmd->ImageBarrier(*image,
+			                  _physicalEvents[index].Layout,
+			                  targetLayout,
+			                  vk::PipelineStageFlagBits2::eFragmentShader,
+			                  vk::AccessFlagBits2::eNone,
+			                  vk::PipelineStageFlagBits2::eFragmentShader,
+			                  vk::AccessFlagBits2::eShaderSampledRead);
+			_physicalEvents[index].Layout = targetLayout;
+		}
+	} else {
+		throw std::logic_error("[RenderGraph] Swapchain resource was not written to.");
+	}
+
+	Vulkan::RenderPassInfo rpInfo;
+	rpInfo.ColorAttachmentCount = 1;
+	rpInfo.ColorAttachments[0]  = _swapchainAttachment;
+	rpInfo.ClearAttachmentMask  = 0;
+	rpInfo.StoreAttachmentMask  = 1;
+	cmd->BeginRenderPass(rpInfo);
+	PerformScaleRequests(*cmd, {{0, index}});
+	cmd->EndRenderPass();
+
+	_physicalEvents[index].ToFlushAccess = {};
+	std::fill(std::begin(_physicalEvents[index].InvalidatedInStage),
+	          std::end(_physicalEvents[index].InvalidatedInStage),
+	          vk::AccessFlagBits2::eNone);
+	_physicalEvents[index].InvalidatedInStage[TrailingZeroes(uint32_t(vk::PipelineStageFlagBits2::eFragmentShader))] =
+		vk::AccessFlagBits2::eShaderSampledRead;
+
+	if (_physicalDimensions[index].UsesSemaphore()) {
+		std::vector<Vulkan::SemaphoreHandle> semaphores(2);
+		_device.Submit(cmd, nullptr, &semaphores);
+		_physicalEvents[index].WaitGraphicsSemaphore = semaphores[0];
+		_physicalEvents[index].WaitComputeSemaphore  = semaphores[1];
+	} else {
+		_device.Submit(cmd);
+	}
+}
 
 void RenderGraph::TraverseDependencies(const RenderPass& pass, uint32_t depth) {
 	// Ensure we check Depth/Stencil, Input, and Color attachments first, as they are important to determining if Render
@@ -1596,6 +2149,13 @@ void RenderGraph::ValidatePasses() {
 				throw std::logic_error("[RenderGraph] Depth Stencil input/output mismatch.");
 			}
 		}
+	}
+}
+
+void RenderGraph::PassSubmissionState::EmitPrePassBarriers() {
+	if (!ImageBarriers.empty() || !BufferBarriers.empty()) {
+		const vk::DependencyInfo dep({}, nullptr, BufferBarriers, ImageBarriers);
+		Cmd->Barrier(dep);
 	}
 }
 

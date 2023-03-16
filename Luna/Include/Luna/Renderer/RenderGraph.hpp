@@ -77,6 +77,7 @@ class RenderGraph {
 	RenderPass* FindPass(const std::string& name);
 	std::vector<Vulkan::BufferHandle> ConsumePhysicalBuffers() const;
 	RenderBufferResource& GetBufferResource(const std::string& name);
+	Vulkan::ImageView& GetPhysicalTextureResource(uint32_t index);
 	RenderResource& GetProxyResource(const std::string& name);
 	ResourceDimensions GetResourceDimensions(const RenderBufferResource& resource) const;
 	ResourceDimensions GetResourceDimensions(const RenderTextureResource& resource) const;
@@ -112,9 +113,9 @@ class RenderGraph {
 
 	struct MipmapRequest {
 		uint32_t PhysicalResource;
+		vk::PipelineStageFlags2 Stages;
 		vk::AccessFlags2 Access;
 		vk::ImageLayout Layout;
-		vk::PipelineStageFlags2 Stages;
 	};
 
 	struct ScaledClearRequest {
@@ -123,6 +124,7 @@ class RenderGraph {
 	};
 
 	struct PassSubmissionState {
+		void EmitPrePassBarriers();
 		void Submit();
 
 		std::vector<vk::BufferMemoryBarrier2> BufferBarriers;
@@ -191,6 +193,8 @@ class RenderGraph {
 	                       TaskComposer& composer);
 	void FilterPasses();
 	void GetQueueType(Vulkan::CommandBufferType& queueType, bool& graphics, RenderGraphQueueFlagBits flag) const;
+	bool NeedsInvalidate(const Barrier& barrier, const PipelineEvent& evnet) const;
+	void PerformScaleRequests(Vulkan::CommandBuffer& cmd, const std::vector<ScaledClearRequest>& requests);
 	void PhysicalPassEnqueueGraphicsCommands(const PhysicalPass& physicalPass, PassSubmissionState& state);
 	void PhysicalPassHandleCPU(Vulkan::Device& device,
 	                           const PhysicalPass& pass,
@@ -204,6 +208,8 @@ class RenderGraph {
 	bool PhysicalPassRequiresWork(const PhysicalPass& physicalPass) const;
 	void PhysicalPassTransferOwnership(const PhysicalPass& physicalPass);
 	void ReorderPasses();
+	void SetupPhysicalImage(uint32_t attachment);
+	void SwapchainScalePass();
 	void TraverseDependencies(const RenderPass& pass, uint32_t depth);
 	void ValidatePasses();
 

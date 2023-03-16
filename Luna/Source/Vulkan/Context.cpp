@@ -15,6 +15,13 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugCallback(VkDebugUtilsMessageSev
 	// Ignore "extension should only be used in debug" warning. That's the whole point.
 	if (data->messageIdNumber == 0x822806fa) { return VK_FALSE; }
 
+	// TODO: Fix wait stages in submit for created images.
+	if (data->messageIdNumber == 0x48a09f6c) { return VK_FALSE; }
+
+	// Pipeline Barriers don't validate sync2 access flags.
+	// https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/5429
+	if (data->messageIdNumber == 0x849fcec7) { return VK_FALSE; }
+
 	switch (severity) {
 		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
 			Log::Error("Vulkan", "Vulkan ERROR: {}", data->pMessage);

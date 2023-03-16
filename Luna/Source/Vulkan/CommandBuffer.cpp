@@ -542,6 +542,11 @@ void CommandBuffer::SetVertexBinding(
 	_pipelineState.Strides[binding]    = stride;
 }
 
+void CommandBuffer::SetViewport(const vk::Viewport& viewport) {
+	_viewport = viewport;
+	_dirty |= CommandBufferDirtyFlagBits::Viewport;
+}
+
 void CommandBuffer::BeginRenderPass(const RenderPassInfo& info, vk::SubpassContents contents) {
 	_framebuffer                        = &_device.RequestFramebuffer(info);
 	_pipelineState.CompatibleRenderPass = &_framebuffer->GetCompatibleRenderPass();
@@ -612,6 +617,14 @@ void CommandBuffer::BeginContext() {
 	_pipelineState.Program                                       = nullptr;
 	_pipelineState.PotentialStaticState.SpecConstantMask         = 0;
 	_pipelineState.PotentialStaticState.InternalSpecConstantMask = 0;
+	for (uint32_t set = 0; set < MaxDescriptorSets; ++set) {
+		for (uint32_t binding = 0; binding < MaxDescriptorBindings; ++binding) {
+			_bindings.Bindings[set][binding].Cookie          = 0;
+			_bindings.Bindings[set][binding].SecondaryCookie = 0;
+		}
+	}
+	_vertexBindings.Buffers.fill(VK_NULL_HANDLE);
+	memset(&_indexState, 0, sizeof(_indexState));
 }
 
 void CommandBuffer::BeginGraphics() {

@@ -76,6 +76,10 @@ glm::uvec2 Application::GetFramebufferSize() const {
 	return _wsi->GetFramebufferSize();
 }
 
+Vulkan::ImGuiRenderer& Application::GetImGui() {
+	return *_imguiRenderer;
+}
+
 const Vulkan::SwapchainConfiguration& Application::GetSwapchainConfig() const {
 	return _wsi->GetSwapchainConfig();
 }

@@ -230,19 +230,18 @@ ImGuiRenderer::~ImGuiRenderer() noexcept {
 	_instance = nullptr;
 }
 
-void ImGuiRenderer::BeginFrame() {
+void ImGuiRenderer::BeginFrame(const vk::Extent2D& fbSize) {
 	ImGuiIO& io = ImGui::GetIO();
 
 	_textures.BeginFrame();
 
 	// Update display size and platform data.
 	{
-		const auto windowSize      = _wsi.GetWindowSize();
-		const auto framebufferSize = _wsi.GetFramebufferSize();
-		io.DisplaySize             = ImVec2(windowSize.x, windowSize.y);
+		const auto windowSize = _wsi.GetWindowSize();
+		io.DisplaySize        = ImVec2(windowSize.x, windowSize.y);
 		if (windowSize.x > 0 && windowSize.y > 0) {
 			io.DisplayFramebufferScale =
-				ImVec2(float(framebufferSize.x) / float(windowSize.x), float(framebufferSize.y) / float(windowSize.y));
+				ImVec2(float(fbSize.width) / float(windowSize.x), float(fbSize.height) / float(windowSize.y));
 		}
 
 		for (int i = 0; i < ImGuiMouseButton_COUNT; ++i) {
@@ -259,15 +258,13 @@ void ImGuiRenderer::BeginFrame() {
 	ImGui::NewFrame();
 }
 
-void ImGuiRenderer::Render(bool clear) {
-	ImGui::EndFrame();
-
+void ImGuiRenderer::Render(CommandBuffer& cmd, bool clear) {
 	auto& device          = _wsi.GetDevice();
 	const auto frameIndex = device.GetFrameIndex();
-	auto cmd              = device.RequestCommandBuffer();
 
 	ImGui::Render();
 	ImDrawData* drawData = ImGui::GetDrawData();
+	if (drawData->CmdListsCount == 0) { return; }
 
 	// Determine our window size and ensure we don't render to a minimized screen.
 	const int fbWidth  = static_cast<int>(drawData->DisplaySize.x * drawData->FramebufferScale.x);
@@ -305,21 +302,11 @@ void ImGuiRenderer::Render(bool clear) {
 		}
 	}
 
-	// Set up our render state.
-	{
-		RenderPassInfo rp = device.GetSwapchainRenderPass(SwapchainRenderPassType::ColorOnly);
-		if (!clear) {
-			rp.ClearAttachmentMask = 0;
-			rp.LoadAttachmentMask  = 1 << 0;
-		}
-		cmd->BeginRenderPass(rp);
-		SetRenderState(cmd, drawData, frameIndex);
-	}
-
 	const ImVec2 clipOffset = drawData->DisplayPos;
 	const ImVec2 clipScale  = drawData->FramebufferScale;
 
 	// Render command lists.
+	SetRenderState(cmd, drawData, frameIndex);
 	{
 		size_t globalVtxOffset = 0;
 		size_t globalIdxOffset = 0;
@@ -345,15 +332,15 @@ void ImGuiRenderer::Render(bool clear) {
 					const vk::Rect2D scissor(
 						{static_cast<int32_t>(clipMin.x), static_cast<int32_t>(clipMin.y)},
 						{static_cast<uint32_t>(clipMax.x - clipMin.x), static_cast<uint32_t>(clipMax.y - clipMin.y)});
-					cmd->SetScissor(scissor);
+					cmd.SetScissor(scissor);
 
 					ImGuiSampleMode sampleMode = ImGuiSampleMode::Standard;
 					if (drawCmd.TextureId == 0) {
-						cmd->SetTexture(0, 0, _fontTexture->GetView(), _fontSampler);
+						cmd.SetTexture(0, 0, _fontTexture->GetView(), _fontSampler);
 						sampleMode = ImGuiSampleMode::ImGuiFont;
 					} else {
 						ImGuiTexture* texture = reinterpret_cast<ImGuiTexture*>(drawCmd.TextureId);
-						cmd->SetTexture(0, 0, *texture->View, texture->Sampler);
+						cmd.SetTexture(0, 0, *texture->View, texture->Sampler);
 
 						if (FormatChannelCount(texture->View->GetCreateInfo().Format) == 1) {
 							sampleMode = ImGuiSampleMode::Grayscale;
@@ -367,9 +354,9 @@ void ImGuiRenderer::Render(bool clear) {
 					                         .TranslateX = -1.0f - drawData->DisplayPos.x * scaleX,
 					                         .TranslateY = 1.0f - drawData->DisplayPos.y * scaleY,
 					                         .SampleMode = sampleMode};
-					cmd->PushConstants(&pc, 0, sizeof(pc));
+					cmd.PushConstants(&pc, 0, sizeof(pc));
 
-					cmd->DrawIndexed(
+					cmd.DrawIndexed(
 						drawCmd.ElemCount, 1, drawCmd.IdxOffset + globalIdxOffset, drawCmd.VtxOffset + globalVtxOffset, 0);
 				}
 			}
@@ -377,15 +364,11 @@ void ImGuiRenderer::Render(bool clear) {
 			globalIdxOffset += cmdList->IdxBuffer.Size;
 		}
 	}
-
-	cmd->EndRenderPass();
-
-	device.Submit(cmd);
 }
 
-ImGuiTextureId ImGuiRenderer::Texture(ImageViewHandle view, Sampler* sampler, uint32_t arrayLayer) {
+ImGuiTextureId ImGuiRenderer::Texture(ImageView& view, Sampler* sampler, uint32_t arrayLayer) {
 	Hasher h;
-	h(view->GetCookie());
+	h(view.GetCookie());
 	h(sampler->GetHash());
 	h(arrayLayer);
 	const auto hash = h.Get();
@@ -396,21 +379,25 @@ ImGuiTextureId ImGuiRenderer::Texture(ImageViewHandle view, Sampler* sampler, ui
 	return reinterpret_cast<ImGuiTextureId>(_textures.Emplace(hash, view, sampler, arrayLayer));
 }
 
-ImGuiTextureId ImGuiRenderer::Texture(ImageViewHandle view, StockSampler sampler, uint32_t arrayLayer) {
+ImGuiTextureId ImGuiRenderer::Texture(ImageView& view, StockSampler sampler, uint32_t arrayLayer) {
 	return Texture(view, _wsi.GetDevice().RequestSampler(sampler), arrayLayer);
 }
 
-void ImGuiRenderer::SetRenderState(CommandBufferHandle& cmd, ImDrawData* drawData, uint32_t frameIndex) const {
+void ImGuiRenderer::SetRenderState(CommandBuffer& cmd, ImDrawData* drawData, uint32_t frameIndex) const {
+	assert(_program);
+	assert(frameIndex < _vertexBuffers.size());
+	assert(frameIndex < _indexBuffers.size());
+
 	if (drawData->TotalVtxCount == 0) { return; }
 
-	cmd->SetProgram(_program);
-	cmd->SetTransparentSpriteState();
-	cmd->SetCullMode(vk::CullModeFlagBits::eNone);
-	cmd->SetVertexAttribute(0, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, pos));
-	cmd->SetVertexAttribute(1, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, uv));
-	cmd->SetVertexAttribute(2, 0, vk::Format::eR8G8B8A8Unorm, offsetof(ImDrawVert, col));
-	cmd->SetVertexBinding(0, *_vertexBuffers[frameIndex], 0, sizeof(ImDrawVert), vk::VertexInputRate::eVertex);
-	cmd->SetIndexBuffer(
+	cmd.SetProgram(_program);
+	cmd.SetTransparentSpriteState();
+	cmd.SetCullMode(vk::CullModeFlagBits::eNone);
+	cmd.SetVertexAttribute(0, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, pos));
+	cmd.SetVertexAttribute(1, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, uv));
+	cmd.SetVertexAttribute(2, 0, vk::Format::eR8G8B8A8Unorm, offsetof(ImDrawVert, col));
+	cmd.SetVertexBinding(0, *_vertexBuffers[frameIndex], 0, sizeof(ImDrawVert), vk::VertexInputRate::eVertex);
+	cmd.SetIndexBuffer(
 		*_indexBuffers[frameIndex], 0, sizeof(ImDrawIdx) == 2 ? vk::IndexType::eUint16 : vk::IndexType::eUint32);
 }
 

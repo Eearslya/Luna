@@ -253,6 +253,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	                      vk::DeviceSize offset,
 	                      vk::DeviceSize stride,
 	                      vk::VertexInputRate inputRate);
+	void SetViewport(const vk::Viewport& viewport);
 
 	void BeginRenderPass(const RenderPassInfo& info, vk::SubpassContents contents = vk::SubpassContents::eInline);
 	void NextSubpass(vk::SubpassContents contents = vk::SubpassContents::eInline);

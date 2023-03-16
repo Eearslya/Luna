@@ -1,4 +1,5 @@
 #include <Luna/Utility/Log.hpp>
+#include <Luna/Utility/Threading.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/CommandPool.hpp>
@@ -16,10 +17,9 @@
 
 namespace Luna {
 namespace Vulkan {
-#ifdef Luna_VULKAN_MT
+#ifdef LUNA_VULKAN_MT
 static uint32_t GetThreadIndex() {
-	// return Threading::GetThreadID();
-	return 0;
+	return Threading::GetThreadID();
 }
 #	define DeviceLock() std::lock_guard<std::mutex> lock(_lock.Mutex)
 #	define DeviceFlush()                                                 \
@@ -473,25 +473,41 @@ ImageHandle Device::CreateImageFromStagingBuffer(const ImageCreateInfo& imageCI,
 	if (buffer) {
 		const bool generateMips = imageCI.MiscFlags & ImageCreateFlagBits::GenerateMipmaps;
 
-		auto transferCmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
-		LunaCmdZone(*transferCmd, "Upload Image Data");
+		{
+			auto transferCmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
 
-		transferCmd->ImageBarrier(*handle,
-		                          vk::ImageLayout::eUndefined,
-		                          vk::ImageLayout::eTransferDstOptimal,
-		                          vk::PipelineStageFlagBits2::eNone,
-		                          vk::AccessFlagBits2::eNone,
-		                          vk::PipelineStageFlagBits2::eCopy,
-		                          vk::AccessFlagBits2::eTransferWrite);
-		transferCmd->CopyBufferToImage(*handle, *buffer->Buffer, buffer->Blits);
+			{
+				LunaCmdZone(*transferCmd, "Upload Image Data");
+				transferCmd->ImageBarrier(*handle,
+				                          vk::ImageLayout::eUndefined,
+				                          vk::ImageLayout::eTransferDstOptimal,
+				                          vk::PipelineStageFlagBits2::eNone,
+				                          vk::AccessFlagBits2::eNone,
+				                          vk::PipelineStageFlagBits2::eCopy,
+				                          vk::AccessFlagBits2::eTransferWrite);
+				transferCmd->CopyBufferToImage(*handle, *buffer->Buffer, buffer->Blits);
+				if (!generateMips) {
+					transferCmd->ImageBarrier(*handle,
+					                          vk::ImageLayout::eTransferDstOptimal,
+					                          imageCI.InitialLayout,
+					                          vk::PipelineStageFlagBits2::eCopy,
+					                          vk::AccessFlagBits2::eTransferWrite,
+					                          vk::PipelineStageFlagBits2::eNone,
+					                          vk::AccessFlagBits2::eNone);
+					transitionCmd = std::move(transferCmd);
+				}
+			}
+
+			if (generateMips) {
+				std::vector<SemaphoreHandle> semaphores(1);
+				Submit(transferCmd, nullptr, &semaphores);
+				AddWaitSemaphore(CommandBufferType::Generic, semaphores[0], vk::PipelineStageFlagBits2::eBlit, true);
+			}
+		}
 
 		if (generateMips) {
 			auto graphicsCmd = RequestCommandBuffer(CommandBufferType::Generic);
 			LunaCmdZone(*graphicsCmd, "Generate Mipmaps");
-
-			std::vector<SemaphoreHandle> semaphores(1);
-			Submit(transferCmd, nullptr, &semaphores);
-			AddWaitSemaphore(CommandBufferType::Generic, semaphores[0], vk::PipelineStageFlagBits2::eBlit, true);
 
 			graphicsCmd->BarrierPrepareGenerateMipmaps(*handle,
 			                                           vk::ImageLayout::eTransferDstOptimal,
@@ -509,15 +525,6 @@ ImageHandle Device::CreateImageFromStagingBuffer(const ImageCreateInfo& imageCI,
 			                          vk::AccessFlagBits2::eNone);
 
 			transitionCmd = std::move(graphicsCmd);
-		} else {
-			transferCmd->ImageBarrier(*handle,
-			                          vk::ImageLayout::eTransferDstOptimal,
-			                          imageCI.InitialLayout,
-			                          vk::PipelineStageFlagBits2::eCopy,
-			                          vk::AccessFlagBits2::eTransferWrite,
-			                          vk::PipelineStageFlagBits2::eNone,
-			                          vk::AccessFlagBits2::eNone);
-			transitionCmd = std::move(transferCmd);
 		}
 	} else if (imageCI.InitialLayout != vk::ImageLayout::eUndefined) {
 		CommandBufferType type = CommandBufferType::Generic;
@@ -543,7 +550,7 @@ ImageHandle Device::CreateImageFromStagingBuffer(const ImageCreateInfo& imageCI,
 	}
 
 	if (transitionCmd) {
-		std::array<vk::PipelineStageFlagBits2, QueueTypeCount> stages;
+		std::array<vk::PipelineStageFlags2, QueueTypeCount> stages;
 		std::array<CommandBufferType, QueueTypeCount> types;
 		std::array<SemaphoreHandle, QueueTypeCount> semaphores;
 		uint32_t semaphoreCount = 0;
@@ -1536,8 +1543,7 @@ void Device::ResetFenceNoLock(vk::Fence fence, bool observedWait) {
 Device::FrameContext::FrameContext(Device& device, uint32_t frameIndex) : Parent(device), FrameIndex(frameIndex) {
 	std::fill(TimelineValues.begin(), TimelineValues.end(), 0);
 
-	// const uint32_t threadCount = Threading::Get()->GetThreadCount();
-	const uint32_t threadCount = 1;
+	const uint32_t threadCount = Threading::Get()->GetThreadCount() + 1;
 	for (uint32_t q = 0; q < QueueTypeCount; ++q) {
 		CommandPools[q].reserve(threadCount);
 		TimelineValues[q] = Parent._queueData[q].TimelineValue;
