@@ -16,6 +16,9 @@ vk::AccessFlags BufferUsageToAccess(vk::BufferUsageFlags usage) {
 	if (usage & vk::BufferUsageFlagBits::eStorageBuffer) {
 		access |= vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
 	}
+	if (usage & vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR) {
+		access |= vk::AccessFlagBits::eAccelerationStructureReadKHR;
+	}
 
 	return access;
 }
@@ -54,7 +57,12 @@ Buffer::Buffer(Device& device,
 			_buffer(buffer),
 			_allocation(allocation),
 			_createInfo(createInfo),
-			_mappedMemory(mappedMemory) {}
+			_mappedMemory(mappedMemory) {
+	if (createInfo.Usage & vk::BufferUsageFlagBits::eShaderDeviceAddress) {
+		const vk::BufferDeviceAddressInfo addressInfo(_buffer);
+		_deviceAddress = _device._device.getBufferAddress(addressInfo);
+	}
+}
 
 Buffer::~Buffer() noexcept {
 	if (_mappedMemory) { vmaUnmapMemory(_device._allocator, _allocation); }

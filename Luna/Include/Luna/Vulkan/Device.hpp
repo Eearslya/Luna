@@ -45,6 +45,9 @@ class Device : public IntrusivePtrEnabled<Device> {
 	uint32_t GetFramesInFlight() const {
 		return _frameContexts.size();
 	}
+	ShaderCompiler& GetShaderCompiler() {
+		return *_shaderCompiler;
+	}
 
 	vk::Format GetDefaultDepthFormat() const;
 	vk::Format GetDefaultDepthStencilFormat() const;

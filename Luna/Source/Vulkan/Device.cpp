@@ -74,7 +74,10 @@ Device::Device(Context& context)
 		FN(vkGetPhysicalDeviceMemoryProperties2);
 #undef FN
 
-		const VmaAllocatorCreateInfo allocatorCI = {.physicalDevice   = _deviceInfo.PhysicalDevice,
+		const VmaAllocatorCreateInfo allocatorCI = {.flags = _deviceInfo.EnabledFeatures.Vulkan12.bufferDeviceAddress
+		                                                       ? VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT
+		                                                       : VmaAllocatorCreateFlags{},
+		                                            .physicalDevice   = _deviceInfo.PhysicalDevice,
 		                                            .device           = _device,
 		                                            .pVulkanFunctions = &vmaFunctions,
 		                                            .instance         = _instance,

@@ -166,6 +166,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void BeginZone(const std::string& name);
 	void End();
 	void EndZone();
+	void TouchSwapchain(vk::PipelineStageFlags2 stages);
 
 	void Barrier(const vk::DependencyInfo& dep);
 	void BarrierPrepareGenerateMipmaps(const Image& image,

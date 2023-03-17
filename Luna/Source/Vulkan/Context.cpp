@@ -221,11 +221,25 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredExten
 							});
 
 		vk::StructureChain<vk::PhysicalDeviceFeatures2,
+		                   vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+		                   vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
 		                   vk::PhysicalDeviceSynchronization2Features,
 		                   vk::PhysicalDeviceVulkan12Features>
 			features;
-		vk::StructureChain<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceVulkan12Properties> properties;
+		vk::StructureChain<vk::PhysicalDeviceProperties2,
+		                   vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
+		                   vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
+		                   vk::PhysicalDeviceVulkan12Properties>
+			properties;
 
+		if (!HasExtension(info, VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
+			features.unlink<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
+			properties.unlink<vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
+		}
+		if (!HasExtension(info, VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME)) {
+			features.unlink<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
+			properties.unlink<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
+		}
 		if (!HasExtension(info, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)) {
 			features.unlink<vk::PhysicalDeviceSynchronization2Features>();
 		}
@@ -233,12 +247,16 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredExten
 		info.PhysicalDevice.getFeatures2(&features.get());
 		info.PhysicalDevice.getProperties2(&properties.get());
 
-		info.AvailableFeatures.Core             = features.get().features;
-		info.AvailableFeatures.Synchronization2 = features.get<vk::PhysicalDeviceSynchronization2Features>();
-		info.AvailableFeatures.Vulkan12         = features.get<vk::PhysicalDeviceVulkan12Features>();
+		info.AvailableFeatures.Core                  = features.get().features;
+		info.AvailableFeatures.AccelerationStructure = features.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
+		info.AvailableFeatures.RayTracingPipeline    = features.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
+		info.AvailableFeatures.Synchronization2      = features.get<vk::PhysicalDeviceSynchronization2Features>();
+		info.AvailableFeatures.Vulkan12              = features.get<vk::PhysicalDeviceVulkan12Features>();
 
-		info.Properties.Core     = properties.get().properties;
-		info.Properties.Vulkan12 = properties.get<vk::PhysicalDeviceVulkan12Properties>();
+		info.Properties.Core                  = properties.get().properties;
+		info.Properties.AccelerationStructure = properties.get<vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
+		info.Properties.RayTracingPipeline    = properties.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
+		info.Properties.Vulkan12              = properties.get<vk::PhysicalDeviceVulkan12Properties>();
 	}
 
 	std::stable_partition(deviceInfos.begin(), deviceInfos.end(), [](const DeviceInfo& info) {
@@ -311,6 +329,13 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 		}
 	}
 
+	_extensions.DeferredHostOperations = TryExtension(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+	if (_extensions.DeferredHostOperations) {
+		_extensions.AccelerationStructure = TryExtension(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+	}
+	if (_extensions.AccelerationStructure) {
+		_extensions.RayTracingPipeline = TryExtension(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+	}
 	_extensions.CalibratedTimestamps = TryExtension(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
 	_extensions.Synchronization2     = TryExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
 
@@ -385,9 +410,25 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 	const auto& avail = _deviceInfo.AvailableFeatures;
 	auto& enable      = _deviceInfo.EnabledFeatures;
 
+	if (avail.Core.shaderInt64) {
+		Log::Trace("Vulkan::Context", "Enabling shader Int64 usage.");
+		enable.Core.shaderInt64 = VK_TRUE;
+	}
+	if (avail.AccelerationStructure.accelerationStructure) {
+		Log::Trace("Vulkan::Context", "Enabling Acceleration Structures.");
+		enable.AccelerationStructure.accelerationStructure = VK_TRUE;
+	}
+	if (avail.RayTracingPipeline.rayTracingPipeline) {
+		Log::Trace("Vulkan::Context", "Enabling Ray Tracing Pipelines.");
+		enable.RayTracingPipeline.rayTracingPipeline = VK_TRUE;
+	}
 	if (avail.Synchronization2.synchronization2) {
 		Log::Trace("Vulkan::Context", "Enabling Synchronization 2.");
 		enable.Synchronization2.synchronization2 = VK_TRUE;
+	}
+	if (avail.Vulkan12.bufferDeviceAddress) {
+		Log::Trace("Vulkan::Context", "Enabling Buffer Device Addresses.");
+		enable.Vulkan12.bufferDeviceAddress = VK_TRUE;
 	}
 	if (avail.Vulkan12.hostQueryReset) {
 		Log::Trace("Vulkan::Context", "Enabling Host Query Reset.");
@@ -401,9 +442,12 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 	// Create our device.
 	const vk::PhysicalDeviceFeatures2 features2(_deviceInfo.EnabledFeatures.Core);
 	const vk::StructureChain<vk::PhysicalDeviceFeatures2,
+	                         vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+	                         vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
 	                         vk::PhysicalDeviceSynchronization2Features,
 	                         vk::PhysicalDeviceVulkan12Features>
-		featuresChain(features2, enable.Synchronization2, enable.Vulkan12);
+		featuresChain(
+			features2, enable.AccelerationStructure, enable.RayTracingPipeline, enable.Synchronization2, enable.Vulkan12);
 	const vk::DeviceCreateInfo deviceCI({}, queueCIs, nullptr, enabledExtensions, nullptr);
 	const vk::StructureChain<vk::DeviceCreateInfo, vk::PhysicalDeviceFeatures2> deviceChain(deviceCI,
 	                                                                                        featuresChain.get());

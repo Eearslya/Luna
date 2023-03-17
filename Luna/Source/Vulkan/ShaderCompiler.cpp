@@ -35,12 +35,22 @@ std::optional<std::vector<uint32_t>> ShaderCompiler::Compile(vk::ShaderStageFlag
 		case vk::ShaderStageFlagBits::eCompute:
 			lang = EShLangCompute;
 			break;
+		case vk::ShaderStageFlagBits::eRaygenKHR:
+			lang = EShLangRayGen;
+			break;
+		case vk::ShaderStageFlagBits::eMissKHR:
+			lang = EShLangMiss;
+			break;
+		case vk::ShaderStageFlagBits::eClosestHitKHR:
+			lang = EShLangClosestHit;
+			break;
 		default:
 			lang = EShLangVertex;
 			break;
 	}
 
 	glslang::TShader shader(lang);
+	shader.setEnvTarget(glslang::EShTargetLanguage::EShTargetSpv, glslang::EShTargetLanguageVersion::EShTargetSpv_1_4);
 	const char* shaderStrings[1] = {glsl.c_str()};
 	shader.setStrings(shaderStrings, 1);
 

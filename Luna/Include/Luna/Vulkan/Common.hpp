@@ -115,18 +115,25 @@ struct Extensions {
 #endif
 
 	// Device Extensions
-	bool CalibratedTimestamps = false;
-	bool Synchronization2     = false;
+	bool AccelerationStructure  = false;
+	bool CalibratedTimestamps   = false;
+	bool DeferredHostOperations = false;
+	bool RayTracingPipeline     = false;
+	bool Synchronization2       = false;
 };
 
 struct DeviceFeatures {
 	vk::PhysicalDeviceFeatures Core;
+	vk::PhysicalDeviceAccelerationStructureFeaturesKHR AccelerationStructure;
+	vk::PhysicalDeviceRayTracingPipelineFeaturesKHR RayTracingPipeline;
 	vk::PhysicalDeviceSynchronization2Features Synchronization2;
 	vk::PhysicalDeviceVulkan12Features Vulkan12;
 };
 
 struct DeviceProperties {
 	vk::PhysicalDeviceProperties Core;
+	vk::PhysicalDeviceAccelerationStructurePropertiesKHR AccelerationStructure;
+	vk::PhysicalDeviceRayTracingPipelinePropertiesKHR RayTracingPipeline;
 	vk::PhysicalDeviceVulkan12Properties Vulkan12;
 };
 

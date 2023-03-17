@@ -1063,7 +1063,9 @@ void Model::ImportMeshes(const fastgltf::Asset& gltfModel, Luna::Vulkan::Device&
 		const Luna::Vulkan::BufferCreateInfo bufferCI{
 			Luna::Vulkan::BufferDomain::Device,
 			vertexSize + indexSize,
-			vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer};
+			vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer |
+				vk::BufferUsageFlagBits::eShaderDeviceAddress |
+				vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eStorageBuffer};
 		mesh->Buffer = device.CreateBuffer(bufferCI, bufferData.data());
 	}
 }

@@ -38,6 +38,9 @@ class Buffer : public IntrusivePtrEnabled<Buffer, BufferDeleter, HandleCounter>,
 	const BufferCreateInfo& GetCreateInfo() const {
 		return _createInfo;
 	}
+	vk::DeviceAddress GetDeviceAddress() const {
+		return _deviceAddress;
+	}
 	void* Map() const {
 		return _mappedMemory;
 	}
@@ -53,7 +56,8 @@ class Buffer : public IntrusivePtrEnabled<Buffer, BufferDeleter, HandleCounter>,
 	vk::Buffer _buffer;
 	VmaAllocation _allocation;
 	BufferCreateInfo _createInfo;
-	void* _mappedMemory = nullptr;
+	vk::DeviceAddress _deviceAddress = 0;
+	void* _mappedMemory              = nullptr;
 };
 }  // namespace Vulkan
 }  // namespace Luna

@@ -162,21 +162,22 @@ void WSI::RecreateSwapchain() {
 	uint32_t imageCount = glm::max(3u, capabilities.minImageCount);
 	if (capabilities.maxImageCount > 0) { imageCount = glm::min(imageCount, capabilities.maxImageCount); }
 
-	const vk::SwapchainCreateInfoKHR swapchainCI({},
-	                                             _surface,
-	                                             imageCount,
-	                                             _swapchainConfig.Format.format,
-	                                             _swapchainConfig.Format.colorSpace,
-	                                             _swapchainConfig.Extent,
-	                                             1,
-	                                             vk::ImageUsageFlagBits::eColorAttachment,
-	                                             vk::SharingMode::eExclusive,
-	                                             nullptr,
-	                                             _swapchainConfig.Transform,
-	                                             vk::CompositeAlphaFlagBitsKHR::eOpaque,
-	                                             _swapchainConfig.PresentMode,
-	                                             VK_TRUE,
-	                                             _swapchain);
+	const vk::SwapchainCreateInfoKHR swapchainCI(
+		{},
+		_surface,
+		imageCount,
+		_swapchainConfig.Format.format,
+		_swapchainConfig.Format.colorSpace,
+		_swapchainConfig.Extent,
+		1,
+		vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst,
+		vk::SharingMode::eExclusive,
+		nullptr,
+		_swapchainConfig.Transform,
+		vk::CompositeAlphaFlagBitsKHR::eOpaque,
+		_swapchainConfig.PresentMode,
+		VK_TRUE,
+		_swapchain);
 	auto newSwapchain = device.createSwapchainKHR(swapchainCI);
 	Log::Debug("Vulkan", "Swapchain created.");
 

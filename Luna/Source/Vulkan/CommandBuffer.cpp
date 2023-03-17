@@ -94,6 +94,10 @@ void CommandBuffer::EndZone() {
 	_tracingDepth--;
 }
 
+void CommandBuffer::TouchSwapchain(vk::PipelineStageFlags2 stages) {
+	_swapchainStages |= stages;
+}
+
 void CommandBuffer::Barrier(const vk::DependencyInfo& dep) {
 	if (_device._deviceInfo.EnabledFeatures.Synchronization2.synchronization2) {
 		_commandBuffer.pipelineBarrier2(dep);
