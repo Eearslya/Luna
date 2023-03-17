@@ -105,19 +105,17 @@ Device::~Device() noexcept {
 
 	WaitIdle();
 
-	_framebufferAllocator.reset();
-	_shaderCompiler.reset();
 	_transientAttachmentAllocator.reset();
+	_shaderCompiler.reset();
+	_framebufferAllocator.reset();
 
-	vmaDestroyAllocator(_allocator);
-
-	DestroyTimelineSemaphores();
 	DestroyTracingContexts();
-
+	DestroyTimelineSemaphores();
 	_frameContexts.clear();
-
 	for (auto& semaphore : _availableSemaphores) { _device.destroySemaphore(semaphore); }
 	for (auto& fence : _availableFences) { _device.destroyFence(fence); }
+
+	vmaDestroyAllocator(_allocator);
 }
 
 vk::Format Device::GetDefaultDepthFormat() const {
@@ -193,6 +191,7 @@ vk::ImageViewType Device::GetImageViewType(const ImageCreateInfo& imageCI, const
 
 QueueType Device::GetQueueType(CommandBufferType cmdType) const {
 	if (cmdType != CommandBufferType::AsyncGraphics) {
+		// QueueType enum is made to match up with CommandBufferType.
 		return static_cast<QueueType>(cmdType);
 	} else {
 		if (_queueInfo.SameFamily(QueueType::Graphics, QueueType::Compute) &&
@@ -264,9 +263,9 @@ void Device::WaitIdle() {
 BufferHandle Device::CreateBuffer(const BufferCreateInfo& bufferInfo, const void* initial) {
 	const bool zeroInit = bufferInfo.Flags & BufferCreateFlagBits::ZeroInitialize;
 	if (initial && zeroInit) {
-		Log::Error("Vulkan", "Cannot create a buffer with initial data AND zero-initialize flag set!");
-		return {};
+		throw std::logic_error("[Vulkan] Cannot create a buffer with initial data and zero-initialize flag set.");
 	}
+	if (bufferInfo.Size == 0) { throw std::logic_error("[Vulkan] Cannot create a buffer of 0 size."); }
 
 	BufferCreateInfo actualInfo = bufferInfo;
 	actualInfo.Usage |= vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eTransferSrc;
@@ -278,8 +277,8 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& bufferInfo, const void
 		bufferAI.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 	}
 
-	VkBuffer buffer;
-	VmaAllocation allocation;
+	VkBuffer buffer          = VK_NULL_HANDLE;
+	VmaAllocation allocation = nullptr;
 	VmaAllocationInfo allocationInfo;
 
 	const VkResult res = vmaCreateBuffer(_allocator,
@@ -292,6 +291,8 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& bufferInfo, const void
 		Log::Error("Vulkan", "Failed to create buffer: {}", vk::to_string(vk::Result(res)));
 		return {};
 	}
+	Log::Debug("Vulkan", "Buffer created.");
+
 	const auto& memType = _deviceInfo.Memory.memoryTypes[allocationInfo.memoryType];
 	const bool hostVisible(memType.propertyFlags & vk::MemoryPropertyFlagBits::eHostVisible);
 
@@ -320,11 +321,9 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& bufferInfo, const void
 				auto stagingBuffer = CreateBuffer(stagingInfo, initial);
 
 				cmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer);
-				LunaCmdZone(*cmd, "Copy Initial Buffer Data");
 				cmd->CopyBuffer(*handle, *stagingBuffer);
 			} else {
 				cmd = RequestCommandBuffer(CommandBufferType::AsyncCompute);
-				LunaCmdZone(*cmd, "Fill Initial Buffer Data");
 				cmd->FillBuffer(*handle, 0);
 			}
 
@@ -346,6 +345,61 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& imageCI, const ImageIniti
 }
 
 ImageHandle Device::CreateImageFromStagingBuffer(const ImageCreateInfo& imageCI, const ImageInitialBuffer* buffer) {
+	if (imageCI.Width == 0 || imageCI.Height == 0 || imageCI.Depth == 0) {
+		throw std::logic_error("[Vulkan] Cannot create an image with 0 in any dimension.");
+	}
+	if (imageCI.Format == vk::Format::eUndefined) {
+		throw std::logic_error("[Vulkan] Cannot create an image with Undefined format.");
+	}
+	if (imageCI.ArrayLayers == 0) { throw std::logic_error("[Vulkan] Cannot create an image with 0 array layers."); }
+
+	vk::ImageFormatProperties properties = {};
+	try {
+		properties = _deviceInfo.PhysicalDevice.getImageFormatProperties(
+			imageCI.Format, imageCI.Type, vk::ImageTiling::eOptimal, imageCI.Usage, imageCI.Flags);
+	} catch (vk::FormatNotSupportedError& e) {
+		Log::Fatal("Vulkan", "Cannot create image, format/usage/flags combination is unsupported by device.");
+		Log::Fatal("Vulkan", "- Format: {}", vk::to_string(imageCI.Format));
+		Log::Fatal("Vulkan", "- Usage: {}", vk::to_string(imageCI.Usage));
+		Log::Fatal("Vulkan", "- Flags: {}", vk::to_string(imageCI.Flags));
+		throw std::logic_error("[Vulkan] Failed to create image: Not supported by device.");
+	}
+
+	// Compatibility checks.
+	if (imageCI.Width > properties.maxExtent.width || imageCI.Height > properties.maxExtent.height ||
+	    imageCI.Depth > properties.maxExtent.depth) {
+		Log::Fatal("Vulkan", "Cannot create image, dimensions exceed maximum limits for format.");
+		Log::Fatal("Vulkan", "- Format: {}", vk::to_string(imageCI.Format));
+		Log::Fatal("Vulkan", "- Image Size: {}x{}x{}", imageCI.Width, imageCI.Height, imageCI.Depth);
+		Log::Fatal("Vulkan",
+		           "- Maximum Size: {}x{}x{}",
+		           properties.maxExtent.width,
+		           properties.maxExtent.height,
+		           properties.maxExtent.depth);
+		throw std::logic_error("[Vulkan] Failed to create image, image is too large.");
+	}
+	if (imageCI.MipLevels != 0 && imageCI.MipLevels > properties.maxMipLevels) {
+		Log::Fatal("Vulkan", "Cannot create image, exceeds maximum mip levels for format.");
+		Log::Fatal("Vulkan", "- Format: {}", vk::to_string(imageCI.Format));
+		Log::Fatal("Vulkan", "- Mip Levels: {}", imageCI.MipLevels);
+		Log::Fatal("Vulkan", "- Maximum Levels: {}", properties.maxMipLevels);
+		throw std::logic_error("[Vulkan] Failed to create image, too many mip levels.");
+	}
+	if (imageCI.ArrayLayers != 0 && imageCI.ArrayLayers > properties.maxMipLevels) {
+		Log::Fatal("Vulkan", "Cannot create image, exceeds maximum array layers for format.");
+		Log::Fatal("Vulkan", "- Format: {}", vk::to_string(imageCI.Format));
+		Log::Fatal("Vulkan", "- Array Layers: {}", imageCI.ArrayLayers);
+		Log::Fatal("Vulkan", "- Maximum Layers: {}", properties.maxArrayLayers);
+		throw std::logic_error("[Vulkan] Failed to create image, too many array layers.");
+	}
+	if ((imageCI.Samples & properties.sampleCounts) != imageCI.Samples) {
+		Log::Fatal("Vulkan", "Cannot create image, format does not support sample count.");
+		Log::Fatal("Vulkan", "- Format: {}", vk::to_string(imageCI.Format));
+		Log::Fatal("Vulkan", "- Sample Count: {}", vk::to_string(imageCI.Samples));
+		Log::Fatal("Vulkan", "- Allowed Counts: {}", vk::to_string(properties.sampleCounts));
+		throw std::logic_error("[Vulkan] Failed to create image, invalid sample counts.");
+	}
+
 	ImageManager manager(*this);
 
 	vk::ImageCreateInfo createInfo(imageCI.Flags,
@@ -438,8 +492,9 @@ ImageHandle Device::CreateImageFromStagingBuffer(const ImageCreateInfo& imageCI,
 			vmaCreateImage(_allocator, &imageCreateInfo, &imageAllocateInfo, &image, &allocation, nullptr);
 		if (result != VK_SUCCESS) {
 			Log::Error("Vulkan", "Failed to create image: {}", vk::to_string(vk::Result(result)));
-			throw std::runtime_error("Failed to create image!");
+			return {};
 		}
+		Log::Debug("Vulkan", "Image created.");
 		manager.Image      = image;
 		manager.Allocation = allocation;
 	}
@@ -1002,12 +1057,17 @@ void Device::CreateTimelineSemaphores() {
 }
 
 void Device::CreateTracingContexts() {
+#if TRACY_ENABLE
 	for (uint32_t i = 0; i < QueueTypeCount; ++i) {
-		const auto type = static_cast<QueueType>(i);
-		auto& queue     = _queueData[i];
-		auto& frame     = Frame();
-		auto& pool      = frame.CommandPools[i][0];
-		auto cmd        = pool->RequestCommandBuffer();
+		const auto type        = static_cast<QueueType>(i);
+		const auto familyProps = _deviceInfo.QueueFamilies[_queueInfo.Family(type)].queueFlags;
+		// Tracing requires resetting query pools, which can only be done in Graphics or Compute.
+		if (!(familyProps & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute))) { continue; }
+
+		auto& queue = _queueData[i];
+		auto& frame = Frame();
+		auto& pool  = frame.CommandPools[i][0];
+		auto cmd    = pool->RequestCommandBuffer();
 
 		if (_extensions.CalibratedTimestamps) {
 			queue.TracingContext =
@@ -1038,6 +1098,7 @@ void Device::CreateTracingContexts() {
 	}
 
 	WaitIdle();
+#endif
 }
 
 void Device::DestroyTimelineSemaphores() {
@@ -1665,9 +1726,11 @@ bool Device::ImageManager::CreateDefaultViews(const ImageCreateInfo& imageCI,
 
 		tmpCI.format = viewFormats[0];
 		UnormView    = device.createImageView(tmpCI);
+		Log::Debug("Vulkan", "Image View created.");
 
 		tmpCI.format = viewFormats[1];
 		SrgbView     = device.createImageView(tmpCI);
+		Log::Debug("Vulkan", "Image View created.");
 	}
 
 	return true;

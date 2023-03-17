@@ -48,9 +48,13 @@ int Application::Run() {
 		_wsi->Update();
 
 		_wsi->BeginFrame();
-		{
+		try {
 			ZoneScopedN("Application::OnUpdate");
 			OnUpdate();
+		} catch (const std::exception& e) {
+			Log::Fatal("Luna", "Fatal exception occurred while updating application!");
+			Log::Fatal("Luna", "{}", e.what());
+			break;
 		}
 		{
 			ZoneScopedN("Application::OnImGuiRender");

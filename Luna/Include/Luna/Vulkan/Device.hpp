@@ -170,7 +170,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 		std::vector<SemaphoreHandle> WaitSemaphores;
 		std::vector<vk::PipelineStageFlags2> WaitStages;
 
-		TracyVkCtx TracingContext;
+		TracyVkCtx TracingContext = nullptr;
 	};
 
 	void AddWaitSemaphoreNoLock(QueueType queueType,

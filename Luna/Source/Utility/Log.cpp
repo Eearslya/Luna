@@ -29,6 +29,7 @@ void Log::Initialize() {
 }
 
 void Log::Shutdown() {
+	_mainLogger->flush();
 	_mainLogger.reset();
 	spdlog::drop_all();
 }

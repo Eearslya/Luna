@@ -4,10 +4,22 @@
 
 namespace Luna {
 namespace Vulkan {
+/**
+ * The core class of the Vulkan backend. This class is responsible for creating the Vulkan Instance, selecting a
+ * Physical Device, and creating a Logical Device.
+ */
 class Context : public IntrusivePtrEnabled<Context> {
 	friend class Device;
 
  public:
+	/**
+	 * Initialize a new Vulkan Context. This function will create an Instance, search for a suitable Physical Device, and
+	 * create a Logical Device.
+	 *
+	 * @param instanceExtensions A list of required Instance extensions. Missing extensions will cause initialization to
+	 * fail.
+	 * @param deviceExtensions A list of required Device extensions. Missing extensions will cause initialization to fail.
+	 */
 	Context(const std::vector<const char*>& instanceExtensions, const std::vector<const char*>& deviceExtensions);
 	Context(const Context&)        = delete;
 	void operator=(const Context&) = delete;
@@ -30,6 +42,7 @@ class Context : public IntrusivePtrEnabled<Context> {
 	}
 
  private:
+	/** Our target Vulkan API version. If the device cannot support at least this version, we will fail to initialize. */
 	static constexpr uint32_t TargetVulkanVersion = VK_API_VERSION_1_2;
 
 	void CreateInstance(const std::vector<const char*>& requiredExtensions);

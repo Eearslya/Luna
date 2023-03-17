@@ -206,6 +206,8 @@ void CommandBuffer::BlitImage(const Image& dst,
 	                         dst.GetLayout(vk::ImageLayout::eTransferDstOptimal),
 	                         blit,
 	                         filter);
+
+	if (dst.IsSwapchainImage()) { _swapchainStages |= vk::PipelineStageFlagBits2::eBlit; }
 }
 
 void CommandBuffer::ClearColorImage(const Image& image, const vk::ClearColorValue& clear) {
@@ -246,6 +248,8 @@ void CommandBuffer::CopyBufferToImage(const Image& dst,
                                       const std::vector<vk::BufferImageCopy>& blits) {
 	_commandBuffer.copyBufferToImage(
 		src.GetBuffer(), dst.GetImage(), dst.GetLayout(vk::ImageLayout::eTransferDstOptimal), blits);
+
+	if (dst.IsSwapchainImage()) { _swapchainStages |= vk::PipelineStageFlagBits2::eCopy; }
 }
 
 void CommandBuffer::CopyBufferToImage(const Image& dst,
@@ -259,6 +263,8 @@ void CommandBuffer::CopyBufferToImage(const Image& dst,
 	const vk::BufferImageCopy blit(bufferOffset, rowLength, sliceHeight, subresource, offset, extent);
 	_commandBuffer.copyBufferToImage(
 		src.GetBuffer(), dst.GetImage(), dst.GetLayout(vk::ImageLayout::eTransferDstOptimal), blit);
+
+	if (dst.IsSwapchainImage()) { _swapchainStages |= vk::PipelineStageFlagBits2::eCopy; }
 }
 
 void CommandBuffer::CopyImage(Image& dst,
@@ -274,6 +280,8 @@ void CommandBuffer::CopyImage(Image& dst,
 	                         dst.GetImage(),
 	                         dst.GetLayout(vk::ImageLayout::eTransferDstOptimal),
 	                         region);
+
+	if (dst.IsSwapchainImage()) { _swapchainStages |= vk::PipelineStageFlagBits2::eCopy; }
 }
 
 void CommandBuffer::FillBuffer(const Buffer& dst, uint8_t value) {

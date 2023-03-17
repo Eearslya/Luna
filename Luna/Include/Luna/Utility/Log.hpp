@@ -72,3 +72,23 @@ class Log {
 	static std::shared_ptr<spdlog::logger> _mainLogger;
 };
 }  // namespace Luna
+
+#define LAssert(cond)                                                                \
+	do {                                                                               \
+		if (!(cond)) {                                                                   \
+			::Luna::Log::Fatal("Luna", "Assertion failed: {}", #cond);                     \
+			::Luna::Log::Fatal("Luna", "- {} L{} ({})", __FILE__, __LINE__, __FUNCTION__); \
+			::Luna::Log::Shutdown();                                                       \
+			abort();                                                                       \
+		}                                                                                \
+	} while (0)
+
+#define LAssertMsg(cond, tag, msg, ...)                                                 \
+	do {                                                                                  \
+		if (!(cond)) {                                                                      \
+			::Luna::Log::Fatal(tag, "Assertion failed: {}", fmt::format(msg, ##__VA_ARGS__)); \
+			::Luna::Log::Fatal(tag, "- {} L{} ({})", __FILE__, __LINE__, __FUNCTION__);       \
+			::Luna::Log::Shutdown();                                                          \
+			abort();                                                                          \
+		}                                                                                   \
+	} while (0)

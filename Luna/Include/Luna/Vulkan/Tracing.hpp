@@ -16,9 +16,10 @@
 #include <Tracy/Tracy.hpp>
 #include <Tracy/TracyVulkan.hpp>
 
-#define LunaCmdZone(cmd, name)                                            \
-	ZoneScopedN(name);                                                      \
-	TracyVkZone((cmd).GetTracingContext(), (cmd).GetCommandBuffer(), name); \
+#define LunaCmdZone(cmd, name)                                                                                \
+	ZoneScopedN(name);                                                                                          \
+	TracyVkNamedZone(                                                                                           \
+		(cmd).GetTracingContext(), ___tracy_gpu_zone, (cmd).GetCommandBuffer(), name, (cmd).GetTracingContext()); \
 	const auto lunaCmdTracingZone = (cmd).Zone(name)
 
 #undef vkBeginCommandBuffer

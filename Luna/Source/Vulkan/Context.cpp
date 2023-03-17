@@ -3,11 +3,18 @@
 #include <algorithm>
 #include <unordered_map>
 
+/**
+ * Contains our Vulkan.hpp dynamic dispatcher, which holds all of the dynamically-loaded function pointers for
+ * Vulkan.
+ */
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE;
 
 namespace Luna {
 namespace Vulkan {
 #ifdef LUNA_VULKAN_DEBUG
+/**
+ * Vulkan Debug Utilities callback. Used when Validation is enabled to print warning and error messages to the logs.
+ */
 static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
                                                           VkDebugUtilsMessageTypeFlagsEXT type,
                                                           const VkDebugUtilsMessengerCallbackDataEXT* data,
@@ -39,7 +46,10 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugCallback(VkDebugUtilsMessageSev
 #endif
 
 Context::Context(const std::vector<const char*>& instanceExtensions, const std::vector<const char*>& deviceExtensions) {
+	// DynamicLoader initializes automatically with class construction. Make sure it was successful.
 	if (!_loader.success()) { throw std::runtime_error("Failed to load Vulkan loader!"); }
+
+	// Initialize our dynamic dispatcher with The One Function Pointer To Rule Them All.
 	VULKAN_HPP_DEFAULT_DISPATCHER.init(_loader.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr"));
 
 #ifdef LUNA_VULKAN_DEBUG
@@ -60,6 +70,7 @@ Context::~Context() noexcept {
 		_device.waitIdle();
 		_device.destroy();
 	}
+
 	if (_instance) {
 #ifdef LUNA_VULKAN_DEBUG
 		if (_debugMessenger) { _instance.destroyDebugUtilsMessengerEXT(_debugMessenger); }
@@ -69,42 +80,57 @@ Context::~Context() noexcept {
 }
 
 void Context::CreateInstance(const std::vector<const char*>& requiredExtensions) {
+	// Structure used to keep track of available extensions. To check for available extensions, we enumerate through every
+	// available layer. If we try to enable an extension, but it is only available through a layer, we can use this
+	// information to automatically enable the requisite layer.
 	struct Extension {
 		std::string Name;
 		uint32_t Version;
 		std::string Layer;
 	};
 
+	// Ensure our Vulkan version is sufficient.
 	const uint32_t vulkanVersion = vk::enumerateInstanceVersion();
 	if (vulkanVersion < TargetVulkanVersion) {
 		throw std::runtime_error("System does not support required Vulkan version!");
 	}
 
+	// Enumerate our available layers.
 	const auto availableLayers = vk::enumerateInstanceLayerProperties();
 	std::vector<const char*> enabledLayers;
 
+	// Enumerate our available extensions.
 	std::unordered_map<std::string, Extension> availableExtensions;
 	std::vector<const char*> enabledExtensions;
+	// Enumerates all of the extensions for a given layer (or nullptr for base extensions). Adds to the list if the
+	// extension has not been seen yet, or the extension has a newer version than the one we've seen before.
 	const auto EnumerateExtensions = [&](const vk::LayerProperties* layer) -> void {
 		const std::string layerName = layer ? std::string(layer->layerName.data()) : "";
 		const vk::Optional<const std::string> vkLayerName(layer ? &layerName : nullptr);
 		const auto extensions = vk::enumerateInstanceExtensionProperties(vkLayerName);
+
 		for (const auto& extension : extensions) {
 			const std::string name = std::string(extension.extensionName.data());
 			Extension ext{name, extension.specVersion, layerName};
+
 			auto it = availableExtensions.find(name);
 			if (it == availableExtensions.end() || it->second.Version < ext.Version) { availableExtensions[name] = ext; }
 		}
 	};
+	// Enumerate all of the extensions that don't need a layer first...
 	EnumerateExtensions(nullptr);
+	// Then enumerate all of the layers for their extensions.
 	for (const auto& layer : availableLayers) { EnumerateExtensions(&layer); }
 
+	// Helper function, returns true if the given layer is available.
 	const auto HasLayer = [&availableLayers](const char* layerName) -> bool {
 		return std::find_if(
 						 availableLayers.begin(), availableLayers.end(), [layerName](const vk::LayerProperties& layer) -> bool {
 							 return strcmp(layer.layerName, layerName) == 0;
 						 }) != availableLayers.end();
 	};
+	// Helper function, attempts to enable the given layer and returns true if successful, or if the layer was already
+	// enabled.
 	const auto TryLayer = [&](const char* layerName) -> bool {
 		if (!HasLayer(layerName)) { return false; }
 		for (const auto& name : enabledLayers) {
@@ -116,9 +142,12 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 
 		return true;
 	};
+	// Helper function, returns true if the given extension is available.
 	const auto HasExtension = [&availableExtensions](const char* extName) -> bool {
 		return availableExtensions.find(std::string(extName)) != availableExtensions.end();
 	};
+	// Helper function, attempts to enable the given extension. Will attempt to enable requisite layers, if any. Returns
+	// true when successful, or when extension is already enabled.
 	const auto TryExtension = [&](const char* extName) -> bool {
 		if (!HasExtension(extName)) { return false; }
 		for (const auto& name : enabledExtensions) {
@@ -134,6 +163,7 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 		return true;
 	};
 
+	// Ensure we have all required instance extensions.
 	for (const auto& ext : requiredExtensions) {
 		if (!TryExtension(ext)) {
 			Log::Fatal("Vulkan::Context", "Required instance extension '{}' could not be enabled!", ext);
@@ -141,6 +171,7 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 		}
 	}
 
+	// Attempt to enable a few more extensions that we use for certain engine features.
 	_extensions.DebugUtils = TryExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 	_extensions.Surface    = TryExtension(VK_KHR_SURFACE_EXTENSION_NAME);
 	_extensions.GetSurfaceCapabilities2 =
@@ -149,16 +180,20 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 		_extensions.Surface && _extensions.GetSurfaceCapabilities2 && TryExtension("VK_EXT_surface_maintenance1");
 	_extensions.SwapchainColorspace = _extensions.Surface && TryExtension(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);
 
+	// Enable validation, if applicable.
 #ifdef LUNA_VULKAN_DEBUG
 	TryLayer("VK_LAYER_KHRONOS_validation");
 	_extensions.ValidationFeatures = TryExtension(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
 #endif
 
+	// Construct our base application and instance create info.
 	const vk::ApplicationInfo appInfo(
 		"Luna", VK_MAKE_API_VERSION(0, 1, 0, 0), "Luna", VK_MAKE_API_VERSION(0, 1, 0, 0), TargetVulkanVersion);
 	const vk::InstanceCreateInfo instanceCI({}, &appInfo, enabledLayers, enabledExtensions);
 
 #ifdef LUNA_VULKAN_DEBUG
+	// If debugging, add a debug messenger struct to our instance. This allows the debug utils extension to keep track of
+	// errors during instance creation and destruction.
 	const vk::DebugUtilsMessengerCreateInfoEXT debugCI(
 		{},
 		vk::DebugUtilsMessageSeverityFlagBitsEXT::eError | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning,
@@ -167,25 +202,31 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 		VulkanDebugCallback,
 		this);
 
+	// Enable helpful validation features.
 	const std::vector<vk::ValidationFeatureEnableEXT> validationEnable = {
 		vk::ValidationFeatureEnableEXT::eBestPractices, vk::ValidationFeatureEnableEXT::eSynchronizationValidation};
 	const std::vector<vk::ValidationFeatureDisableEXT> validationDisable;
 	const vk::ValidationFeaturesEXT validationCI(validationEnable, validationDisable);
 
+	// Construct our structure chain, and prune any structures we can't support.
 	vk::StructureChain<vk::InstanceCreateInfo, vk::DebugUtilsMessengerCreateInfoEXT, vk::ValidationFeaturesEXT> chain(
 		instanceCI, debugCI, validationCI);
 	if (!_extensions.DebugUtils) { chain.unlink<vk::DebugUtilsMessengerCreateInfoEXT>(); }
 	if (!_extensions.ValidationFeatures) { chain.unlink<vk::ValidationFeaturesEXT>(); }
 
+	// Create our instance.
 	_instance = vk::createInstance(chain.get());
 #else
+	// Create our instance.
 	_instance = vk::createInstance(instanceCI);
 #endif
 
 	Log::Debug("Vulkan", "Instance created.");
+	// Load all instance-level function pointers.
 	VULKAN_HPP_DEFAULT_DISPATCHER.init(_instance);
 
 #ifdef LUNA_VULKAN_DEBUG
+	// Create our main debug messenger.
 	if (_extensions.DebugUtils) {
 		_debugMessenger = _instance.createDebugUtilsMessengerEXT(debugCI);
 		Log::Debug("Vulkan", "Debug Messenger created.");
@@ -194,9 +235,11 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 }
 
 void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredExtensions) {
+	// Find all of the available physical devices.
 	const auto physicalDevices = _instance.enumeratePhysicalDevices();
 	if (physicalDevices.empty()) { throw std::runtime_error("No Vulkan devices are available on this system!"); }
 
+	// Helper function, returns true if the given extension is available within the given device information.
 	const auto HasExtension = [](const DeviceInfo& info, const char* extensionName) -> bool {
 		return std::find_if(info.AvailableExtensions.begin(),
 		                    info.AvailableExtensions.end(),
@@ -205,6 +248,7 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredExten
 												}) != info.AvailableExtensions.end();
 	};
 
+	// Enumerate each of our physical devices and build up the device information structs.
 	std::vector<DeviceInfo> deviceInfos(physicalDevices.size());
 	for (size_t i = 0; i < physicalDevices.size(); ++i) {
 		auto& info          = deviceInfos[i];
@@ -214,12 +258,14 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredExten
 		info.Memory              = info.PhysicalDevice.getMemoryProperties();
 		info.QueueFamilies       = info.PhysicalDevice.getQueueFamilyProperties();
 
+		// Sort available extensions alphabetically.
 		std::sort(info.AvailableExtensions.begin(),
 		          info.AvailableExtensions.end(),
 		          [](const vk::ExtensionProperties& a, const vk::ExtensionProperties& b) {
 								return std::string(a.extensionName.data()) < std::string(b.extensionName.data());
 							});
 
+		// Fetch extension feature support and properties.
 		vk::StructureChain<vk::PhysicalDeviceFeatures2,
 		                   vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
 		                   vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
@@ -232,6 +278,7 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredExten
 		                   vk::PhysicalDeviceVulkan12Properties>
 			properties;
 
+		// Cull structures from the chains if the device does not support the requisite extensions.
 		if (!HasExtension(info, VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
 			features.unlink<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
 			properties.unlink<vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
@@ -259,19 +306,23 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredExten
 		info.Properties.Vulkan12              = properties.get<vk::PhysicalDeviceVulkan12Properties>();
 	}
 
+	// Sort our device list such that discrete GPUs are higher than other types of Vulkan devices.
 	std::stable_partition(deviceInfos.begin(), deviceInfos.end(), [](const DeviceInfo& info) {
 		return info.Properties.Core.deviceType == vk::PhysicalDeviceType::eDiscreteGpu;
 	});
 
+	// Log which Vulkan devices we discovered.
 	Log::Trace("Vulkan::Context", "Candidate Vulkan Devices ({}):", deviceInfos.size());
 	for (const auto& info : deviceInfos) {
 		Log::Trace(
 			"Vulkan::Context", "- {} ({})", info.Properties.Core.deviceName, vk::to_string(info.Properties.Core.deviceType));
 	}
 
+	// Determine which Vulkan devices are incompatible.
 	deviceInfos.erase(std::remove_if(deviceInfos.begin(),
 	                                 deviceInfos.end(),
 	                                 [&](const DeviceInfo& info) -> bool {
+																		 // Device must meet requisite Vulkan version.
 																		 if (info.Properties.Core.apiVersion < TargetVulkanVersion) {
 																			 Log::Trace(
 																				 "Vulkan::Context",
@@ -280,6 +331,7 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredExten
 																			 return true;
 																		 }
 
+																		 // Device must possess all required extensions.
 																		 for (const auto& ext : requiredExtensions) {
 																			 if (!HasExtension(info, ext)) {
 																				 Log::Trace("Vulkan::Context",
@@ -295,6 +347,7 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredExten
 	                  deviceInfos.end());
 	if (deviceInfos.empty()) { throw std::runtime_error("No Vulkan devices met requirements!"); }
 
+	// For now, just pick the top of the list.
 	_deviceInfo = deviceInfos[0];
 
 	Log::Debug("Vulkan", "Using physical device '{}'.", _deviceInfo.Properties.Core.deviceName);
@@ -329,6 +382,7 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 		}
 	}
 
+	// Attempt to enable helpful extensions for engine features.
 	_extensions.DeferredHostOperations = TryExtension(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
 	if (_extensions.DeferredHostOperations) {
 		_extensions.AccelerationStructure = TryExtension(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
