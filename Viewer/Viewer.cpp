@@ -6,6 +6,7 @@
 #include <Luna/Renderer/RenderGraph.hpp>
 #include <Luna/Renderer/RenderPass.hpp>
 #include <Luna/Renderer/RendererSuite.hpp>
+#include <Luna/Scene/MeshRendererComponent.hpp>
 #include <Luna/Scene/Scene.hpp>
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Vulkan/ImGuiRenderer.hpp>
@@ -36,6 +37,15 @@ class ViewerApplication : public Luna::Application {
 		_renderSuite = std::make_unique<Luna::RendererSuite>(device);
 
 		SceneLoader::LoadGltf(device, _scene, "assets://Models/DamagedHelmet/DamagedHelmet.gltf");
+
+		for (int32_t x = -3; x < 3; ++x) {
+			for (int32_t z = -3; z < 3; ++z) {
+				auto entity = _scene.CreateEntity();
+				entity.Translate(glm::vec3(x, 0, z));
+				auto& cMeshRenderer      = entity.AddComponent<Luna::MeshRendererComponent>();
+				cMeshRenderer.StaticMesh = Luna::MakeHandle<Luna::StaticMesh>();
+			}
+		}
 	}
 
 	virtual void OnUpdate() override {
@@ -55,15 +65,6 @@ class ViewerApplication : public Luna::Application {
 	virtual void OnImGuiRender() override {}
 
  private:
-	struct DefaultImages {
-		Luna::Vulkan::ImageHandle Black2D;
-		Luna::Vulkan::ImageHandle BlackCube;
-		Luna::Vulkan::ImageHandle Gray2D;
-		Luna::Vulkan::ImageHandle Normal2D;
-		Luna::Vulkan::ImageHandle White2D;
-		Luna::Vulkan::ImageHandle WhiteCube;
-	};
-
 	void BakeRenderGraph() {
 		auto physicalBuffers = _renderGraph->ConsumePhysicalBuffers();
 

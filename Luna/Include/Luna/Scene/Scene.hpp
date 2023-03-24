@@ -16,6 +16,13 @@ class Scene {
 	void operator=(Scene&&)      = delete;
 	~Scene() noexcept;
 
+	entt::registry& GetRegistry() {
+		return _registry;
+	}
+	const entt::registry& GetRegistry() const {
+		return _registry;
+	}
+
 	void Clear();
 	Entity CreateEntity(const std::string& name = "");
 	Entity CreateChildEntity(Entity parent, const std::string& name = "");

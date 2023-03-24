@@ -19,5 +19,9 @@ class StaticSubmesh : public Renderable {
 
 class StaticMesh : public IntrusivePtrEnabled<StaticMesh> {
  public:
+	std::vector<IntrusivePtr<StaticSubmesh>> GatherOpaque() const;
+
+ private:
+	std::vector<IntrusivePtr<StaticSubmesh>> _submeshes;
 };
 }  // namespace Luna

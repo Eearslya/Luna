@@ -34,4 +34,10 @@ void StaticSubmesh::Enqueue(const RenderContext& context, const RenderableInfo& 
 		queue.Push<StaticSubmeshRenderInfo>(RenderQueueType::Opaque, 0, 0, RenderStaticSubmesh, instanceInfo);
 	if (renderInfo) { renderInfo->Program = queue.GetShaderSuites()[int(RenderableType::Mesh)].GetProgram({}); }
 }
+
+std::vector<IntrusivePtr<StaticSubmesh>> StaticMesh::GatherOpaque() const {
+	auto submesh = MakeHandle<StaticSubmesh>();
+
+	return {submesh};
+}
 }  // namespace Luna

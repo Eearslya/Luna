@@ -2,6 +2,8 @@
 
 #include <Luna/Application/Application.hpp>
 #include <Luna/Platform/Filesystem.hpp>
+#include <Luna/Scene/Entity.hpp>
+#include <Luna/Scene/Scene.hpp>
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Utility/Threading.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
