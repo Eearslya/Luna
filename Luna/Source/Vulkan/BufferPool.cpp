@@ -66,14 +66,13 @@ BufferBlock BufferPool::AllocateBlock(vk::DeviceSize size) {
 	vk::BufferUsageFlags usage = _usage;
 	if (domain == BufferDomain::Device) { usage |= vk::BufferUsageFlagBits::eTransferDst; }
 
-	BufferCreateInfo info{.Domain = domain, .Size = size, .Usage = usage};
+	BufferCreateInfo info(domain, size, usage);
 	block.Gpu = _device.CreateBuffer(info);
 	block.Gpu->SetInternalSync();
 
 	block.Mapped = static_cast<uint8_t*>(block.Gpu->Map());
 	if (!block.Mapped) {
-		BufferCreateInfo cpuInfo{
-			.Domain = BufferDomain::Host, .Size = size, .Usage = vk::BufferUsageFlagBits::eTransferSrc};
+		BufferCreateInfo cpuInfo(BufferDomain::Host, size, vk::BufferUsageFlagBits::eTransferSrc);
 		block.Cpu = _device.CreateBuffer(cpuInfo);
 		block.Cpu->SetInternalSync();
 		block.Mapped = static_cast<uint8_t*>(block.Cpu->Map());

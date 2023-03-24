@@ -10,6 +10,20 @@ vk::PipelineStageFlags BufferUsageToStages(vk::BufferUsageFlags usage);
 enum class BufferDomain { Device, Host };
 
 struct BufferCreateInfo {
+	BufferCreateInfo() = default;
+	BufferCreateInfo(BufferDomain domain, vk::DeviceSize size, vk::BufferUsageFlags usage)
+			: Domain(domain), Size(size), Usage(usage) {}
+
+	static BufferCreateInfo StagingBuffer(vk::DeviceSize size) {
+		return BufferCreateInfo(BufferDomain::Host, size, vk::BufferUsageFlagBits::eTransferSrc);
+	}
+	static BufferCreateInfo StorageBuffer(vk::DeviceSize size) {
+		return BufferCreateInfo(BufferDomain::Device, size, vk::BufferUsageFlagBits::eStorageBuffer);
+	}
+	static BufferCreateInfo UniformBuffer(vk::DeviceSize size) {
+		return BufferCreateInfo(BufferDomain::Host, size, vk::BufferUsageFlagBits::eUniformBuffer);
+	}
+
 	BufferDomain Domain        = BufferDomain::Device;
 	vk::DeviceSize Size        = 0;
 	vk::BufferUsageFlags Usage = {};
