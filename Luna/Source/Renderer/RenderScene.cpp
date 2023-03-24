@@ -14,6 +14,7 @@ void RenderScene::GatherOpaqueRenderables(VisibilityList& list) {
 	auto renderables = registry.view<TransformComponent, MeshRendererComponent>();
 	for (auto entityId : renderables) {
 		auto [cTransform, cMeshRenderer] = renderables.get(entityId);
+		if (!cMeshRenderer.StaticMesh) { continue; }
 
 		const auto transform = cTransform.GetTransform();
 		const auto submeshes = cMeshRenderer.StaticMesh->GatherOpaque();

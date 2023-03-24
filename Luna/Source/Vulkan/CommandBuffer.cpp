@@ -1034,7 +1034,7 @@ void CommandBuffer::RebindDescriptorSet(uint32_t set) {
 	ForEachBit(setLayout.UniformBufferMask, [&](uint32_t binding) {
 		uint32_t arraySize = setLayout.ArraySizes[binding];
 		for (uint32_t i = 0; i < arraySize; ++i) {
-			dynamicOffsets[dynamicOffsetCount++] = _bindings.Bindings[set][binding + 1].DynamicOffset;
+			dynamicOffsets[dynamicOffsetCount++] = _bindings.Bindings[set][binding + i].DynamicOffset;
 		}
 	});
 
@@ -1042,7 +1042,9 @@ void CommandBuffer::RebindDescriptorSet(uint32_t set) {
 		_actualRenderPass ? vk::PipelineBindPoint::eGraphics : vk::PipelineBindPoint::eCompute,
 		_pipelineLayout,
 		set,
-		_allocatedSets[set],
+		1,
+		&_allocatedSets[set],
+		dynamicOffsetCount,
 		dynamicOffsets);
 }
 

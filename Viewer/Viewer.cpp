@@ -36,16 +36,8 @@ class ViewerApplication : public Luna::Application {
 		_renderGraph = std::make_unique<Luna::RenderGraph>(device);
 		_renderSuite = std::make_unique<Luna::RendererSuite>(device);
 
-		SceneLoader::LoadGltf(device, _scene, "assets://Models/DamagedHelmet/DamagedHelmet.gltf");
-
-		for (int32_t x = -3; x < 3; ++x) {
-			for (int32_t z = -3; z < 3; ++z) {
-				auto entity = _scene.CreateEntity();
-				entity.Translate(glm::vec3(x, 0, z));
-				auto& cMeshRenderer      = entity.AddComponent<Luna::MeshRendererComponent>();
-				cMeshRenderer.StaticMesh = Luna::MakeHandle<Luna::StaticMesh>();
-			}
-		}
+		// SceneLoader::LoadGltf(device, _scene, "assets://Models/DamagedHelmet/DamagedHelmet.gltf");
+		SceneLoader::LoadGltf(device, _scene, "assets://Models/Sponza/Sponza.gltf");
 	}
 
 	virtual void OnUpdate() override {
@@ -252,7 +244,7 @@ class ViewerApplication : public Luna::Application {
 			const auto fbSize          = GetFramebufferSize();
 			const float aspectRatio    = float(fbSize.x) / float(fbSize.y);
 			const glm::mat4 projection = glm::perspective(glm::radians(60.0f), aspectRatio, 0.01f, 1000.0f);
-			const glm::mat4 view       = glm::lookAt(glm::vec3(1, 0.5f, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+			const glm::mat4 view       = glm::lookAt(glm::vec3(2, 0.5f, 1), glm::vec3(0, 0.5f, 0), glm::vec3(0, 1, 0));
 			_renderContext.SetCamera(projection, view);
 		});
 	}

@@ -12,8 +12,11 @@ BufferBlockAllocation BufferBlock::Allocate(vk::DeviceSize allocateSize) {
 		auto* ret = Mapped + alignedOffset;
 		Offset    = alignedOffset + allocateSize;
 
-		vk::DeviceSize paddedSize = std::max<vk::DeviceSize>(allocateSize, SpillSize);
-		paddedSize                = std::min<vk::DeviceSize>(paddedSize, Size - alignedOffset);
+		// TODO: What is this "padded size" and why do we need to return such a large size when we're only using a portion
+		// of the buffer?
+		// vk::DeviceSize paddedSize = std::max<vk::DeviceSize>(allocateSize, SpillSize);
+		// paddedSize                = std::min<vk::DeviceSize>(paddedSize, Size - alignedOffset);
+		vk::DeviceSize paddedSize = allocateSize;
 
 		return {ret, alignedOffset, paddedSize};
 	} else {
