@@ -540,7 +540,7 @@ RenderPass::RenderPass(Hash hash, Device& device, const RenderPassInfo& rpInfo)
 	SetupSubpasses(rpCI);
 
 	_renderPass = _device.GetDevice().createRenderPass2(rpCI);
-	Log::Debug("Vulkan", "Render Pass created.");
+	Log::Trace("Vulkan", "Render Pass created.");
 }
 
 RenderPass::RenderPass(Hash hash, Device& device, const vk::RenderPassCreateInfo2& rpCI)
@@ -561,7 +561,7 @@ RenderPass::RenderPass(Hash hash, Device& device, const vk::RenderPassCreateInfo
 	SetupSubpasses(rpCI);
 
 	_renderPass = _device.GetDevice().createRenderPass2(rpCI);
-	Log::Debug("Vulkan", "Render Pass created.");
+	Log::Trace("Vulkan", "Render Pass created.");
 }
 
 RenderPass::~RenderPass() noexcept {
@@ -655,7 +655,7 @@ Framebuffer::Framebuffer(Device& device, const RenderPass& renderPass, const Ren
 	const vk::FramebufferCreateInfo fbCI(
 		{}, _renderPass.GetRenderPass(), viewCount, views.data(), _extent.width, _extent.height, 1);
 	_framebuffer = _device.GetDevice().createFramebuffer(fbCI);
-	Log::Debug("Vulkan", "Framebuffer created.");
+	Log::Trace("Vulkan", "Framebuffer created.");
 }
 
 Framebuffer::~Framebuffer() noexcept {

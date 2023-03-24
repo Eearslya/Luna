@@ -51,7 +51,6 @@ class IntrusivePtrEnabled {
 	IntrusivePtrEnabled()                                      = default;
 	IntrusivePtrEnabled(const IntrusivePtrEnabled&)            = delete;
 	IntrusivePtrEnabled& operator=(const IntrusivePtrEnabled&) = delete;
-	virtual ~IntrusivePtrEnabled() noexcept                    = default;
 
 	void AddReference() {
 		_refCount.AddReference();

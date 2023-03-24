@@ -221,7 +221,7 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 	_instance = vk::createInstance(instanceCI);
 #endif
 
-	Log::Debug("Vulkan", "Instance created.");
+	Log::Trace("Vulkan", "Instance created.");
 	// Load all instance-level function pointers.
 	VULKAN_HPP_DEFAULT_DISPATCHER.init(_instance);
 
@@ -229,7 +229,7 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 	// Create our main debug messenger.
 	if (_extensions.DebugUtils) {
 		_debugMessenger = _instance.createDebugUtilsMessengerEXT(debugCI);
-		Log::Debug("Vulkan", "Debug Messenger created.");
+		Log::Trace("Vulkan", "Debug Messenger created.");
 	}
 #endif
 }
@@ -506,7 +506,7 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 	const vk::StructureChain<vk::DeviceCreateInfo, vk::PhysicalDeviceFeatures2> deviceChain(deviceCI,
 	                                                                                        featuresChain.get());
 	_device = _deviceInfo.PhysicalDevice.createDevice(deviceChain.get());
-	Log::Debug("Vulkan", "Device created.");
+	Log::Trace("Vulkan", "Device created.");
 	// Load device function pointers.
 	VULKAN_HPP_DEFAULT_DISPATCHER.init(_device);
 

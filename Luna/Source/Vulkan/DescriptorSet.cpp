@@ -146,7 +146,7 @@ DescriptorSetAllocator::DescriptorSetAllocator(Hash hash,
 	if (!bindings.empty()) {
 		layoutCI.setBindings(bindings);
 		_setLayout = _device.GetDevice().createDescriptorSetLayout(layoutCI);
-		Log::Debug("Vulkan", "Descriptor Set Layout created.");
+		Log::Trace("Vulkan", "Descriptor Set Layout created.");
 	}
 }
 
@@ -188,7 +188,7 @@ std::pair<vk::DescriptorSet, bool> DescriptorSetAllocator::Find(uint32_t threadI
 
 	const vk::DescriptorPoolCreateInfo poolCI({}, DescriptorSetsPerPool, _poolSizes);
 	auto pool = _device.GetDevice().createDescriptorPool(poolCI);
-	Log::Debug("Vulkan", "Descriptor Pool created.");
+	Log::Trace("Vulkan", "Descriptor Pool created.");
 
 	std::array<vk::DescriptorSetLayout, DescriptorSetsPerPool> layouts;
 	std::fill(layouts.begin(), layouts.end(), _setLayout);

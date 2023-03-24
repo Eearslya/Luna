@@ -46,7 +46,7 @@ PipelineLayout::PipelineLayout(Hash hash, Device& device, const ProgramResourceL
 		_resourceLayout.PushConstantRange.stageFlags ? 1 : 0,
 		_resourceLayout.PushConstantRange.stageFlags ? &_resourceLayout.PushConstantRange : nullptr);
 	_pipelineLayout = _device.GetDevice().createPipelineLayout(layoutCI);
-	Log::Debug("Vulkan", "Pipeline Layout created.");
+	Log::Trace("Vulkan", "Pipeline Layout created.");
 
 	CreateUpdateTemplates();
 }
@@ -178,7 +178,7 @@ void PipelineLayout::CreateUpdateTemplates() {
 			_pipelineLayout,
 			set);
 		_updateTemplates[set] = _device.GetDevice().createDescriptorUpdateTemplate(templateCI);
-		Log::Debug("Vulkan", "Descriptor Update Template created.");
+		Log::Trace("Vulkan", "Descriptor Update Template created.");
 	}
 }
 
@@ -188,180 +188,9 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 
 	const vk::ShaderModuleCreateInfo shaderCI({}, codeSize, reinterpret_cast<const uint32_t*>(code));
 	_shaderModule = _device.GetDevice().createShaderModule(shaderCI);
-	Log::Debug("Vulkan", "Shader Module created.");
+	Log::Trace("Vulkan", "Shader Module created.");
 
-	// Reflect the SPIR-V code and find the shader's resources.
-	{
-		const auto UpdateArrayInfo = [&](const spirv_cross::SPIRType& type, uint32_t set, uint32_t binding) {
-			auto& size = _layout.SetLayouts[set].ArraySizes[binding];
-			if (!type.array.empty()) {
-				if (type.array.size() != 1) {
-					Log::Error("Vulkan::Shader", "Reflection error: Array dimension must be 1.");
-				} else if (!type.array_size_literal.front()) {
-					Log::Error("Vulkan::Shader", "Reflection error: Array dimension must be a literal.");
-				} else {
-					if (type.array.front() == 0) {
-						if (binding != 0) {
-							Log::Error("Vulkan::Shader", "Reflection error: Bindless textures can only be used with binding 0.");
-						}
-
-						if (type.basetype != spirv_cross::SPIRType::Image || type.image.dim == spv::DimBuffer) {
-							Log::Error("Vulkan::Shader", "Reflection error: Bindless can only be used for sampled images.");
-						} else {
-							_layout.BindlessSetMask |= 1u << set;
-						}
-
-						size = DescriptorSetLayout::UnsizedArray;
-					} else if (size && size != type.array.front()) {
-						Log::Error("Vulkan::Shader",
-						           "Reflection error: Array dimension for set {}, binding {} is inconsistent.",
-						           set,
-						           binding);
-					} else if (type.array.front() + binding > MaxDescriptorBindings) {
-						Log::Error("Vulkan::Shader", "Reflection error: Array will go out of bounds.");
-					} else {
-						size = static_cast<uint8_t>(type.array.front());
-					}
-				}
-			} else {
-				if (size && size != 1) {
-					Log::Error("Vulkan::Shader",
-					           "Reflection error: Array dimension for set {}, binding {} is inconsistent.",
-					           set,
-					           binding);
-				}
-
-				size = 1;
-			}
-		};
-
-		spirv_cross::Compiler compiler(reinterpret_cast<const uint32_t*>(code), codeSize / sizeof(uint32_t));
-		const auto resources = compiler.get_shader_resources();
-
-		for (const auto& image : resources.sampled_images) {
-			const auto set     = compiler.get_decoration(image.id, spv::DecorationDescriptorSet);
-			const auto binding = compiler.get_decoration(image.id, spv::DecorationBinding);
-			const auto& type   = compiler.get_type(image.type_id);
-
-			if (type.image.dim == spv::DimBuffer) {
-				_layout.SetLayouts[set].SampledBufferMask |= 1u << binding;
-			} else {
-				_layout.SetLayouts[set].SampledImageMask |= 1u << binding;
-			}
-
-			if (compiler.get_type(type.image.type).basetype == spirv_cross::SPIRType::BaseType::Float) {
-				_layout.SetLayouts[set].FloatMask |= 1u << binding;
-			}
-
-			UpdateArrayInfo(type, set, binding);
-		}
-
-		for (const auto& image : resources.subpass_inputs) {
-			const auto set     = compiler.get_decoration(image.id, spv::DecorationDescriptorSet);
-			const auto binding = compiler.get_decoration(image.id, spv::DecorationBinding);
-			const auto& type   = compiler.get_type(image.type_id);
-
-			_layout.SetLayouts[set].InputAttachmentMask |= 1u << binding;
-
-			if (compiler.get_type(type.image.type).basetype == spirv_cross::SPIRType::BaseType::Float) {
-				_layout.SetLayouts[set].FloatMask |= 1u << binding;
-			}
-
-			UpdateArrayInfo(type, set, binding);
-		}
-
-		for (const auto& image : resources.separate_images) {
-			const auto set     = compiler.get_decoration(image.id, spv::DecorationDescriptorSet);
-			const auto binding = compiler.get_decoration(image.id, spv::DecorationBinding);
-			const auto& type   = compiler.get_type(image.type_id);
-
-			if (type.image.dim == spv::DimBuffer) {
-				_layout.SetLayouts[set].SampledBufferMask |= 1u << binding;
-			} else {
-				_layout.SetLayouts[set].SeparateImageMask |= 1u << binding;
-			}
-
-			if (compiler.get_type(type.image.type).basetype == spirv_cross::SPIRType::BaseType::Float) {
-				_layout.SetLayouts[set].FloatMask |= 1u << binding;
-			}
-
-			UpdateArrayInfo(type, set, binding);
-		}
-
-		for (const auto& sampler : resources.separate_samplers) {
-			const auto set     = compiler.get_decoration(sampler.id, spv::DecorationDescriptorSet);
-			const auto binding = compiler.get_decoration(sampler.id, spv::DecorationBinding);
-			const auto& type   = compiler.get_type(sampler.type_id);
-
-			_layout.SetLayouts[set].SamplerMask |= 1u << binding;
-
-			UpdateArrayInfo(type, set, binding);
-		}
-
-		for (const auto& image : resources.storage_images) {
-			const auto set     = compiler.get_decoration(image.id, spv::DecorationDescriptorSet);
-			const auto binding = compiler.get_decoration(image.id, spv::DecorationBinding);
-			const auto& type   = compiler.get_type(image.type_id);
-
-			_layout.SetLayouts[set].StorageImageMask |= 1u << binding;
-
-			if (compiler.get_type(type.image.type).basetype == spirv_cross::SPIRType::BaseType::Float) {
-				_layout.SetLayouts[set].FloatMask |= 1u << binding;
-			}
-
-			UpdateArrayInfo(type, set, binding);
-		}
-
-		for (const auto& buffer : resources.uniform_buffers) {
-			const auto set     = compiler.get_decoration(buffer.id, spv::DecorationDescriptorSet);
-			const auto binding = compiler.get_decoration(buffer.id, spv::DecorationBinding);
-			const auto& type   = compiler.get_type(buffer.type_id);
-
-			_layout.SetLayouts[set].UniformBufferMask |= 1u << binding;
-
-			UpdateArrayInfo(type, set, binding);
-		}
-
-		for (const auto& buffer : resources.storage_buffers) {
-			const auto set     = compiler.get_decoration(buffer.id, spv::DecorationDescriptorSet);
-			const auto binding = compiler.get_decoration(buffer.id, spv::DecorationBinding);
-			const auto& type   = compiler.get_type(buffer.type_id);
-
-			_layout.SetLayouts[set].StorageBufferMask |= 1u << binding;
-
-			UpdateArrayInfo(type, set, binding);
-		}
-
-		for (const auto& attribute : resources.stage_inputs) {
-			const auto location = compiler.get_decoration(attribute.id, spv::DecorationLocation);
-
-			_layout.InputMask |= 1u << location;
-		}
-
-		for (const auto& attribute : resources.stage_outputs) {
-			const auto location = compiler.get_decoration(attribute.id, spv::DecorationLocation);
-
-			_layout.OutputMask |= 1u << location;
-		}
-
-		if (!resources.push_constant_buffers.empty()) {
-			_layout.PushConstantSize =
-				compiler.get_declared_struct_size(compiler.get_type(resources.push_constant_buffers.front().base_type_id));
-		}
-
-		for (const auto& constant : compiler.get_specialization_constants()) {
-			if (constant.constant_id >= MaxSpecConstants) {
-				Log::Error("Vulkan::Shader",
-				           "Reflection error: Specialization constant {} is out of range and will be ignored. "
-				           "Max allowed is {}.",
-				           constant.constant_id,
-				           MaxSpecConstants);
-				continue;
-			}
-
-			_layout.SpecConstantMask |= 1u << constant.constant_id;
-		}
-	}
+	_layout = ReflectShaderResourceLayout(codeSize, static_cast<const uint32_t*>(code));
 
 // Dump shader resources to console.
 #if 1
@@ -437,6 +266,185 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 
 Shader::~Shader() noexcept {
 	if (_shaderModule) { _device.GetDevice().destroyShaderModule(_shaderModule); }
+}
+
+ShaderResourceLayout Shader::ReflectShaderResourceLayout(size_t codeSize, const uint32_t* code) {
+	ShaderResourceLayout layout;
+
+	// Reflect the SPIR-V code and find the shader's resources.
+	{
+		const auto UpdateArrayInfo = [&](const spirv_cross::SPIRType& type, uint32_t set, uint32_t binding) {
+			auto& size = layout.SetLayouts[set].ArraySizes[binding];
+			if (!type.array.empty()) {
+				if (type.array.size() != 1) {
+					Log::Error("Vulkan::Shader", "Reflection error: Array dimension must be 1.");
+				} else if (!type.array_size_literal.front()) {
+					Log::Error("Vulkan::Shader", "Reflection error: Array dimension must be a literal.");
+				} else {
+					if (type.array.front() == 0) {
+						if (binding != 0) {
+							Log::Error("Vulkan::Shader", "Reflection error: Bindless textures can only be used with binding 0.");
+						}
+
+						if (type.basetype != spirv_cross::SPIRType::Image || type.image.dim == spv::DimBuffer) {
+							Log::Error("Vulkan::Shader", "Reflection error: Bindless can only be used for sampled images.");
+						} else {
+							layout.BindlessSetMask |= 1u << set;
+						}
+
+						size = DescriptorSetLayout::UnsizedArray;
+					} else if (size && size != type.array.front()) {
+						Log::Error("Vulkan::Shader",
+						           "Reflection error: Array dimension for set {}, binding {} is inconsistent.",
+						           set,
+						           binding);
+					} else if (type.array.front() + binding > MaxDescriptorBindings) {
+						Log::Error("Vulkan::Shader", "Reflection error: Array will go out of bounds.");
+					} else {
+						size = static_cast<uint8_t>(type.array.front());
+					}
+				}
+			} else {
+				if (size && size != 1) {
+					Log::Error("Vulkan::Shader",
+					           "Reflection error: Array dimension for set {}, binding {} is inconsistent.",
+					           set,
+					           binding);
+				}
+
+				size = 1;
+			}
+		};
+
+		spirv_cross::Compiler compiler(code, codeSize / sizeof(uint32_t));
+		const auto resources = compiler.get_shader_resources();
+
+		for (const auto& image : resources.sampled_images) {
+			const auto set     = compiler.get_decoration(image.id, spv::DecorationDescriptorSet);
+			const auto binding = compiler.get_decoration(image.id, spv::DecorationBinding);
+			const auto& type   = compiler.get_type(image.type_id);
+
+			if (type.image.dim == spv::DimBuffer) {
+				layout.SetLayouts[set].SampledBufferMask |= 1u << binding;
+			} else {
+				layout.SetLayouts[set].SampledImageMask |= 1u << binding;
+			}
+
+			if (compiler.get_type(type.image.type).basetype == spirv_cross::SPIRType::BaseType::Float) {
+				layout.SetLayouts[set].FloatMask |= 1u << binding;
+			}
+
+			UpdateArrayInfo(type, set, binding);
+		}
+
+		for (const auto& image : resources.subpass_inputs) {
+			const auto set     = compiler.get_decoration(image.id, spv::DecorationDescriptorSet);
+			const auto binding = compiler.get_decoration(image.id, spv::DecorationBinding);
+			const auto& type   = compiler.get_type(image.type_id);
+
+			layout.SetLayouts[set].InputAttachmentMask |= 1u << binding;
+
+			if (compiler.get_type(type.image.type).basetype == spirv_cross::SPIRType::BaseType::Float) {
+				layout.SetLayouts[set].FloatMask |= 1u << binding;
+			}
+
+			UpdateArrayInfo(type, set, binding);
+		}
+
+		for (const auto& image : resources.separate_images) {
+			const auto set     = compiler.get_decoration(image.id, spv::DecorationDescriptorSet);
+			const auto binding = compiler.get_decoration(image.id, spv::DecorationBinding);
+			const auto& type   = compiler.get_type(image.type_id);
+
+			if (type.image.dim == spv::DimBuffer) {
+				layout.SetLayouts[set].SampledBufferMask |= 1u << binding;
+			} else {
+				layout.SetLayouts[set].SeparateImageMask |= 1u << binding;
+			}
+
+			if (compiler.get_type(type.image.type).basetype == spirv_cross::SPIRType::BaseType::Float) {
+				layout.SetLayouts[set].FloatMask |= 1u << binding;
+			}
+
+			UpdateArrayInfo(type, set, binding);
+		}
+
+		for (const auto& sampler : resources.separate_samplers) {
+			const auto set     = compiler.get_decoration(sampler.id, spv::DecorationDescriptorSet);
+			const auto binding = compiler.get_decoration(sampler.id, spv::DecorationBinding);
+			const auto& type   = compiler.get_type(sampler.type_id);
+
+			layout.SetLayouts[set].SamplerMask |= 1u << binding;
+
+			UpdateArrayInfo(type, set, binding);
+		}
+
+		for (const auto& image : resources.storage_images) {
+			const auto set     = compiler.get_decoration(image.id, spv::DecorationDescriptorSet);
+			const auto binding = compiler.get_decoration(image.id, spv::DecorationBinding);
+			const auto& type   = compiler.get_type(image.type_id);
+
+			layout.SetLayouts[set].StorageImageMask |= 1u << binding;
+
+			if (compiler.get_type(type.image.type).basetype == spirv_cross::SPIRType::BaseType::Float) {
+				layout.SetLayouts[set].FloatMask |= 1u << binding;
+			}
+
+			UpdateArrayInfo(type, set, binding);
+		}
+
+		for (const auto& buffer : resources.uniform_buffers) {
+			const auto set     = compiler.get_decoration(buffer.id, spv::DecorationDescriptorSet);
+			const auto binding = compiler.get_decoration(buffer.id, spv::DecorationBinding);
+			const auto& type   = compiler.get_type(buffer.type_id);
+
+			layout.SetLayouts[set].UniformBufferMask |= 1u << binding;
+
+			UpdateArrayInfo(type, set, binding);
+		}
+
+		for (const auto& buffer : resources.storage_buffers) {
+			const auto set     = compiler.get_decoration(buffer.id, spv::DecorationDescriptorSet);
+			const auto binding = compiler.get_decoration(buffer.id, spv::DecorationBinding);
+			const auto& type   = compiler.get_type(buffer.type_id);
+
+			layout.SetLayouts[set].StorageBufferMask |= 1u << binding;
+
+			UpdateArrayInfo(type, set, binding);
+		}
+
+		for (const auto& attribute : resources.stage_inputs) {
+			const auto location = compiler.get_decoration(attribute.id, spv::DecorationLocation);
+
+			layout.InputMask |= 1u << location;
+		}
+
+		for (const auto& attribute : resources.stage_outputs) {
+			const auto location = compiler.get_decoration(attribute.id, spv::DecorationLocation);
+
+			layout.OutputMask |= 1u << location;
+		}
+
+		if (!resources.push_constant_buffers.empty()) {
+			layout.PushConstantSize =
+				compiler.get_declared_struct_size(compiler.get_type(resources.push_constant_buffers.front().base_type_id));
+		}
+
+		for (const auto& constant : compiler.get_specialization_constants()) {
+			if (constant.constant_id >= MaxSpecConstants) {
+				Log::Error("Vulkan::Shader",
+				           "Reflection error: Specialization constant {} is out of range and will be ignored. "
+				           "Max allowed is {}.",
+				           constant.constant_id,
+				           MaxSpecConstants);
+				continue;
+			}
+
+			layout.SpecConstantMask |= 1u << constant.constant_id;
+		}
+	}
+
+	return layout;
 }
 
 ProgramBuilder::ProgramBuilder() {

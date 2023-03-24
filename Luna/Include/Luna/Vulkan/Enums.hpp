@@ -101,9 +101,15 @@ enum class ShaderStage {
 	TessellationEvaluation = 2,
 	Geometry               = 3,
 	Fragment               = 4,
-	Compute                = 5
+	Compute                = 5,
+	RayGen                 = 6,
+	AnyHit                 = 7,
+	ClosestHit             = 8,
+	Miss                   = 9,
+	Intersection           = 10,
+	Callable               = 11
 };
-constexpr static const int ShaderStageCount = 6;
+constexpr static const int ShaderStageCount = 12;
 template <>
 const char* VulkanEnumToString<ShaderStage>(const ShaderStage value) {
 	switch (value) {
@@ -119,6 +125,18 @@ const char* VulkanEnumToString<ShaderStage>(const ShaderStage value) {
 			return "Fragment";
 		case ShaderStage::Compute:
 			return "Compute";
+		case ShaderStage::RayGen:
+			return "RayGen";
+		case ShaderStage::AnyHit:
+			return "AnyHit";
+		case ShaderStage::ClosestHit:
+			return "ClosestHit";
+		case ShaderStage::Miss:
+			return "Miss";
+		case ShaderStage::Intersection:
+			return "Intersection";
+		case ShaderStage::Callable:
+			return "Callable";
 	}
 
 	return "Unknown";

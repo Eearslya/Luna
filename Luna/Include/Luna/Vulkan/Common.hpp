@@ -26,6 +26,7 @@ namespace Vulkan {
 class BindlessDescriptorPool;
 class Buffer;
 struct BufferCreateInfo;
+class BufferPool;
 class CommandBuffer;
 class CommandPool;
 class Context;
@@ -49,6 +50,8 @@ struct SamplerCreateInfo;
 class Semaphore;
 class Shader;
 class ShaderCompiler;
+class ShaderManager;
+class ShaderProgram;
 class TextureFormatLayout;
 class TransientAttachmentAllocator;
 class WSI;

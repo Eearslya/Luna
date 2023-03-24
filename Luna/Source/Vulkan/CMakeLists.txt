@@ -1,5 +1,6 @@
 target_sources(Luna PRIVATE
 	Buffer.cpp
+	BufferPool.cpp
 	CommandBuffer.cpp
 	CommandPool.cpp
 	Common.cpp
@@ -16,5 +17,6 @@ target_sources(Luna PRIVATE
 	Semaphore.cpp
 	Shader.cpp
 	ShaderCompiler.cpp
+	ShaderManager.cpp
 	TextureFormat.cpp
 	WSI.cpp)

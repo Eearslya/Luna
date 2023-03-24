@@ -85,6 +85,10 @@ void CommandBuffer::End() {
 	while (_tracingDepth > 0) { EndZone(); }
 	if (_tracingContext) { TracyVkCollect(_tracingContext, _commandBuffer); }
 	_commandBuffer.end();
+
+	if (_indexBlock.Mapped) { _device.RequestIndexBlockNoLock(_indexBlock, 0); }
+	if (_uniformBlock.Mapped) { _device.RequestUniformBlockNoLock(_uniformBlock, 0); }
+	if (_vertexBlock.Mapped) { _device.RequestVertexBlockNoLock(_vertexBlock, 0); }
 }
 
 void CommandBuffer::EndZone() {
@@ -614,6 +618,18 @@ void CommandBuffer::EndRenderPass() {
 	BeginCompute();
 }
 
+void* CommandBuffer::AllocateUniformData(uint32_t set, uint32_t binding, vk::DeviceSize size) {
+	auto data = _uniformBlock.Allocate(size);
+	if (!data.Host) {
+		_device.RequestUniformBlock(_uniformBlock, size);
+		data = _uniformBlock.Allocate(size);
+	}
+
+	SetUniformBuffer(set, binding, *_uniformBlock.Gpu, data.Offset, data.PaddedSize);
+
+	return data.Host;
+}
+
 void CommandBuffer::BeginCompute() {
 	_isCompute = true;
 	BeginContext();
@@ -823,7 +839,7 @@ Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 	const auto pipelineResult   = _device.GetDevice().createGraphicsPipeline(VK_NULL_HANDLE, pipelineCI);
 	const auto returnedPipeline = _pipelineState.Program->AddPipeline(_pipelineState.Hash, pipelineResult.value);
 	if (returnedPipeline != pipelineResult.value) { _device.GetDevice().destroyPipeline(pipelineResult.value); }
-	Log::Debug("Vulkan", "Pipeline created.");
+	Log::Trace("Vulkan", "Pipeline created.");
 
 	return {returnedPipeline, 0};
 }
@@ -852,7 +868,7 @@ void CommandBuffer::FlushDescriptorSet(uint32_t set) {
 		for (uint32_t i = 0; i < arraySize; ++i) {
 			h(_bindings.Bindings[set][binding + i].Cookie);
 			h(_bindings.Bindings[set][binding + i].Buffer.range);
-			dynamicOffsets[dynamicOffsetCount++] = _bindings.Bindings[set][binding + 1].DynamicOffset;
+			dynamicOffsets[dynamicOffsetCount++] = _bindings.Bindings[set][binding + i].DynamicOffset;
 		}
 	});
 

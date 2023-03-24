@@ -71,7 +71,7 @@ VkSurfaceKHR GlfwPlatform::CreateSurface(VkInstance instance) {
 	const VkResult result = glfwCreateWindowSurface(instance, _window, nullptr, &surface);
 	if (result != VK_SUCCESS) { return VK_NULL_HANDLE; }
 
-	Log::Debug("Vulkan", "Surface created.");
+	Log::Trace("Vulkan", "Surface created.");
 
 	return surface;
 }

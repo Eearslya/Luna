@@ -1,6 +1,7 @@
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Utility/Threading.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
+#include <Luna/Vulkan/BufferPool.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/CommandPool.hpp>
 #include <Luna/Vulkan/Context.hpp>
@@ -13,6 +14,7 @@
 #include <Luna/Vulkan/Semaphore.hpp>
 #include <Luna/Vulkan/Shader.hpp>
 #include <Luna/Vulkan/ShaderCompiler.hpp>
+#include <Luna/Vulkan/ShaderManager.hpp>
 #include <Luna/Vulkan/WSI.hpp>
 
 namespace Luna {
@@ -95,7 +97,21 @@ Device::Device(Context& context)
 
 	_framebufferAllocator         = std::make_unique<FramebufferAllocator>(*this);
 	_shaderCompiler               = std::make_unique<ShaderCompiler>();
+	_shaderManager                = std::make_unique<ShaderManager>(*this);
 	_transientAttachmentAllocator = std::make_unique<TransientAttachmentAllocator>(*this);
+
+	_indexBlocks = std::make_unique<BufferPool>(*this, 4 * 1024, 16, vk::BufferUsageFlagBits::eIndexBuffer, false);
+	_indexBlocks->SetMaxRetainedBlocks(256);
+	_uniformBlocks = std::make_unique<BufferPool>(
+		*this,
+		4 * 1024,
+		std::max<vk::DeviceSize>(16, _deviceInfo.Properties.Core.limits.minUniformBufferOffsetAlignment),
+		vk::BufferUsageFlagBits::eUniformBuffer,
+		false);
+	_uniformBlocks->SetSpillRegionSize(MaxUniformBufferSize);
+	_uniformBlocks->SetMaxRetainedBlocks(64);
+	_vertexBlocks = std::make_unique<BufferPool>(*this, 4 * 1024, 16, vk::BufferUsageFlagBits::eVertexBuffer, false);
+	_vertexBlocks->SetMaxRetainedBlocks(256);
 }
 
 Device::~Device() noexcept {
@@ -105,7 +121,12 @@ Device::~Device() noexcept {
 
 	WaitIdle();
 
+	_vertexBlocks.reset();
+	_uniformBlocks.reset();
+	_indexBlocks.reset();
+
 	_transientAttachmentAllocator.reset();
+	_shaderManager.reset();
 	_shaderCompiler.reset();
 	_framebufferAllocator.reset();
 
@@ -291,7 +312,7 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& bufferInfo, const void
 		Log::Error("Vulkan", "Failed to create buffer: {}", vk::to_string(vk::Result(res)));
 		return {};
 	}
-	Log::Debug("Vulkan", "Buffer created.");
+	Log::Trace("Vulkan", "Buffer created.");
 
 	const auto& memType = _deviceInfo.Memory.memoryTypes[allocationInfo.memoryType];
 	const bool hostVisible(memType.propertyFlags & vk::MemoryPropertyFlagBits::eHostVisible);
@@ -494,7 +515,7 @@ ImageHandle Device::CreateImageFromStagingBuffer(const ImageCreateInfo& imageCI,
 			Log::Error("Vulkan", "Failed to create image: {}", vk::to_string(vk::Result(result)));
 			return {};
 		}
-		Log::Debug("Vulkan", "Image created.");
+		Log::Trace("Vulkan", "Image created.");
 		manager.Image      = image;
 		manager.Allocation = allocation;
 	}
@@ -930,6 +951,10 @@ Shader* Device::RequestShader(vk::ShaderStageFlagBits stage, const std::string& 
 	}
 }
 
+Shader* Device::RequestShader(Hash hash) {
+	return _shaders.Find(hash);
+}
+
 SemaphoreHandle Device::RequestSemaphore() {
 	DeviceLock();
 	auto semaphore = AllocateSemaphore();
@@ -962,7 +987,7 @@ vk::Fence Device::AllocateFence() {
 	if (_availableFences.empty()) {
 		const vk::FenceCreateInfo fenceCI;
 		auto fence = _device.createFence(fenceCI);
-		Log::Debug("Vulkan", "Fence created.");
+		Log::Trace("Vulkan", "Fence created.");
 
 		return fence;
 	}
@@ -977,7 +1002,7 @@ vk::Semaphore Device::AllocateSemaphore() {
 	if (_availableSemaphores.empty()) {
 		const vk::SemaphoreCreateInfo semaphoreCI;
 		auto semaphore = _device.createSemaphore(semaphoreCI);
-		Log::Debug("Vulkan", "Semaphore created.");
+		Log::Trace("Vulkan", "Semaphore created.");
 
 		return semaphore;
 	}
@@ -1052,7 +1077,7 @@ void Device::CreateTimelineSemaphores() {
 	const vk::StructureChain chain(semaphoreCI, semaphoreType);
 	for (auto& queue : _queueData) {
 		queue.TimelineSemaphore = _device.createSemaphore(chain.get());
-		Log::Debug("Vulkan", "Timeline semaphore created.");
+		Log::Trace("Vulkan", "Timeline semaphore created.");
 	}
 }
 
@@ -1230,7 +1255,7 @@ void Device::SetupSwapchain(WSI& wsi) {
 		                                     vk::ComponentMapping(),
 		                                     vk::ImageSubresourceRange(FormatAspectFlags(format), 0, 1, 0, 1));
 		auto imageView = _device.createImageView(viewCI);
-		Log::Debug("Vulkan", "Image View created.");
+		Log::Trace("Vulkan", "Image View created.");
 
 		Image* img = _imagePool.Allocate(*this, image, imageView, VmaAllocation{}, imageCI, viewCI.viewType);
 		ImageHandle handle(img);
@@ -1260,6 +1285,7 @@ void Device::EndFrameNoLock() {
 
 void Device::FlushFrame(QueueType queueType) {
 	if (!_queueInfo.Queue(queueType)) { return; }
+	if (queueType == QueueType::Transfer) { SyncBufferBlocks(); }
 	SubmitQueue(queueType, nullptr, nullptr);
 }
 
@@ -1498,10 +1524,32 @@ void Device::SubmitStaging(CommandBufferHandle& cmd, bool flush) {
 	AddWaitSemaphoreNoLock(QueueType::Compute, semaphores[1], vk::PipelineStageFlagBits2::eAllCommands, flush);
 }
 
+void Device::SyncBufferBlocks() {
+	if (_indexBlocksToCopy.empty() && _uniformBlocksToCopy.empty() && _vertexBlocksToCopy.empty()) { return; }
+
+	auto cmd = RequestCommandBufferNoLock(GetThreadIndex(), CommandBufferType::AsyncTransfer);
+	for (auto& block : _indexBlocksToCopy) { cmd->CopyBuffer(*block.Gpu, 0, *block.Cpu, 0, block.Offset); }
+	for (auto& block : _uniformBlocksToCopy) { cmd->CopyBuffer(*block.Gpu, 0, *block.Cpu, 0, block.Offset); }
+	for (auto& block : _vertexBlocksToCopy) { cmd->CopyBuffer(*block.Gpu, 0, *block.Cpu, 0, block.Offset); }
+	_indexBlocksToCopy.clear();
+	_uniformBlocksToCopy.clear();
+	_vertexBlocksToCopy.clear();
+	SubmitStaging(cmd, false);
+}
+
 void Device::WaitIdleNoLock() {
 	if (!_frameContexts.empty()) { EndFrameNoLock(); }
 
 	_device.waitIdle();
+
+	if (_indexBlocks) { _indexBlocks->Reset(); }
+	if (_uniformBlocks) { _uniformBlocks->Reset(); }
+	if (_vertexBlocks) { _vertexBlocks->Reset(); }
+	for (auto& frame : _frameContexts) {
+		frame->IndexBlocks.clear();
+		frame->UniformBlocks.clear();
+		frame->VertexBlocks.clear();
+	}
 
 	if (_framebufferAllocator) { _framebufferAllocator->Clear(); }
 	if (_transientAttachmentAllocator) { _transientAttachmentAllocator->Clear(); }
@@ -1516,6 +1564,53 @@ void Device::WaitIdleNoLock() {
 		frame->FencesToAwait.clear();
 		frame->Begin();
 	}
+}
+
+void Device::RequestBlock(BufferBlock& block,
+                          vk::DeviceSize size,
+                          BufferPool& pool,
+                          std::vector<BufferBlock>& copies,
+                          std::vector<BufferBlock>& recycles) {
+	if (block.Offset == 0) {
+		if (block.Size == pool.GetBlockSize()) { pool.RecycleBlock(block); }
+	} else {
+		if (block.Cpu != block.Gpu) { copies.push_back(block); }
+
+		if (block.Size == pool.GetBlockSize()) { recycles.push_back(block); }
+	}
+
+	if (size) {
+		block = pool.RequestBlock(size);
+	} else {
+		block = {};
+	}
+}
+
+void Device::RequestIndexBlock(BufferBlock& block, vk::DeviceSize size) {
+	DeviceLock();
+	RequestIndexBlockNoLock(block, size);
+}
+
+void Device::RequestIndexBlockNoLock(BufferBlock& block, vk::DeviceSize size) {
+	RequestBlock(block, size, *_indexBlocks, _indexBlocksToCopy, Frame().IndexBlocks);
+}
+
+void Device::RequestUniformBlock(BufferBlock& block, vk::DeviceSize size) {
+	DeviceLock();
+	RequestUniformBlockNoLock(block, size);
+}
+
+void Device::RequestUniformBlockNoLock(BufferBlock& block, vk::DeviceSize size) {
+	RequestBlock(block, size, *_uniformBlocks, _uniformBlocksToCopy, Frame().UniformBlocks);
+}
+
+void Device::RequestVertexBlock(BufferBlock& block, vk::DeviceSize size) {
+	DeviceLock();
+	RequestVertexBlockNoLock(block, size);
+}
+
+void Device::RequestVertexBlockNoLock(BufferBlock& block, vk::DeviceSize size) {
+	RequestBlock(block, size, *_vertexBlocks, _vertexBlocksToCopy, Frame().VertexBlocks);
 }
 
 void Device::ConsumeSemaphore(vk::Semaphore semaphore) {
@@ -1669,6 +1764,13 @@ void Device::FrameContext::Begin() {
 		for (auto& pool : pools) { pool->Reset(); }
 	}
 
+	for (auto& block : IndexBlocks) { Parent._indexBlocks->RecycleBlock(block); }
+	for (auto& block : UniformBlocks) { Parent._uniformBlocks->RecycleBlock(block); }
+	for (auto& block : VertexBlocks) { Parent._vertexBlocks->RecycleBlock(block); }
+	IndexBlocks.clear();
+	UniformBlocks.clear();
+	VertexBlocks.clear();
+
 	for (auto& buffer : BuffersToDestroy) { device.destroyBuffer(buffer); }
 	for (auto& framebuffer : FramebuffersToDestroy) { device.destroyFramebuffer(framebuffer); }
 	for (auto& image : ImagesToDestroy) { device.destroyImage(image); }
@@ -1726,11 +1828,11 @@ bool Device::ImageManager::CreateDefaultViews(const ImageCreateInfo& imageCI,
 
 		tmpCI.format = viewFormats[0];
 		UnormView    = device.createImageView(tmpCI);
-		Log::Debug("Vulkan", "Image View created.");
+		Log::Trace("Vulkan", "Image View created.");
 
 		tmpCI.format = viewFormats[1];
 		SrgbView     = device.createImageView(tmpCI);
-		Log::Debug("Vulkan", "Image View created.");
+		Log::Trace("Vulkan", "Image View created.");
 	}
 
 	return true;
@@ -1748,11 +1850,11 @@ bool Device::ImageManager::CreateAltViews(const ImageCreateInfo& imageCI, const 
 
 			viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
 			DepthView                            = Parent.GetDevice().createImageView(viewInfo);
-			Log::Debug("Vulkan", "Image View created.");
+			Log::Trace("Vulkan", "Image View created.");
 
 			viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eStencil;
 			StencilView                          = Parent.GetDevice().createImageView(viewInfo);
-			Log::Debug("Vulkan", "Image View created.");
+			Log::Trace("Vulkan", "Image View created.");
 		}
 	}
 
@@ -1762,7 +1864,7 @@ bool Device::ImageManager::CreateAltViews(const ImageCreateInfo& imageCI, const 
 bool Device::ImageManager::CreateDefaultView(const vk::ImageViewCreateInfo& viewCI) {
 	DefaultViewType = viewCI.viewType;
 	ImageView       = Parent.GetDevice().createImageView(viewCI);
-	Log::Debug("Vulkan", "Image View created.");
+	Log::Trace("Vulkan", "Image View created.");
 
 	return true;
 }
@@ -1783,7 +1885,7 @@ bool Device::ImageManager::CreateRenderTargetViews(const ImageCreateInfo& imageC
 		for (uint32_t layer = 0; layer < viewCI.subresourceRange.layerCount; ++layer) {
 			viewInfo.subresourceRange.baseArrayLayer = layer + viewCI.subresourceRange.baseArrayLayer;
 			vk::ImageView view                       = Parent.GetDevice().createImageView(viewInfo);
-			Log::Debug("Vulkan", "Image View created.");
+			Log::Trace("Vulkan", "Image View created.");
 			RenderTargetViews.push_back(view);
 		}
 	}

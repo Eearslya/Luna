@@ -5,6 +5,7 @@
 #include <memory>
 
 namespace Luna {
+class Filesystem;
 class Threading;
 
 namespace Vulkan {
@@ -107,6 +108,7 @@ class Application {
  private:
 	static Application* _instance;
 
+	std::unique_ptr<Filesystem> _filesystem;
 	std::unique_ptr<Threading> _threading;
 	std::unique_ptr<Vulkan::WSI> _wsi;
 	std::unique_ptr<Vulkan::ImGuiRenderer> _imguiRenderer;

@@ -179,7 +179,7 @@ void WSI::RecreateSwapchain() {
 		VK_TRUE,
 		_swapchain);
 	auto newSwapchain = device.createSwapchainKHR(swapchainCI);
-	Log::Debug("Vulkan", "Swapchain created.");
+	Log::Trace("Vulkan", "Swapchain created.");
 
 	if (_swapchain) { device.destroySwapchainKHR(_swapchain); }
 	_swapchain = newSwapchain;

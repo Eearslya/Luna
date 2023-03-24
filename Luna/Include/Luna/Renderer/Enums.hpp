@@ -13,6 +13,9 @@ enum class AttachmentInfoFlagBits {
 };
 using AttachmentInfoFlags = Bitmask<AttachmentInfoFlagBits>;
 
+enum class RendererOptionFlagBits { EnableShadows = 1 << 0 };
+using RendererOptionFlags = Bitmask<RendererOptionFlagBits>;
+
 enum class RenderGraphQueueFlagBits {
 	Graphics      = 1 << 0,
 	Compute       = 1 << 1,
@@ -20,6 +23,21 @@ enum class RenderGraphQueueFlagBits {
 	AsyncGraphics = 1 << 3,
 };
 using RenderGraphQueueFlags = Bitmask<RenderGraphQueueFlagBits>;
+
+enum class RenderableType { Mesh };
+constexpr static const uint32_t RenderableTypeCount = 1;
+
+/**
+ * Identifies what responsibilities a given Renderer object is made to handle.
+ */
+enum class RendererSuiteType { ForwardOpaque = 0 };
+constexpr static const uint32_t RendererSuiteTypeCount = 1;
+
+enum class RendererType { GeneralForward, DepthOnly, Flat };
+constexpr static const uint32_t RendererTypeCount = 3;
+
+enum class RenderQueueType { Opaque, OpaqueEmissive, Light, Transparent };
+constexpr static const uint32_t RenderQueueTypeCount = 4;
 
 /**
  * Used to describe the size of an image attachment.
@@ -33,5 +51,7 @@ enum class SizeClass {
 
 template <>
 struct Luna::EnableBitmaskOperators<Luna::AttachmentInfoFlagBits> : std::true_type {};
+template <>
+struct Luna::EnableBitmaskOperators<Luna::RendererOptionFlagBits> : std::true_type {};
 template <>
 struct Luna::EnableBitmaskOperators<Luna::RenderGraphQueueFlagBits> : std::true_type {};

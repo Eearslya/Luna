@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Luna/Vulkan/BufferPool.hpp>
 #include <Luna/Vulkan/Common.hpp>
 #include <Luna/Vulkan/Tracing.hpp>
 
@@ -260,6 +261,12 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void NextSubpass(vk::SubpassContents contents = vk::SubpassContents::eInline);
 	void EndRenderPass();
 
+	void* AllocateUniformData(uint32_t set, uint32_t binding, vk::DeviceSize size);
+	template <typename T>
+	T* AllocateTypedUniformData(uint32_t set, uint32_t binding, uint32_t count) {
+		return static_cast<T*>(AllocateUniformData(set, binding, count * sizeof(T)));
+	}
+
  private:
 	CommandBuffer(
 		Device& device, vk::CommandBuffer cmdBuf, CommandBufferType type, uint32_t threadIndex, TracyVkCtx tracingContext);
@@ -307,6 +314,10 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	std::array<const Vulkan::ImageView*, MaxColorAttachments + 1> _framebufferAttachments = {nullptr};
 	vk::PipelineLayout _pipelineLayout;
 	PipelineLayout* _programLayout = nullptr;
+
+	BufferBlock _indexBlock;
+	BufferBlock _uniformBlock;
+	BufferBlock _vertexBlock;
 };
 }  // namespace Vulkan
 }  // namespace Luna

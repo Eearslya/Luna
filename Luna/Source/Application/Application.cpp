@@ -1,4 +1,6 @@
 #include <Luna/Application/Application.hpp>
+#include <Luna/Platform/Filesystem.hpp>
+#include <Luna/Platform/Windows/OSFilesystem.hpp>
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Utility/Threading.hpp>
 #include <Luna/Vulkan/ImGuiRenderer.hpp>
@@ -13,17 +15,22 @@ Application::Application() {
 	_instance = this;
 
 	Log::Initialize();
-	Log::SetLevel(Log::Level::Trace);
+	Log::SetLevel(Log::Level::Debug);
 
 	Log::Info("Luna", "Luna Engine initializing...");
 
-	_threading = std::make_unique<Threading>();
+	_filesystem = std::make_unique<Filesystem>();
+	_threading  = std::make_unique<Threading>();
+
+	_filesystem->RegisterProtocol("assets", std::unique_ptr<FilesystemBackend>(new OSFilesystem("Assets")));
+	_filesystem->RegisterProtocol("res", std::unique_ptr<FilesystemBackend>(new OSFilesystem("Resources")));
 }
 
 Application::~Application() noexcept {
 	Log::Info("Luna", "Luna Engine shutting down...");
 	_imguiRenderer.reset();
 	_wsi.reset();
+	_filesystem.reset();
 	_threading.reset();
 	Log::Shutdown();
 
@@ -45,6 +52,7 @@ int Application::Run() {
 	Log::Info("Luna", "Starting application.");
 	OnStart();
 	while (_wsi->IsAlive()) {
+		_filesystem->Update();
 		_wsi->Update();
 
 		_wsi->BeginFrame();

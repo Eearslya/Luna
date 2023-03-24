@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Luna/Vulkan/BufferPool.hpp>
 #include <Luna/Vulkan/Common.hpp>
 #include <Luna/Vulkan/Tracing.hpp>
 #include <atomic>
@@ -47,6 +48,9 @@ class Device : public IntrusivePtrEnabled<Device> {
 	}
 	ShaderCompiler& GetShaderCompiler() {
 		return *_shaderCompiler;
+	}
+	ShaderManager& GetShaderManager() {
+		return *_shaderManager;
 	}
 
 	vk::Format GetDefaultDepthFormat() const;
@@ -96,6 +100,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 	Sampler* RequestSampler(StockSampler type);
 	Shader* RequestShader(size_t codeSize, const void* code);
 	Shader* RequestShader(vk::ShaderStageFlagBits stage, const std::string& glsl);
+	Shader* RequestShader(Hash hash);
 	PipelineLayout* RequestPipelineLayout(const ProgramResourceLayout& layout);
 	SemaphoreHandle RequestSemaphore();
 
@@ -123,6 +128,10 @@ class Device : public IntrusivePtrEnabled<Device> {
 		std::vector<vk::Semaphore> SemaphoresToConsume;
 		std::vector<vk::Semaphore> SemaphoresToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToRecycle;
+
+		std::vector<BufferBlock> IndexBlocks;
+		std::vector<BufferBlock> UniformBlocks;
+		std::vector<BufferBlock> VertexBlocks;
 	};
 
 	struct ImageManager {
@@ -202,7 +211,20 @@ class Device : public IntrusivePtrEnabled<Device> {
 	void SubmitNoLock(CommandBufferHandle cmd, FenceHandle* fence, std::vector<SemaphoreHandle>* semaphores);
 	void SubmitQueue(QueueType queueType, InternalFence* submitFence, std::vector<SemaphoreHandle>* semaphores);
 	void SubmitStaging(CommandBufferHandle& cmd, bool flush);
+	void SyncBufferBlocks();
 	void WaitIdleNoLock();
+
+	void RequestBlock(BufferBlock& block,
+	                  vk::DeviceSize size,
+	                  BufferPool& pool,
+	                  std::vector<BufferBlock>& copies,
+	                  std::vector<BufferBlock>& recycles);
+	void RequestIndexBlock(BufferBlock& block, vk::DeviceSize size);
+	void RequestIndexBlockNoLock(BufferBlock& block, vk::DeviceSize size);
+	void RequestUniformBlock(BufferBlock& block, vk::DeviceSize size);
+	void RequestUniformBlockNoLock(BufferBlock& block, vk::DeviceSize size);
+	void RequestVertexBlock(BufferBlock& block, vk::DeviceSize size);
+	void RequestVertexBlockNoLock(BufferBlock& block, vk::DeviceSize size);
 
 	void ConsumeSemaphore(vk::Semaphore semaphore);
 	void ConsumeSemaphoreNoLock(vk::Semaphore semaphore);
@@ -238,7 +260,15 @@ class Device : public IntrusivePtrEnabled<Device> {
 	std::vector<vk::Semaphore> _availableSemaphores;
 	std::unique_ptr<FramebufferAllocator> _framebufferAllocator;
 	std::unique_ptr<ShaderCompiler> _shaderCompiler;
+	std::unique_ptr<ShaderManager> _shaderManager;
 	std::unique_ptr<TransientAttachmentAllocator> _transientAttachmentAllocator;
+
+	std::unique_ptr<BufferPool> _indexBlocks;
+	std::vector<BufferBlock> _indexBlocksToCopy;
+	std::unique_ptr<BufferPool> _uniformBlocks;
+	std::vector<BufferBlock> _uniformBlocksToCopy;
+	std::unique_ptr<BufferPool> _vertexBlocks;
+	std::vector<BufferBlock> _vertexBlocksToCopy;
 
 #ifdef LUNA_VULKAN_MT
 	std::atomic_uint64_t _nextCookie;

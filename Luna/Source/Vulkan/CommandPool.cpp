@@ -13,7 +13,7 @@ CommandPool::CommandPool(Device& device, uint32_t familyIndex, bool resettable) 
 	const vk::CommandPoolCreateInfo poolCI(flags, familyIndex);
 	_pool = dev.createCommandPool(poolCI);
 
-	Log::Debug("Vulkan", "Command Pool created.");
+	Log::Trace("Vulkan", "Command Pool created.");
 }
 
 CommandPool::~CommandPool() noexcept {

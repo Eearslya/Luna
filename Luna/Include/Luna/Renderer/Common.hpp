@@ -2,12 +2,25 @@
 
 #include <Luna/Renderer/Enums.hpp>
 #include <Luna/Vulkan/Common.hpp>
+#include <glm/glm.hpp>
 #include <unordered_set>
 
 namespace Luna {
 // Forward Declarations.
+class Renderable;
+class RenderContext;
+class Renderer;
+class RendererSuite;
 class RenderGraph;
 class RenderPass;
+class RenderQueue;
+struct RenderQueueData;
+class RenderScene;
+class ShaderSuite;
+
+// Handle Declarations.
+using RenderableHandle = IntrusivePtr<Renderable>;
+using RendererHandle   = IntrusivePtr<Renderer>;
 
 /**
  * Describes an image attachment for a Render Pass.
@@ -132,6 +145,12 @@ struct ResourceDimensions {
 		       Transform != other.Transform;
 	}
 };
+
+struct RenderableInfo {
+	RenderableHandle Handle;
+	glm::mat4 Transform;
+};
+using VisibilityList = std::vector<RenderableInfo>;
 
 /**
  * Describes a resource used in a Render Pass.

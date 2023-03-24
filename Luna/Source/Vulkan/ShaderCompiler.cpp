@@ -13,8 +13,8 @@ ShaderCompiler::~ShaderCompiler() noexcept {
 	glslang::FinalizeProcess();
 }
 
-std::optional<std::vector<uint32_t>> ShaderCompiler::Compile(vk::ShaderStageFlagBits stage,
-                                                             const std::string& glsl) const {
+std::optional<std::vector<uint32_t>> ShaderCompiler::Compile(
+	vk::ShaderStageFlagBits stage, const std::string& glsl, const std::unordered_map<std::string, int>& defines) const {
 	EShLanguage lang = EShLangVertex;
 	switch (stage) {
 		case vk::ShaderStageFlagBits::eVertex:
@@ -49,7 +49,12 @@ std::optional<std::vector<uint32_t>> ShaderCompiler::Compile(vk::ShaderStageFlag
 			break;
 	}
 
+	std::vector<std::string> defineStrings;
+	for (const auto& [key, value] : defines) { defineStrings.push_back(fmt::format("#define {} {}", key, value)); }
+	const std::string defString = fmt::format("{}", fmt::join(defineStrings, "\n"));
+
 	glslang::TShader shader(lang);
+	shader.setPreamble(defString.c_str());
 	shader.setEnvTarget(glslang::EShTargetLanguage::EShTargetSpv, glslang::EShTargetLanguageVersion::EShTargetSpv_1_4);
 	const char* shaderStrings[1] = {glsl.c_str()};
 	shader.setStrings(shaderStrings, 1);

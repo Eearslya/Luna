@@ -13,8 +13,17 @@ layout(set = 0, binding = 0) uniform SceneUBO {
   mat4 Projection;
   mat4 View;
 	mat4 ViewProjection;
-	vec4 ViewPosition;
-	vec4 LightPosition;
+	mat4 InvProjection;
+	mat4 InvView;
+	mat4 InvViewProjection;
+	mat4 LocalViewProjection;
+	mat4 InvLocalViewProjection;
+	vec3 CameraPosition;
+	vec3 CameraFront;
+	vec3 CameraRight;
+	vec3 CameraUp;
+	float ZNear;
+	float ZFar;
 } Scene;
 
 layout(push_constant) uniform PushConstantData {
