@@ -2,12 +2,15 @@
 
 #include <Luna/Application/Input.hpp>
 #include <Luna/Luna.hpp>
+#include <Luna/Renderer/GlslCompiler.hpp>
 #include <Luna/Renderer/RenderContext.hpp>
 #include <Luna/Renderer/RenderGraph.hpp>
 #include <Luna/Renderer/RenderPass.hpp>
 #include <Luna/Renderer/RendererSuite.hpp>
+#include <Luna/Scene/Entity.hpp>
 #include <Luna/Scene/MeshRendererComponent.hpp>
 #include <Luna/Scene/Scene.hpp>
+#include <Luna/Scene/TransformComponent.hpp>
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Vulkan/ImGuiRenderer.hpp>
 #include <algorithm>
@@ -20,38 +23,136 @@
 #include "SceneLoader.hpp"
 #include "SceneRenderer.hpp"
 
+// 0 - Basic rendering, manual render passes
+// 1 - Basic RenderGraph
+// 2 - RenderGraph with RenderScene/RenderSuite
+#define RENDER_METHOD 0
+
 class ViewerApplication : public Luna::Application {
  public:
 	virtual void OnStart() override {
-		auto& device = GetDevice();
+		auto* filesystem = Luna::Filesystem::Get();
+		auto& device     = GetDevice();
 
 		StyleImGui();
 
+		SceneLoader::LoadGltf(device, _scene, "assets://Models/Sponza/Sponza.gltf");
+
+#if RENDER_METHOD == 0
+		// Manual shader loading.
+		{
+			const auto LoadGraphicsShader =
+				[&](const Luna::Path& vertex, const Luna::Path& fragment, Luna::Vulkan::Program*& program) -> bool {
+				Luna::GlslCompiler vertexCompiler, fragmentCompiler;
+
+				vertexCompiler.SetSourceFromFile(vertex, Luna::Vulkan::ShaderStage::Vertex);
+				fragmentCompiler.SetSourceFromFile(fragment, Luna::Vulkan::ShaderStage::Fragment);
+
+				if (!vertexCompiler.Preprocess()) { return false; }
+				if (!fragmentCompiler.Preprocess()) { return false; }
+
+				std::vector<uint32_t> vertexSpv, fragmentSpv;
+				std::string vertexError, fragmentError;
+				vertexSpv = vertexCompiler.Compile(vertexError);
+				if (vertexSpv.empty()) {
+					Luna::Log::Error("Viewer", "Failed to compile Vertex shader: {}", vertexError);
+					return false;
+				}
+				fragmentSpv = fragmentCompiler.Compile(fragmentError);
+				if (fragmentSpv.empty()) {
+					Luna::Log::Error("Viewer", "Failed to compile Fragment shader: {}", fragmentError);
+					return false;
+				}
+
+				auto* newProgram = device.RequestProgram(vertexSpv.size() * sizeof(uint32_t),
+				                                         vertexSpv.data(),
+				                                         fragmentSpv.size() * sizeof(uint32_t),
+				                                         fragmentSpv.data());
+				if (newProgram) {
+					program = newProgram;
+					return true;
+				}
+				return false;
+			};
+			const auto LoadShaders = [&]() {
+				if (!LoadGraphicsShader(
+							"res://Shaders/PBRForward.vert.glsl", "res://Shaders/PBRForward.frag.glsl", _programForward)) {
+					return;
+				}
+				Luna::Log::Info("Viewer", "Shaders reloaded.");
+			};
+			Luna::Input::OnKey += [&](Luna::Key key, Luna::InputAction action, Luna::InputMods mods) {
+				if (key == Luna::Key::F5) { LoadShaders(); }
+			};
+			LoadShaders();
+		}
+#endif
+
+#if RENDER_METHOD == 1 || RENDER_METHOD == 2
 		_swapchainConfig = GetSwapchainConfig();
 		OnSwapchainChanged += [&](const Luna::Vulkan::SwapchainConfiguration& config) {
 			_swapchainConfig = config;
 			_swapchainDirty  = true;
 		};
+#endif
 
+#if RENDER_METHOD == 2
 		_renderGraph = std::make_unique<Luna::RenderGraph>(device);
 		_renderSuite = std::make_unique<Luna::RendererSuite>(device);
-
-		// SceneLoader::LoadGltf(device, _scene, "assets://Models/DamagedHelmet/DamagedHelmet.gltf");
-		SceneLoader::LoadGltf(device, _scene, "assets://Models/Sponza/Sponza.gltf");
+#endif
 	}
 
 	virtual void OnUpdate() override {
-		if (_swapchainDirty) {
-			BakeRenderGraph();
-			_swapchainDirty = false;
-		}
+#if RENDER_METHOD == 0
+		{
+			auto& device = GetDevice();
+			auto cmd     = device.RequestCommandBuffer();
 
-		Luna::TaskComposer composer;
-		_renderGraph->SetupAttachments(&GetDevice().GetSwapchainView());
-		UpdateScene(composer);
-		RenderScene(composer);
-		auto final = composer.GetOutgoingTask();
-		final->Wait();
+			const auto fbSize          = GetFramebufferSize();
+			const float aspectRatio    = float(fbSize.x) / float(fbSize.y);
+			const glm::mat4 projection = glm::perspective(glm::radians(60.0f), aspectRatio, 0.01f, 1000.0f);
+			const glm::mat4 view       = glm::lookAt(glm::vec3(2, 0.5f, 1), glm::vec3(0, 0.5f, 0), glm::vec3(0, 1, 0));
+			_renderContext.SetCamera(projection, view);
+
+			auto rpInfo = device.GetSwapchainRenderPass(Luna::Vulkan::SwapchainRenderPassType::Depth);
+			cmd->BeginRenderPass(rpInfo);
+
+			Luna::RenderParameters* params = cmd->AllocateTypedUniformData<Luna::RenderParameters>(0, 0, 1);
+			*params                        = _renderContext.GetRenderParameters();
+
+			const auto& registry = _scene.GetRegistry();
+
+			auto renderables = registry.view<Luna::TransformComponent, Luna::MeshRendererComponent>();
+			for (auto entityId : renderables) {
+				auto [cTransform, cMeshRenderer] = renderables.get(entityId);
+				if (!cMeshRenderer.StaticMesh) { continue; }
+
+				const auto transform = cTransform.GetTransform();
+				const auto submeshes = cMeshRenderer.StaticMesh->GatherOpaque();
+				for (const auto& submesh : submeshes) {}
+			}
+
+			cmd->EndRenderPass();
+
+			device.Submit(cmd);
+		}
+#endif
+
+#if RENDER_METHOD == 1 || RENDER_METHOD == 2
+		{
+			if (_swapchainDirty) {
+				BakeRenderGraph();
+				_swapchainDirty = false;
+			}
+
+			Luna::TaskComposer composer;
+			_renderGraph->SetupAttachments(&GetDevice().GetSwapchainView());
+			UpdateScene(composer);
+			RenderScene(composer);
+			auto final = composer.GetOutgoingTask();
+			final->Wait();
+		}
+#endif
 	}
 
 	virtual void OnImGuiRender() override {}
@@ -260,6 +361,10 @@ class ViewerApplication : public Luna::Application {
 	bool _swapchainDirty = true;
 
 	Luna::Scene _scene;
+
+#if RENDER_METHOD == 0
+	Luna::Vulkan::Program* _programForward = nullptr;
+#endif
 };
 
 Luna::Application* Luna::CreateApplication(int argc, const char** argv) {

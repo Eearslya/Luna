@@ -62,6 +62,8 @@ bool GlslCompiler::Preprocess() {
 	_dependencies.clear();
 	_processedSource.clear();
 
+	if (_source.empty()) { return false; }
+
 	try {
 		if (!Parse(_sourcePath, _source)) { return false; }
 	} catch (const std::exception& e) {
