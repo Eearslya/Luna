@@ -6,6 +6,9 @@
 
 namespace Luna {
 namespace Vulkan {
+static constexpr uint64_t CookieUnormBit = 1 << 0;
+static constexpr uint64_t CookieSrgbBit  = 1 << 1;
+
 static constexpr int BlendFactorBits = 5;
 static constexpr int BlendOpBits     = 3;
 static constexpr int CompareOpBits   = 3;
@@ -240,13 +243,22 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	                 uint32_t firstInstance = 0);
 	void PushConstants(const void* data, vk::DeviceSize offset, vk::DeviceSize range);
 	void SetIndexBuffer(const Buffer& buffer, vk::DeviceSize offset, vk::IndexType indexType);
+	void SetInputAttachments(uint32_t set, uint32_t firstBinding);
 	void SetProgram(Program* program);
 	void SetSampler(uint32_t set, uint32_t binding, const Sampler* sampler);
 	void SetSampler(uint32_t set, uint32_t binding, StockSampler sampler);
 	void SetScissor(const vk::Rect2D& scissor);
+
 	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view);
 	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler* sampler);
 	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler);
+	void SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view);
+	void SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler* sampler);
+	void SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler);
+	void SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view);
+	void SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler* sampler);
+	void SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler);
+
 	void SetUniformBuffer(
 		uint32_t set, uint32_t binding, const Buffer& buffer, vk::DeviceSize offset = 0, vk::DeviceSize range = 0);
 	void SetVertexAttribute(uint32_t attribute, uint32_t binding, vk::Format format, vk::DeviceSize offset);
@@ -281,6 +293,12 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	bool FlushGraphicsPipeline(bool synchronous);
 	bool FlushRenderState(bool synchronous);
 	void RebindDescriptorSet(uint32_t set);
+	void SetTexture(uint32_t set,
+	                uint32_t binding,
+	                vk::ImageView floatView,
+	                vk::ImageView integerView,
+	                vk::ImageLayout layout,
+	                uint64_t cookie);
 	void SetViewportScissor(const RenderPassInfo& info, const Framebuffer* framebuffer);
 
 	Device& _device;

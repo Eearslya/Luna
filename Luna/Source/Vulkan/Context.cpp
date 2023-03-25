@@ -464,6 +464,10 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 	const auto& avail = _deviceInfo.AvailableFeatures;
 	auto& enable      = _deviceInfo.EnabledFeatures;
 
+	if (avail.Core.samplerAnisotropy) {
+		Log::Trace("Vulkan::Context", "Enabling Sampler Anisotropy.");
+		enable.Core.samplerAnisotropy = VK_TRUE;
+	}
 	if (avail.Core.shaderInt64) {
 		Log::Trace("Vulkan::Context", "Enabling shader Int64 usage.");
 		enable.Core.shaderInt64 = VK_TRUE;

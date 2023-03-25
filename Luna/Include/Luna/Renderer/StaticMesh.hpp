@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Luna/Renderer/Common.hpp>
+#include <Luna/Renderer/Material.hpp>
 #include <Luna/Renderer/Renderable.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 
@@ -66,14 +67,16 @@ class StaticSubmesh : public Renderable {
 	void Bake();
 	virtual void Enqueue(const RenderContext& context, const RenderableInfo& self, RenderQueue& queue) const override;
 
+	uint32_t MaterialIndex     = 0;
+	vk::DeviceSize VertexCount = 0;
+	vk::DeviceSize IndexCount  = 0;
+	vk::DeviceSize FirstVertex = 0;
+	vk::DeviceSize FirstIndex  = 0;
+	IntrusivePtr<Material> Material;
+
  private:
-	StaticMesh* _parentMesh     = nullptr;
-	uint32_t _materialIndex     = 0;
-	vk::DeviceSize _vertexCount = 0;
-	vk::DeviceSize _indexCount  = 0;
-	vk::DeviceSize _firstVertex = 0;
-	vk::DeviceSize _firstIndex  = 0;
-	Hash _cachedHash            = 0;
+	StaticMesh* _parentMesh = nullptr;
+	Hash _cachedHash        = 0;
 };
 
 class StaticMesh : public IntrusivePtrEnabled<StaticMesh> {
@@ -95,6 +98,8 @@ class StaticMesh : public IntrusivePtrEnabled<StaticMesh> {
 	Vulkan::BufferHandle AttributeBuffer;
 	vk::DeviceSize AttributeStride = 0;
 	std::array<MeshAttribute, MeshAttributeTypeCount> Attributes;
+
+	std::vector<IntrusivePtr<Material>> Materials;
 
  private:
 };

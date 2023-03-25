@@ -33,6 +33,7 @@ class Entity {
 		_scene->_registry.remove<T>(_handle);
 	}
 
+	glm::mat4 GetGlobalTransform() const;
 	glm::mat4 GetLocalTransform() const;
 
 	void Rotate(const glm::vec3& rDelta);

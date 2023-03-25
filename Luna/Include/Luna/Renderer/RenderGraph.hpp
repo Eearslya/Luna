@@ -28,31 +28,26 @@ class RenderGraph {
 	void operator=(const RenderGraph&) = delete;
 	void operator=(RenderGraph&&)      = delete;
 
-	/**
-	 * Cleans up the RenderGraph object.
-	 */
+	/** Cleans up the RenderGraph object. */
 	~RenderGraph() noexcept;
 
 	/**
-	 * Finalizes the Render Graph into an executable state. Must be called before EnqueueRenderPasses can be used.
+	 * Finalizes the Render Graph into an executable state.
+	 * Must be called before EnqueueRenderPasses can be used.
 	 */
 	void Bake();
 
 	/**
-	 * Enqueue the baked render passes into the given task composer. Ensures proper cache and execution synchronization.
+	 * Enqueue the baked render passes into the given task composer.
 	 *
 	 * @param composer The Task Composer object to enqueue all of the necessary tasks to.
 	 */
 	void EnqueueRenderPasses(Vulkan::Device& device, TaskComposer& composer);
 
-	/**
-	 * Prints debug information about the Render Pass to the logs.
-	 */
+	/** Prints debug information about the Render Pass to the logs. */
 	void Log();
 
-	/**
-	 * Resets the Render Graph and releases any created resources.
-	 */
+	/** Resets the Render Graph and releases any created resources. */
 	void Reset();
 
 	void SetupAttachments(Vulkan::ImageView* swapchain);

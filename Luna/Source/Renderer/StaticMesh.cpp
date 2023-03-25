@@ -3,6 +3,7 @@
 #include <Luna/Renderer/StaticMesh.hpp>
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
+#include <Luna/Vulkan/Image.hpp>
 
 namespace Luna {
 static void RenderStaticSubmesh(Vulkan::CommandBuffer& cmd,
@@ -51,11 +52,11 @@ StaticSubmesh::StaticSubmesh(StaticMesh* parent,
                              vk::DeviceSize firstVertex,
                              vk::DeviceSize firstIndex)
 		: _parentMesh(parent),
-			_materialIndex(materialIndex),
-			_vertexCount(vertexCount),
-			_indexCount(indexCount),
-			_firstVertex(firstVertex),
-			_firstIndex(firstIndex) {}
+			MaterialIndex(materialIndex),
+			VertexCount(vertexCount),
+			IndexCount(indexCount),
+			FirstVertex(firstVertex),
+			FirstIndex(firstIndex) {}
 
 Hash StaticSubmesh::GetInstanceKey() const {
 	Hasher h;
@@ -74,11 +75,11 @@ Hash StaticSubmesh::GetInstanceKey() const {
 		h(attr.Offset);
 	}
 
-	h(_materialIndex);
-	h(_vertexCount);
-	h(_indexCount);
-	h(_firstVertex);
-	h(_firstIndex);
+	h(MaterialIndex);
+	h(VertexCount);
+	h(IndexCount);
+	h(FirstVertex);
+	h(FirstIndex);
 
 	return h.Get();
 }
@@ -103,7 +104,7 @@ void StaticSubmesh::Enqueue(const RenderContext& context, const RenderableInfo& 
 		queue.Push<StaticSubmeshRenderInfo>(RenderQueueType::Opaque, instanceKey, 0, RenderStaticSubmesh, instanceInfo);
 	if (renderInfo) {
 		renderInfo->Program       = queue.GetShaderSuites()[int(RenderableType::Mesh)].GetProgram({});
-		renderInfo->MaterialIndex = _materialIndex;
+		renderInfo->MaterialIndex = MaterialIndex;
 
 		renderInfo->PositionBuffer = _parentMesh->PositionBuffer.Get();
 		renderInfo->PositionStride = _parentMesh->PositionStride;
@@ -114,10 +115,10 @@ void StaticSubmesh::Enqueue(const RenderContext& context, const RenderableInfo& 
 		renderInfo->AttributeStride = _parentMesh->AttributeStride;
 		renderInfo->Attributes      = _parentMesh->Attributes;
 
-		renderInfo->VertexCount = _vertexCount;
-		renderInfo->IndexCount  = _indexCount;
-		renderInfo->FirstVertex = _firstVertex;
-		renderInfo->FirstIndex  = _firstIndex;
+		renderInfo->VertexCount = VertexCount;
+		renderInfo->IndexCount  = IndexCount;
+		renderInfo->FirstVertex = FirstVertex;
+		renderInfo->FirstIndex  = FirstIndex;
 	}
 }
 

@@ -3,6 +3,7 @@
 #include <Luna/Scene/Entity.hpp>
 #include <Luna/Scene/MeshRendererComponent.hpp>
 #include <Luna/Scene/TransformComponent.hpp>
+#include <Luna/Vulkan/Image.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 namespace Luna {

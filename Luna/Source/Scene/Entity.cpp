@@ -4,6 +4,10 @@
 namespace Luna {
 Entity::Entity(entt::entity handle, Scene& scene) : _handle(handle), _scene(&scene) {}
 
+glm::mat4 Entity::GetGlobalTransform() const {
+	return Transform().GetTransform();
+}
+
 glm::mat4 Entity::GetLocalTransform() const {
 	return Transform().GetTransform();
 }

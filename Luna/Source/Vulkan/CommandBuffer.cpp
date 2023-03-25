@@ -428,6 +428,27 @@ void CommandBuffer::SetIndexBuffer(const Buffer& buffer, vk::DeviceSize offset, 
 	_commandBuffer.bindIndexBuffer(_indexState.Buffer, _indexState.Offset, _indexState.IndexType);
 }
 
+void CommandBuffer::SetInputAttachments(uint32_t set, uint32_t firstBinding) {
+	const uint32_t count = _actualRenderPass->GetInputAttachmentCount(_pipelineState.SubpassIndex);
+	for (uint32_t i = 0; i < count; ++i) {
+		auto& ref = _actualRenderPass->GetInputAttachment(_pipelineState.SubpassIndex, i);
+		if (ref.attachment == VK_ATTACHMENT_UNUSED) { continue; }
+
+		auto& bind = _bindings.Bindings[set][firstBinding + i];
+
+		const ImageView* view = _framebufferAttachments[ref.attachment];
+		if (view->GetCookie() == bind.Cookie && bind.Image.Float.imageLayout == ref.layout) { continue; }
+
+		bind.Image.Float.imageLayout   = ref.layout;
+		bind.Image.Float.imageView     = view->GetFloatView();
+		bind.Image.Integer.imageLayout = ref.layout;
+		bind.Image.Integer.imageView   = view->GetIntegerView();
+		bind.Cookie                    = view->GetCookie();
+
+		_dirtySets |= 1u << set;
+	}
+}
+
 void CommandBuffer::SetProgram(Program* program) {
 	if (_pipelineState.Program == program) { return; }
 
@@ -483,20 +504,12 @@ void CommandBuffer::SetScissor(const vk::Rect2D& scissor) {
 }
 
 void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view) {
-	const auto layout = view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
-	const auto cookie = view.GetCookie();
-	if (_bindings.Bindings[set][binding].Cookie == cookie &&
-	    _bindings.Bindings[set][binding].Image.Float.imageLayout == layout) {
-		return;
-	}
-
-	auto& bind                              = _bindings.Bindings[set][binding];
-	bind.Image.Float.imageLayout            = layout;
-	bind.Image.Float.imageView              = view.GetFloatView();
-	bind.Image.Integer.imageLayout          = layout;
-	bind.Image.Integer.imageView            = view.GetIntegerView();
-	_bindings.Bindings[set][binding].Cookie = cookie;
-	_dirtySets |= 1u << set;
+	SetTexture(set,
+	           binding,
+	           view.GetFloatView(),
+	           view.GetIntegerView(),
+	           view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal),
+	           view.GetCookie());
 }
 
 void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler* sampler) {
@@ -504,9 +517,49 @@ void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& 
 	SetSampler(set, binding, sampler);
 }
 
-void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler stockSampler) {
-	const auto sampler = _device.RequestSampler(stockSampler);
-	SetTexture(set, binding, view, sampler);
+void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler) {
+	SetTexture(set, binding, view);
+	SetSampler(set, binding, sampler);
+}
+
+void CommandBuffer::SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view) {
+	const auto srgbView = view.GetSrgbView();
+	SetTexture(set,
+	           binding,
+	           srgbView,
+	           srgbView,
+	           view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal),
+	           view.GetCookie() | CookieSrgbBit);
+}
+
+void CommandBuffer::SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler* sampler) {
+	SetSrgbTexture(set, binding, view);
+	SetSampler(set, binding, sampler);
+}
+
+void CommandBuffer::SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler) {
+	SetSrgbTexture(set, binding, view);
+	SetSampler(set, binding, sampler);
+}
+
+void CommandBuffer::SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view) {
+	const auto unormView = view.GetUnormView();
+	SetTexture(set,
+	           binding,
+	           unormView,
+	           unormView,
+	           view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal),
+	           view.GetCookie() | CookieUnormBit);
+}
+
+void CommandBuffer::SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler* sampler) {
+	SetUnormTexture(set, binding, view);
+	SetSampler(set, binding, sampler);
+}
+
+void CommandBuffer::SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler) {
+	SetUnormTexture(set, binding, view);
+	SetSampler(set, binding, sampler);
 }
 
 void CommandBuffer::SetUniformBuffer(
@@ -1046,6 +1099,27 @@ void CommandBuffer::RebindDescriptorSet(uint32_t set) {
 		&_allocatedSets[set],
 		dynamicOffsetCount,
 		dynamicOffsets);
+}
+
+void CommandBuffer::SetTexture(uint32_t set,
+                               uint32_t binding,
+                               vk::ImageView floatView,
+                               vk::ImageView integerView,
+                               vk::ImageLayout layout,
+                               uint64_t cookie) {
+	if (cookie == _bindings.Bindings[set][binding].Cookie &&
+	    _bindings.Bindings[set][binding].Image.Float.imageLayout == layout) {
+		return;
+	}
+
+	auto& bind                     = _bindings.Bindings[set][binding];
+	bind.Image.Float.imageLayout   = layout;
+	bind.Image.Float.imageView     = floatView;
+	bind.Image.Integer.imageLayout = layout;
+	bind.Image.Integer.imageView   = integerView;
+	bind.Cookie                    = cookie;
+
+	_dirtySets |= 1u << set;
 }
 
 void CommandBuffer::SetViewportScissor(const RenderPassInfo& info, const Framebuffer* framebuffer) {

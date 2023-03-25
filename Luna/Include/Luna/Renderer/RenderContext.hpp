@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Luna/Vulkan/Common.hpp>
 #include <glm/glm.hpp>
 
 namespace Luna {
@@ -24,8 +25,18 @@ struct RenderParameters {
 
 class RenderContext {
  public:
+	struct Shaders {
+		Vulkan::Program* PBRForward = nullptr;
+	};
+
 	const RenderParameters& GetRenderParameters() const {
 		return _camera;
+	}
+	Shaders& GetShaders() {
+		return _shaders;
+	}
+	const Shaders& GetShaders() const {
+		return _shaders;
 	}
 
 	void SetCamera(const glm::mat4& projection, const glm::mat4& view) {
@@ -57,5 +68,6 @@ class RenderContext {
 
  private:
 	RenderParameters _camera;
+	Shaders _shaders;
 };
 }  // namespace Luna

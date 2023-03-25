@@ -1,6 +1,9 @@
 #include "SceneLoader.hpp"
 
+#include <stb_image.h>
+
 #include <Luna/Platform/Filesystem.hpp>
+#include <Luna/Renderer/Material.hpp>
 #include <Luna/Scene/Entity.hpp>
 #include <Luna/Scene/MeshRendererComponent.hpp>
 #include <Luna/Scene/Scene.hpp>
@@ -142,32 +145,12 @@ struct Buffer {
 	std::vector<uint8_t> Data;
 };
 
-struct Image {
-	uint32_t Index = 0;
-	Luna::Vulkan::ImageHandle Handle;
-};
-
 struct Sampler {
 	Luna::Vulkan::Sampler* Handle = nullptr;
 };
 
-struct Texture {
-	Image* Image     = nullptr;
-	Sampler* Sampler = nullptr;
-};
-
-struct Material {
-	glm::vec4 BaseColorFactor = glm::vec4(1, 1, 1, 1);
-	glm::vec3 EmissiveFactor  = glm::vec3(0, 0, 0);
-	Texture* Albedo           = nullptr;
-	Texture* Normal           = nullptr;
-	Texture* PBR              = nullptr;
-	Texture* Occlusion        = nullptr;
-	Texture* Emissive         = nullptr;
-};
-
 struct Submesh {
-	Material* Material         = nullptr;
+	uint32_t MaterialIndex     = 0;
 	vk::DeviceSize VertexCount = 0;
 	vk::DeviceSize IndexCount  = 0;
 	vk::DeviceSize FirstVertex = 0;
@@ -195,15 +178,13 @@ struct GltfContext {
 	std::filesystem::path GltfFolderFs;
 
 	std::vector<Buffer> Buffers;
-	std::vector<Image> Images;
-	std::vector<Material> Materials;
+	std::vector<Luna::Vulkan::ImageHandle> Images;
+	std::vector<Luna::IntrusivePtr<Luna::Material>> Materials;
 	std::vector<Luna::IntrusivePtr<Luna::StaticMesh>> Meshes;
 	std::vector<Node> Nodes;
 	std::vector<Sampler> Samplers;
-	std::vector<Texture> Textures;
 
-	Material* DefaultMaterial = nullptr;
-	Sampler* DefaultSampler   = nullptr;
+	Sampler* DefaultSampler = nullptr;
 	std::vector<Node*> RootNodes;
 };
 
@@ -401,10 +382,8 @@ static void Preallocate(GltfContext& context) {
 	context.Meshes.resize(context.Asset->meshes.size());
 	context.Nodes.resize(context.Asset->nodes.size());
 	context.Samplers.resize(context.Asset->samplers.size() + 1);
-	context.Textures.resize(context.Asset->textures.size());
 
-	context.DefaultMaterial = &context.Materials.back();
-	context.DefaultSampler  = &context.Samplers.back();
+	context.DefaultSampler = &context.Samplers.back();
 }
 
 static void ImportSamplers(GltfContext& context) {
@@ -520,28 +499,6 @@ static void ImportSamplers(GltfContext& context) {
 	context.DefaultSampler->Handle = device.RequestSampler(samplerCI);
 }
 
-static void ImportTextures(GltfContext& context) {
-	if (!context.Asset) { return; }
-
-	const auto& asset         = *context.Asset;
-	const size_t textureCount = asset.textures.size();
-	for (size_t i = 0; i < textureCount; ++i) {
-		const auto& gltfTexture = asset.textures[i];
-		auto& texture           = context.Textures[i];
-
-		texture.Image = &context.Images[gltfTexture.imageIndex.value()];
-		if (gltfTexture.samplerIndex) {
-			texture.Sampler = &context.Samplers[gltfTexture.samplerIndex.value()];
-		} else {
-			texture.Sampler = context.DefaultSampler;
-		}
-	}
-}
-
-static void ImportMaterials(GltfContext& context) {
-	if (!context.Asset) { return; }
-}
-
 static void ImportNodes(GltfContext& context) {
 	if (!context.Asset) { return; }
 
@@ -609,6 +566,81 @@ static void LoadBuffers(Luna::TaskComposer& composer, GltfContext& context) {
 	}
 }
 
+static void LoadImages(Luna::TaskComposer& composer, GltfContext& context) {
+	if (!context.Asset) { return; }
+	const size_t imageCount = context.Asset->images.size();
+
+	auto& imageLoad = composer.BeginPipelineStage();
+	for (size_t i = 0; i < imageCount; ++i) {
+		imageLoad.Enqueue([&context, i]() {
+			const auto& gltfImage = context.Asset->images[i];
+			auto& image           = context.Images[i];
+
+			std::vector<uint8_t> bytes;
+			std::visit(Overloaded{[&](auto& arg) {},
+			                      [&](const fastgltf::sources::FilePath& filePath) {
+															auto* filesystem = Luna::Filesystem::Get();
+															const auto path  = GetPath(context, filePath.path);
+															auto map         = filesystem->OpenReadOnlyMapping(path);
+															if (!map) {
+																throw std::runtime_error(
+																	"[SceneLoader] Could not load glTF image data: Failed to read external file.");
+															}
+															const uint8_t* dataStart = map->Data<uint8_t>();
+															bytes                    = {dataStart, dataStart + map->GetSize()};
+														},
+			                      [&](const fastgltf::sources::Vector& vector) { bytes = vector.bytes; }},
+			           gltfImage.data);
+			if (bytes.empty()) { throw std::runtime_error("[SceneLoader] Could not load glTF image!"); }
+
+			int width, height, components;
+			stbi_set_flip_vertically_on_load(0);
+			stbi_uc* pixels = stbi_load_from_memory(bytes.data(), bytes.size(), &width, &height, &components, 4);
+			if (pixels == nullptr) { throw std::runtime_error("[SceneLoader] Failed to load glTF image!"); }
+
+			const Luna::Vulkan::ImageInitialData initialData = {.Data = pixels};
+			Luna::Vulkan::ImageCreateInfo imageCI =
+				Luna::Vulkan::ImageCreateInfo::Immutable2D(vk::Format::eR8G8B8A8Srgb, width, height, true);
+			imageCI.MiscFlags |= Luna::Vulkan::ImageCreateFlagBits::MutableSrgb;
+			image = context.Device.CreateImage(imageCI, &initialData);
+
+			stbi_image_free(pixels);
+		});
+	}
+}
+
+static void LoadMaterials(Luna::TaskComposer& composer, GltfContext& context) {
+	if (!context.Asset) { return; }
+	const size_t materialCount = context.Asset->materials.size();
+
+	auto& materialLoad = composer.BeginPipelineStage();
+	for (size_t i = 0; i < materialCount; ++i) {
+		materialLoad.Enqueue([&context, i]() {
+			const auto& gltfMaterial = context.Asset->materials[i];
+			auto& material           = context.Materials[i];
+			material                 = Luna::MakeHandle<Luna::Material>();
+
+			material->DualSided = gltfMaterial.doubleSided;
+
+			const auto Assign = [&](const std::optional<fastgltf::TextureInfo>& texInfo, Luna::Texture& texture) {
+				if (!texInfo) { return; }
+				const auto& gltfTexture = context.Asset->textures[texInfo->textureIndex];
+				texture.Image           = context.Images[*gltfTexture.imageIndex];
+				texture.Sampler         = context.Samplers[*gltfTexture.samplerIndex].Handle;
+			};
+
+			if (gltfMaterial.pbrData) {
+				const auto& pbr = *gltfMaterial.pbrData;
+				Assign(pbr.baseColorTexture, material->Albedo);
+				Assign(pbr.metallicRoughnessTexture, material->PBR);
+			}
+			Assign(gltfMaterial.normalTexture, material->Normal);
+			Assign(gltfMaterial.occlusionTexture, material->Occlusion);
+			Assign(gltfMaterial.emissiveTexture, material->Emissive);
+		});
+	}
+}
+
 static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 	if (!context.Asset) { return; }
 	const size_t meshCount = context.Asset->meshes.size();
@@ -639,6 +671,8 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 			                                        [](const std::vector<int>& material) { return material.empty(); }),
 			                         materialPrimitives.end());
 
+			std::vector<Luna::IntrusivePtr<Luna::Material>> materials;
+
 			std::vector<Submesh> submeshes;
 			std::vector<glm::vec3> meshPositions;
 			std::vector<Vertex> meshVertices;
@@ -649,7 +683,8 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 				auto& submesh             = submeshes.emplace_back();
 
 				const size_t gltfMaterialIndex = gltfPrimitives[primitiveList[0]].materialIndex.value_or(defaultMaterialIndex);
-				submesh.Material               = &context.Materials[gltfMaterialIndex];
+				submesh.MaterialIndex          = materials.size();
+				materials.push_back(context.Materials[gltfMaterialIndex]);
 
 				submesh.FirstVertex = meshVertices.size();
 				submesh.FirstIndex  = meshIndices.size();
@@ -667,13 +702,17 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 					std::vector<uint32_t> indices;
 
 					{
-						positions    = GetAccessorData<glm::vec3>(context, gltfPrimitive, VertexAttributeBits::Position);
-						auto normals = GetAccessorData<glm::vec3>(context, gltfPrimitive, VertexAttributeBits::Normal);
+						positions      = GetAccessorData<glm::vec3>(context, gltfPrimitive, VertexAttributeBits::Position);
+						auto normals   = GetAccessorData<glm::vec3>(context, gltfPrimitive, VertexAttributeBits::Normal);
+						auto texcoord0 = GetAccessorData<glm::vec2>(context, gltfPrimitive, VertexAttributeBits::Texcoord0);
 
 						normals.resize(positions.size());
+						texcoord0.resize(positions.size());
 
 						vertices.reserve(positions.size());
-						for (size_t i = 0; i < positions.size(); ++i) { vertices.push_back(Vertex{.Normal = normals[i]}); }
+						for (size_t i = 0; i < positions.size(); ++i) {
+							vertices.push_back(Vertex{.Normal = normals[i], .Texcoord0 = texcoord0[i]});
+						}
 
 						indices = GetAccessorData<uint32_t>(context, gltfPrimitive, VertexAttributeBits::Index);
 					}
@@ -724,12 +763,16 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 				Luna::Vulkan::BufferDomain::Device, vertexSize, vk::BufferUsageFlagBits::eVertexBuffer);
 			mesh->AttributeBuffer = context.Device.CreateBuffer(attrBufferCI, attrBufferData.data());
 			mesh->AttributeStride = sizeof(Vertex);
-			mesh->Attributes[int(Luna::MeshAttributeType::Normal)].Format = vk::Format::eR32G32B32Sfloat;
-			mesh->Attributes[int(Luna::MeshAttributeType::Normal)].Offset = offsetof(Vertex, Normal);
+			mesh->Attributes[int(Luna::MeshAttributeType::Normal)].Format    = vk::Format::eR32G32B32Sfloat;
+			mesh->Attributes[int(Luna::MeshAttributeType::Normal)].Offset    = offsetof(Vertex, Normal);
+			mesh->Attributes[int(Luna::MeshAttributeType::Texcoord0)].Format = vk::Format::eR32G32Sfloat;
+			mesh->Attributes[int(Luna::MeshAttributeType::Texcoord0)].Offset = offsetof(Vertex, Texcoord0);
 
 			for (const auto& submesh : submeshes) {
-				mesh->AddSubmesh(0, submesh.VertexCount, submesh.IndexCount, submesh.FirstVertex, submesh.FirstIndex);
+				mesh->AddSubmesh(
+					submesh.MaterialIndex, submesh.VertexCount, submesh.IndexCount, submesh.FirstVertex, submesh.FirstIndex);
 			}
+			mesh->Materials = std::move(materials);
 		});
 	}
 }
@@ -770,11 +813,11 @@ void SceneLoader::LoadGltf(Luna::Vulkan::Device& device, Luna::Scene& scene, con
 
 	auto& importing = composer.BeginPipelineStage();
 	importing.Enqueue([&context]() { ImportSamplers(context); });
-	importing.Enqueue([&context]() { ImportTextures(context); });
-	importing.Enqueue([&context]() { ImportMaterials(context); });
 	importing.Enqueue([&context]() { ImportNodes(context); });
 
 	LoadBuffers(composer, context);
+	LoadImages(composer, context);
+	LoadMaterials(composer, context);
 	LoadMeshes(composer, context);
 
 	auto& addToScene = composer.BeginPipelineStage();

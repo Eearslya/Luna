@@ -293,7 +293,7 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& bufferInfo, const void
 
 	const vk::BufferCreateInfo bufferCI({}, actualInfo.Size, actualInfo.Usage, vk::SharingMode::eExclusive, nullptr);
 
-	VmaAllocationCreateInfo bufferAI{.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
+	VmaAllocationCreateInfo bufferAI{.usage = VMA_MEMORY_USAGE_AUTO};
 	if (actualInfo.Domain == BufferDomain::Host) {
 		bufferAI.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 	}
