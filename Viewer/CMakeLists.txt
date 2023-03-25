@@ -6,6 +6,7 @@ target_link_libraries(Viewer PRIVATE fastgltf Luna mikktspace stb)
 target_sources(Viewer PRIVATE
 	Files.cpp
 	ForwardRenderer.cpp
+	GBufferRenderer.cpp
 	SceneLoader.cpp
 	SceneRenderer.cpp
 	Viewer.cpp)

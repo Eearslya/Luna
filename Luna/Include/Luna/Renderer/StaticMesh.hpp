@@ -66,6 +66,7 @@ class StaticSubmesh : public Renderable {
 
 	void Bake();
 	virtual void Enqueue(const RenderContext& context, const RenderableInfo& self, RenderQueue& queue) const override;
+	virtual void Render(Vulkan::CommandBuffer& cmd) const override;
 
 	uint32_t MaterialIndex     = 0;
 	vk::DeviceSize VertexCount = 0;

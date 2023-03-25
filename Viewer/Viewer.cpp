@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "ForwardRenderer.hpp"
+#include "GBufferRenderer.hpp"
 #include "IconsFontAwesome6.h"
 #include "SceneLoader.hpp"
 
@@ -58,6 +59,40 @@ class ViewerApplication : public Luna::Application {
 		auto& device     = GetDevice();
 
 		StyleImGui();
+
+		{
+			constexpr uint32_t width    = 1;
+			constexpr uint32_t height   = 1;
+			constexpr size_t pixelCount = width * height;
+			uint32_t pixels[pixelCount];
+			Luna::Vulkan::ImageInitialData initialImages[6];
+			for (int i = 0; i < 6; ++i) { initialImages[i] = Luna::Vulkan::ImageInitialData{.Data = &pixels}; }
+			const Luna::Vulkan::ImageCreateInfo imageCI2D = {
+				.Domain        = Luna::Vulkan::ImageDomain::Physical,
+				.Width         = width,
+				.Height        = height,
+				.Depth         = 1,
+				.MipLevels     = 1,
+				.ArrayLayers   = 1,
+				.Format        = vk::Format::eR8G8B8A8Unorm,
+				.InitialLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+				.Type          = vk::ImageType::e2D,
+				.Usage         = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eInputAttachment,
+				.Samples       = vk::SampleCountFlagBits::e1,
+			};
+
+			std::fill(pixels, pixels + pixelCount, 0xff000000);
+			_renderContext.GetDefaultImages().Black2D = device.CreateImage(imageCI2D, initialImages);
+
+			std::fill(pixels, pixels + pixelCount, 0xff808080);
+			_renderContext.GetDefaultImages().Gray2D = device.CreateImage(imageCI2D, initialImages);
+
+			std::fill(pixels, pixels + pixelCount, 0xff800000);
+			_renderContext.GetDefaultImages().Normal2D = device.CreateImage(imageCI2D, initialImages);
+
+			std::fill(pixels, pixels + pixelCount, 0xffffffff);
+			_renderContext.GetDefaultImages().White2D = device.CreateImage(imageCI2D, initialImages);
+		}
 
 		SceneLoader::LoadGltf(device, _scene, "assets://Models/Sponza/Sponza.gltf");
 
@@ -104,21 +139,43 @@ class ViewerApplication : public Luna::Application {
 		                                              .Height = _swapchainConfig.Extent.height};
 		_renderGraph->SetBackbufferDimensions(backbufferDims);
 
-		// Add Main Render Pass.
+		// Add GBuffer Render Pass.
 		{
-			Luna::AttachmentInfo color, depth;
-			depth.Format = GetDevice().GetDefaultDepthFormat();
+			Luna::AttachmentInfo albedo, normal, depth;
+			albedo.Format = vk::Format::eR8G8B8A8Srgb;
+			normal.Format = vk::Format::eR16G16Snorm;
+			depth.Format  = GetDevice().GetDefaultDepthFormat();
 
-			auto& mainPass = _renderGraph->AddPass("Lighting", Luna::RenderGraphQueueFlagBits::Graphics);
+			auto& gBuffer = _renderGraph->AddPass("GBuffer", Luna::RenderGraphQueueFlagBits::Graphics);
 
-			mainPass.AddColorOutput("Lighting-Color", color);
-			mainPass.SetDepthStencilOutput("Lighting-Depth", depth);
+			gBuffer.AddColorOutput("GBuffer-Albedo", albedo);
+			gBuffer.AddColorOutput("GBuffer-Normal", normal);
+			gBuffer.SetDepthStencilOutput("Depth", depth);
 
-			auto renderer = Luna::MakeHandle<ForwardRenderer>(_renderContext, _scene);
-			mainPass.SetRenderPassInterface(renderer);
+			auto renderer = Luna::MakeHandle<GBufferRenderer>(_renderContext, _scene);
+			gBuffer.SetRenderPassInterface(renderer);
 		}
 
-		_renderGraph->SetBackbufferSource("Lighting-Color");
+		// Add Lighting Render Pass.
+		{
+			Luna::AttachmentInfo lit;
+
+			auto& lighting = _renderGraph->AddPass("Lighting", Luna::RenderGraphQueueFlagBits::Graphics);
+
+			lighting.AddAttachmentInput("GBuffer-Albedo");
+			lighting.AddAttachmentInput("GBuffer-Normal");
+			lighting.SetDepthStencilInput("Depth");
+			lighting.AddColorOutput("Lighting", lit);
+
+			lighting.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
+				cmd.SetDepthWrite(false);
+				cmd.SetInputAttachments(0, 0);
+				cmd.SetProgram(_renderContext.GetShaders().PBRDeferred);
+				cmd.Draw(3);
+			});
+		}
+
+		_renderGraph->SetBackbufferSource("Lighting");
 
 		_renderGraph->Bake();
 		_renderGraph->InstallPhysicalBuffers(physicalBuffers);
@@ -195,6 +252,18 @@ class ViewerApplication : public Luna::Application {
 		                        "res://Shaders/PBRForward.vert.glsl",
 		                        "res://Shaders/PBRForward.frag.glsl",
 		                        shaders.PBRForward)) {
+			return;
+		}
+		if (!LoadGraphicsShader(GetDevice(),
+		                        "res://Shaders/PBRGBuffer.vert.glsl",
+		                        "res://Shaders/PBRGBuffer.frag.glsl",
+		                        shaders.PBRGBuffer)) {
+			return;
+		}
+		if (!LoadGraphicsShader(GetDevice(),
+		                        "res://Shaders/PBRDeferred.vert.glsl",
+		                        "res://Shaders/PBRDeferred.frag.glsl",
+		                        shaders.PBRDeferred)) {
 			return;
 		}
 

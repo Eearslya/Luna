@@ -187,6 +187,13 @@ RenderPass::RenderPass(Hash hash, Device& device, const RenderPassInfo& rpInfo)
 		}
 		for (uint32_t j = 0; j < subpass.InputAttachmentCount; ++j) {
 			inputs[j] = vk::AttachmentReference2(subpass.InputAttachments[j], vk::ImageLayout::eUndefined);
+			if (subpass.InputAttachments[j] != VK_ATTACHMENT_UNUSED) {
+				if (subpass.InputAttachments[j] < rpInfo.ColorAttachmentCount) {
+					inputs[j].aspectMask = vk::ImageAspectFlagBits::eColor;
+				} else {
+					inputs[j].aspectMask = FormatAspectFlags(rpInfo.DepthStencilAttachment->GetFormat());
+				}
+			}
 		}
 		for (uint32_t j = 0; j < subpass.ResolveAttachmentCount; ++j) {
 			resolves[j] = vk::AttachmentReference2(subpass.ResolveAttachments[j], vk::ImageLayout::eUndefined);

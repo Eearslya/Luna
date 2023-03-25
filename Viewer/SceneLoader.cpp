@@ -1,5 +1,6 @@
 #include "SceneLoader.hpp"
 
+#include <mikktspace.h>
 #include <stb_image.h>
 
 #include <Luna/Platform/Filesystem.hpp>
@@ -18,6 +19,7 @@
 #include <fastgltf_util.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/normal.hpp>
 
 template <typename T>
 struct AccessorType {
@@ -140,6 +142,26 @@ struct std::hash<Vertex> {
 	}
 };
 
+struct CombinedVertex {
+	glm::vec3 Position;
+	Vertex Attributes;
+
+	bool operator==(const CombinedVertex& other) const {
+		return Position == other.Position && Attributes == other.Attributes;
+	}
+};
+
+template <>
+struct std::hash<CombinedVertex> {
+	size_t operator()(const CombinedVertex& v) const {
+		Luna::Hasher h;
+		h.Data(sizeof(v.Position), glm::value_ptr(v.Position));
+		h(v.Attributes);
+
+		return static_cast<size_t>(h.Get());
+	}
+};
+
 struct Buffer {
 	uint32_t Index = 0;
 	std::vector<uint8_t> Data;
@@ -187,6 +209,55 @@ struct GltfContext {
 	Sampler* DefaultSampler = nullptr;
 	std::vector<Node*> RootNodes;
 };
+
+struct MikkTContext {
+	std::vector<glm::vec3>& Positions;
+	std::vector<Vertex>& Vertices;
+};
+
+/* ============================
+** === MikkTSpace Functions ===
+** ============================ */
+static int MikkTGetNumFaces(const SMikkTSpaceContext* context) {
+	const auto data = reinterpret_cast<const MikkTContext*>(context->m_pUserData);
+	return data->Vertices.size() / 3;
+}
+static int MikkTGetNumVerticesOfFace(const SMikkTSpaceContext* context, const int face) {
+	return 3;
+}
+static void MikkTGetPosition(const SMikkTSpaceContext* context, float fvPosOut[], const int face, const int vert) {
+	const auto data     = reinterpret_cast<const MikkTContext*>(context->m_pUserData);
+	const glm::vec3 pos = data->Positions[face * 3 + vert];
+	fvPosOut[0]         = pos.x;
+	fvPosOut[1]         = pos.y;
+	fvPosOut[2]         = pos.z;
+}
+static void MikkTGetNormal(const SMikkTSpaceContext* context, float fvNormOut[], const int face, const int vert) {
+	const auto data      = reinterpret_cast<const MikkTContext*>(context->m_pUserData);
+	const glm::vec3 norm = data->Vertices[face * 3 + vert].Normal;
+	fvNormOut[0]         = norm.x;
+	fvNormOut[1]         = norm.y;
+	fvNormOut[2]         = norm.z;
+}
+static void MikkTGetTexCoord(const SMikkTSpaceContext* context, float fvTexcOut[], const int face, const int vert) {
+	const auto data = reinterpret_cast<const MikkTContext*>(context->m_pUserData);
+	glm::vec2 uv    = data->Vertices[face * 3 + vert].Texcoord0;
+	fvTexcOut[0]    = uv.x;
+	fvTexcOut[1]    = 1.0f - uv.y;
+}
+static void MikkTSetTSpaceBasic(
+	const SMikkTSpaceContext* context, const float fvTangent[], const float fSign, const int face, const int vert) {
+	auto data = reinterpret_cast<MikkTContext*>(context->m_pUserData);
+
+	data->Vertices[face * 3 + vert].Tangent = glm::vec4(glm::make_vec3(fvTangent), fSign);
+}
+static SMikkTSpaceInterface MikkTInterface = {.m_getNumFaces          = MikkTGetNumFaces,
+                                              .m_getNumVerticesOfFace = MikkTGetNumVerticesOfFace,
+                                              .m_getPosition          = MikkTGetPosition,
+                                              .m_getNormal            = MikkTGetNormal,
+                                              .m_getTexCoord          = MikkTGetTexCoord,
+                                              .m_setTSpaceBasic       = MikkTSetTSpaceBasic,
+                                              .m_setTSpace            = nullptr};
 
 template <typename Source, typename Destination>
 static std::vector<Destination> ConvertAccessorData(const GltfContext& context,
@@ -641,6 +712,48 @@ static void LoadMaterials(Luna::TaskComposer& composer, GltfContext& context) {
 	}
 }
 
+static VertexAttributes GetAvailableAttributes(const fastgltf::Primitive& prim) {
+	VertexAttributes attr = {};
+
+	for (const auto& [attributeName, attributeValue] : prim.attributes) {
+		if (attributeName.compare("POSITION") == 0) { attr |= VertexAttributeBits::Position; }
+		if (attributeName.compare("NORMAL") == 0) { attr |= VertexAttributeBits::Normal; }
+		if (attributeName.compare("TANGENT") == 0) { attr |= VertexAttributeBits::Tangent; }
+		if (attributeName.compare("TEXCOORD_0") == 0) { attr |= VertexAttributeBits::Texcoord0; }
+		if (attributeName.compare("TEXCOORD_1") == 0) { attr |= VertexAttributeBits::Texcoord1; }
+		if (attributeName.compare("COLOR_0") == 0) { attr |= VertexAttributeBits::Color0; }
+		if (attributeName.compare("JOINTS_0") == 0) { attr |= VertexAttributeBits::Joints0; }
+		if (attributeName.compare("WEIGHTS_0") == 0) { attr |= VertexAttributeBits::Weights0; }
+	}
+	if (prim.indicesAccessor.has_value()) { attr |= VertexAttributeBits::Index; }
+
+	return attr;
+}
+
+static MeshProcessingSteps GetProcessingSteps(VertexAttributes attributes) {
+	MeshProcessingSteps steps = {};
+
+	if (!(attributes & VertexAttributeBits::Normal)) {
+		// No normals provided. We must generate flat normals, then generate tangents using MikkTSpace.
+		steps |= MeshProcessingStepBits::UnpackVertices;
+		steps |= MeshProcessingStepBits::GenerateFlatNormals;
+		steps |= MeshProcessingStepBits::GenerateTangentSpace;
+		steps |= MeshProcessingStepBits::WeldVertices;
+	}
+	if (!(attributes & VertexAttributeBits::Tangent)) {
+		// No tangents provided. We must generate tangents using MikkTSPace.
+		steps |= MeshProcessingStepBits::UnpackVertices;
+		steps |= MeshProcessingStepBits::GenerateTangentSpace;
+		steps |= MeshProcessingStepBits::WeldVertices;
+	}
+	if (!(attributes & VertexAttributeBits::Index)) {
+		// No indices provided. We will weld the mesh and create our own index buffer.
+		steps |= MeshProcessingStepBits::WeldVertices;
+	}
+
+	return steps;
+}
+
 static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 	if (!context.Asset) { return; }
 	const size_t meshCount = context.Asset->meshes.size();
@@ -648,6 +761,9 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 	auto& meshLoad = composer.BeginPipelineStage();
 	for (size_t i = 0; i < meshCount; ++i) {
 		meshLoad.Enqueue([&context, i]() {
+			// Create a MikkTSpace context for tangent generation.
+			SMikkTSpaceContext mikktContext = {.m_pInterface = &MikkTInterface};
+
 			const auto& gltfMesh = context.Asset->meshes[i];
 			auto& mesh           = context.Meshes[i];
 			mesh                 = Luna::MakeHandle<Luna::StaticMesh>();
@@ -696,6 +812,8 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 
 				for (const auto gltfPrimitiveIndex : primitiveList) {
 					const auto& gltfPrimitive = gltfPrimitives[gltfPrimitiveIndex];
+					const auto primAttributes = GetAvailableAttributes(gltfPrimitive);
+					const auto primProcessing = GetProcessingSteps(primAttributes);
 
 					std::vector<glm::vec3> positions;
 					std::vector<Vertex> vertices;
@@ -704,17 +822,84 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 					{
 						positions      = GetAccessorData<glm::vec3>(context, gltfPrimitive, VertexAttributeBits::Position);
 						auto normals   = GetAccessorData<glm::vec3>(context, gltfPrimitive, VertexAttributeBits::Normal);
+						auto tangents  = GetAccessorData<glm::vec4>(context, gltfPrimitive, VertexAttributeBits::Tangent);
 						auto texcoord0 = GetAccessorData<glm::vec2>(context, gltfPrimitive, VertexAttributeBits::Texcoord0);
 
 						normals.resize(positions.size());
+						tangents.resize(positions.size());
 						texcoord0.resize(positions.size());
 
 						vertices.reserve(positions.size());
 						for (size_t i = 0; i < positions.size(); ++i) {
-							vertices.push_back(Vertex{.Normal = normals[i], .Texcoord0 = texcoord0[i]});
+							vertices.push_back(Vertex{.Normal = normals[i], .Tangent = tangents[i], .Texcoord0 = texcoord0[i]});
 						}
 
 						indices = GetAccessorData<uint32_t>(context, gltfPrimitive, VertexAttributeBits::Index);
+					}
+
+					if (primProcessing & MeshProcessingStepBits::UnpackVertices) {
+						if (indices.size() > 0) {
+							std::vector<glm::vec3> newPositions(indices.size());
+							std::vector<Vertex> newAttributes(indices.size());
+
+							uint32_t newIndex = 0;
+							for (const uint32_t index : indices) {
+								newPositions[newIndex]  = positions[index];
+								newAttributes[newIndex] = vertices[index];
+								++newIndex;
+							}
+							positions = std::move(newPositions);
+							vertices  = std::move(newAttributes);
+						}
+					}
+
+					if (primProcessing & MeshProcessingStepBits::GenerateFlatNormals) {
+						const size_t faceCount = vertices.size() / 3;
+
+						for (size_t i = 0; i < faceCount; ++i) {
+							auto& p1     = positions[i * 3 + 0];
+							auto& p2     = positions[i * 3 + 1];
+							auto& p3     = positions[i * 3 + 2];
+							auto& v1     = vertices[i * 3 + 0];
+							auto& v2     = vertices[i * 3 + 1];
+							auto& v3     = vertices[i * 3 + 2];
+							const auto n = glm::normalize(glm::triangleNormal(p1, p2, p3));
+
+							v1.Normal = n;
+							v2.Normal = n;
+							v3.Normal = n;
+						}
+					}
+
+					if (primProcessing & MeshProcessingStepBits::GenerateTangentSpace) {
+						MikkTContext context{positions, vertices};
+						mikktContext.m_pUserData = &context;
+						genTangSpaceDefault(&mikktContext);
+					}
+
+					if (primProcessing & MeshProcessingStepBits::WeldVertices) {
+						indices.clear();
+						indices.reserve(vertices.size());
+						std::unordered_map<CombinedVertex, uint32_t> uniqueVertices;
+
+						const size_t oldVertexCount = vertices.size();
+						uint32_t newVertexCount     = 0;
+						for (size_t i = 0; i < oldVertexCount; ++i) {
+							const CombinedVertex v = {positions[i], vertices[i]};
+
+							const auto it = uniqueVertices.find(v);
+							if (it == uniqueVertices.end()) {
+								const uint32_t index = newVertexCount++;
+								uniqueVertices.insert(std::make_pair(v, index));
+								positions[index] = v.Position;
+								vertices[index]  = v.Attributes;
+								indices.push_back(index);
+							} else {
+								indices.push_back(it->second);
+							}
+						}
+						positions.resize(newVertexCount);
+						vertices.resize(newVertexCount);
 					}
 
 					for (const auto& v : positions) {
@@ -765,6 +950,8 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 			mesh->AttributeStride = sizeof(Vertex);
 			mesh->Attributes[int(Luna::MeshAttributeType::Normal)].Format    = vk::Format::eR32G32B32Sfloat;
 			mesh->Attributes[int(Luna::MeshAttributeType::Normal)].Offset    = offsetof(Vertex, Normal);
+			mesh->Attributes[int(Luna::MeshAttributeType::Tangent)].Format   = vk::Format::eR32G32B32A32Sfloat;
+			mesh->Attributes[int(Luna::MeshAttributeType::Tangent)].Offset   = offsetof(Vertex, Tangent);
 			mesh->Attributes[int(Luna::MeshAttributeType::Texcoord0)].Format = vk::Format::eR32G32Sfloat;
 			mesh->Attributes[int(Luna::MeshAttributeType::Texcoord0)].Offset = offsetof(Vertex, Texcoord0);
 

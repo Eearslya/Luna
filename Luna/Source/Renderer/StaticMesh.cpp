@@ -122,6 +122,8 @@ void StaticSubmesh::Enqueue(const RenderContext& context, const RenderableInfo& 
 	}
 }
 
+void StaticSubmesh::Render(Vulkan::CommandBuffer& cmd) const {}
+
 void StaticMesh::AddSubmesh(uint32_t materialIndex,
                             vk::DeviceSize vertexCount,
                             vk::DeviceSize indexCount,

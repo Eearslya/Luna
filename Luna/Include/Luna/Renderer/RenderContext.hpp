@@ -25,10 +25,25 @@ struct RenderParameters {
 
 class RenderContext {
  public:
-	struct Shaders {
-		Vulkan::Program* PBRForward = nullptr;
+	struct DefaultImages {
+		Vulkan::ImageHandle Black2D;
+		Vulkan::ImageHandle Gray2D;
+		Vulkan::ImageHandle Normal2D;
+		Vulkan::ImageHandle White2D;
 	};
 
+	struct Shaders {
+		Vulkan::Program* PBRForward  = nullptr;
+		Vulkan::Program* PBRGBuffer  = nullptr;
+		Vulkan::Program* PBRDeferred = nullptr;
+	};
+
+	DefaultImages& GetDefaultImages() {
+		return _defaultImages;
+	}
+	const DefaultImages& GetDefaultImages() const {
+		return _defaultImages;
+	}
 	const RenderParameters& GetRenderParameters() const {
 		return _camera;
 	}
@@ -68,6 +83,7 @@ class RenderContext {
 
  private:
 	RenderParameters _camera;
+	DefaultImages _defaultImages;
 	Shaders _shaders;
 };
 }  // namespace Luna
