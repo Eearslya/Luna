@@ -488,6 +488,26 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 		Log::Trace("Vulkan::Context", "Enabling Buffer Device Addresses.");
 		enable.Vulkan12.bufferDeviceAddress = VK_TRUE;
 	}
+	if (avail.Vulkan12.descriptorIndexing) {
+		Log::Trace("Vulkan::Context", "Enabling Descriptor Indexing.");
+		enable.Vulkan12.descriptorIndexing = VK_TRUE;
+	}
+	if (avail.Vulkan12.descriptorBindingPartiallyBound) {
+		Log::Trace("Vulkan::Context", "Enabling Partially Bound Descriptors.");
+		enable.Vulkan12.descriptorBindingPartiallyBound = VK_TRUE;
+	}
+	if (avail.Vulkan12.descriptorBindingSampledImageUpdateAfterBind) {
+		Log::Trace("Vulkan::Context", "Enabling Sampled Image Update After Bind.");
+		enable.Vulkan12.descriptorBindingStorageImageUpdateAfterBind = VK_TRUE;
+	}
+	if (avail.Vulkan12.runtimeDescriptorArray) {
+		Log::Trace("Vulkan::Context", "Enabling Runtime Descriptor Arrays.");
+		enable.Vulkan12.runtimeDescriptorArray = VK_TRUE;
+	}
+	if (avail.Vulkan12.shaderSampledImageArrayNonUniformIndexing) {
+		Log::Trace("Vulkan::Context", "Enabling Sampled Image Array Non-Uniform Indexing.");
+		enable.Vulkan12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+	}
 	if (avail.Vulkan12.hostQueryReset) {
 		Log::Trace("Vulkan::Context", "Enabling Host Query Reset.");
 		enable.Vulkan12.hostQueryReset = VK_TRUE;

@@ -61,7 +61,7 @@ PipelineLayout::~PipelineLayout() noexcept {
 void PipelineLayout::CreateUpdateTemplates() {
 	for (uint32_t set = 0; set < MaxDescriptorSets; ++set) {
 		if ((_resourceLayout.DescriptorSetMask & (1u << set)) == 0) { continue; }
-		if ((_resourceLayout.BindlessDescriptorSetMask & (1u << set)) != 0) { continue; }
+		// if ((_resourceLayout.BindlessDescriptorSetMask & (1u << set)) != 0) { continue; }
 
 		const auto& setLayout = _resourceLayout.SetLayouts[set];
 
@@ -109,6 +109,8 @@ void PipelineLayout::CreateUpdateTemplates() {
 		});
 
 		ForEachBit(setLayout.SampledImageMask, [&](uint32_t binding) {
+			if (setLayout.ArraySizes[binding] == DescriptorSetLayout::UnsizedArray) { return;  }
+
 			updateEntries[updateCount++] = vk::DescriptorUpdateTemplateEntry(
 				binding,
 				0,
@@ -282,12 +284,13 @@ ShaderResourceLayout Shader::ReflectShaderResourceLayout(size_t codeSize, const 
 					Log::Error("Vulkan::Shader", "Reflection error: Array dimension must be a literal.");
 				} else {
 					if (type.array.front() == 0) {
-						if (binding != 0) {
-							Log::Error("Vulkan::Shader", "Reflection error: Bindless textures can only be used with binding 0.");
+						if (layout.BindlessSetMask & 1u << set) {
+							Log::Error("Vulkan::Shader",
+							           "Reflection error: Bindless descriptor must be the last descriptor in a set.");
 						}
 
-						if (type.basetype != spirv_cross::SPIRType::Image || type.image.dim == spv::DimBuffer) {
-							Log::Error("Vulkan::Shader", "Reflection error: Bindless can only be used for sampled images.");
+						if (type.basetype != spirv_cross::SPIRType::SampledImage || type.image.dim == spv::DimBuffer) {
+							Log::Error("Vulkan::Shader", "Reflection error: Bindless can only be used for combined image samplers.");
 						} else {
 							layout.BindlessSetMask |= 1u << set;
 						}
@@ -560,15 +563,6 @@ void Program::Bake() {
 			for (uint32_t binding = 0; binding < MaxDescriptorBindings; ++binding) {
 				auto& arraySize = _layout.SetLayouts[set].ArraySizes[binding];
 				if (arraySize == DescriptorSetLayout::UnsizedArray) {
-					for (uint32_t i = 1; i < MaxDescriptorBindings; ++i) {
-						if (_layout.StagesForBindings[set][i]) {
-							Log::Error("Vulkan::Program",
-							           "Reflection error: Set {}, binding {} is bindless, but binding {} has descriptors.",
-							           set,
-							           binding,
-							           i);
-						}
-					}
 					_layout.StagesForBindings[set][binding] = static_cast<uint32_t>(vk::ShaderStageFlagBits::eAll);
 				} else if (arraySize == 0) {
 					arraySize = 1;

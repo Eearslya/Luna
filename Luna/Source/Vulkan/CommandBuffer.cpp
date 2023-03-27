@@ -899,7 +899,7 @@ Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 
 void CommandBuffer::FlushDescriptorSet(uint32_t set) {
 	auto& layout = _programLayout->GetResourceLayout();
-	if (layout.BindlessDescriptorSetMask & (1u << set)) {
+	if (false && layout.BindlessDescriptorSetMask & (1u << set)) {
 		_commandBuffer.bindDescriptorSets(
 			_actualRenderPass ? vk::PipelineBindPoint::eGraphics : vk::PipelineBindPoint::eCompute,
 			_pipelineLayout,

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Common.hpp>
 #include <glm/glm.hpp>
 
@@ -54,6 +55,10 @@ class RenderContext {
 		return _shaders;
 	}
 
+	void SetBindless(Vulkan::CommandBuffer& cmd, uint32_t set, uint32_t binding) {
+		_bindlessImages = {_defaultImages.Black2D};
+	}
+
 	void SetCamera(const glm::mat4& projection, const glm::mat4& view) {
 		_camera.Projection        = projection;
 		_camera.View              = view;
@@ -85,5 +90,7 @@ class RenderContext {
 	RenderParameters _camera;
 	DefaultImages _defaultImages;
 	Shaders _shaders;
+
+	std::vector<Vulkan::ImageHandle> _bindlessImages;
 };
 }  // namespace Luna
