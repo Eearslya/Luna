@@ -147,11 +147,11 @@ FileMappingHandle Filesystem::OpenReadOnlyMapping(const Path& path) {
 	return file->Map();
 }
 
-FileMappingHandle Filesystem::OpenTransactionalMapping(const Path& path) {
+FileMappingHandle Filesystem::OpenTransactionalMapping(const Path& path, size_t size) {
 	auto file = Open(path, FileMode::WriteOnlyTransactional);
 	if (!file) { return {}; }
 
-	return file->Map();
+	return file->MapWrite(size);
 }
 
 FileMappingHandle Filesystem::OpenWriteOnlyMapping(const Path& path) {
@@ -201,7 +201,7 @@ std::vector<ListEntry> Filesystem::Walk(const Path& path) {
 }
 
 bool Filesystem::WriteDataToFile(const Path& path, size_t size, const void* data) {
-	auto file = OpenTransactionalMapping(path);
+	auto file = OpenTransactionalMapping(path, size);
 	if (!file) { return false; }
 
 	memcpy(file->MutableData(), data, size);

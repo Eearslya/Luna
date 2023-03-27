@@ -23,6 +23,7 @@ Application::Application() {
 	_threading  = std::make_unique<Threading>();
 
 	_filesystem->RegisterProtocol("assets", std::unique_ptr<FilesystemBackend>(new OSFilesystem("Assets")));
+	_filesystem->RegisterProtocol("cache", std::unique_ptr<FilesystemBackend>(new OSFilesystem("Cache")));
 	_filesystem->RegisterProtocol("res", std::unique_ptr<FilesystemBackend>(new OSFilesystem("Resources")));
 }
 

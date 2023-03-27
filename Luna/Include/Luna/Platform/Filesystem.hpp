@@ -114,7 +114,7 @@ class Filesystem {
 	bool MoveYield(const Path& dst, const Path& src);
 	FileHandle Open(const Path& path, FileMode mode = FileMode::ReadOnly);
 	FileMappingHandle OpenReadOnlyMapping(const Path& path);
-	FileMappingHandle OpenTransactionalMapping(const Path& path);
+	FileMappingHandle OpenTransactionalMapping(const Path& path, size_t size);
 	FileMappingHandle OpenWriteOnlyMapping(const Path& path);
 	bool ReadFileToString(const Path& path, std::string& outStr);
 	bool Remove(const Path& path);

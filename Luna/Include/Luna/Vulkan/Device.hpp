@@ -48,6 +48,9 @@ class Device : public IntrusivePtrEnabled<Device> {
 	uint32_t GetFramesInFlight() const {
 		return _frameContexts.size();
 	}
+	vk::PipelineCache GetPipelineCache() const {
+		return _pipelineCache;
+	}
 	ShaderCompiler& GetShaderCompiler() {
 		return *_shaderCompiler;
 	}
@@ -194,12 +197,14 @@ class Device : public IntrusivePtrEnabled<Device> {
 	vk::Fence AllocateFence();
 	vk::Semaphore AllocateSemaphore();
 	void CreateFrameContexts(uint32_t count);
+	void CreatePipelineCache();
 	void CreateStockSamplers();
 	void CreateTimelineSemaphores();
 	void CreateTracingContexts();
 	SemaphoreHandle ConsumeReleaseSemaphore();
 	void DestroyTimelineSemaphores();
 	void DestroyTracingContexts();
+	void FlushPipelineCache();
 	FrameContext& Frame();
 	void ReleaseFence(vk::Fence fence);
 	void ReleaseSemaphore(vk::Semaphore semaphore);
@@ -265,6 +270,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 	std::vector<vk::Fence> _availableFences;
 	std::vector<vk::Semaphore> _availableSemaphores;
 	std::unique_ptr<FramebufferAllocator> _framebufferAllocator;
+	vk::PipelineCache _pipelineCache;
 	std::unique_ptr<ShaderCompiler> _shaderCompiler;
 	std::unique_ptr<ShaderManager> _shaderManager;
 	std::unique_ptr<TransientAttachmentAllocator> _transientAttachmentAllocator;

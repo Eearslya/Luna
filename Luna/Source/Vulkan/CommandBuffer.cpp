@@ -894,7 +894,7 @@ Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 	                                                _pipelineState.SubpassIndex,
 	                                                VK_NULL_HANDLE,
 	                                                0);
-	const auto pipelineResult   = _device.GetDevice().createGraphicsPipeline(VK_NULL_HANDLE, pipelineCI);
+	const auto pipelineResult   = _device.GetDevice().createGraphicsPipeline(_device.GetPipelineCache(), pipelineCI);
 	const auto returnedPipeline = _pipelineState.Program->AddPipeline(_pipelineState.Hash, pipelineResult.value);
 	if (returnedPipeline != pipelineResult.value) { _device.GetDevice().destroyPipeline(pipelineResult.value); }
 	Log::Trace("Vulkan", "Pipeline created.");

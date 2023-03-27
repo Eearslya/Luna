@@ -1,3 +1,4 @@
+#include <Luna/Platform/Filesystem.hpp>
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Utility/Threading.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
@@ -91,6 +92,7 @@ Device::Device(Context& context)
 	}
 
 	CreateFrameContexts(2);
+	CreatePipelineCache();
 	CreateStockSamplers();
 	CreateTimelineSemaphores();
 	CreateTracingContexts();
@@ -120,6 +122,11 @@ Device::~Device() noexcept {
 	_swapchainImages.clear();
 
 	WaitIdle();
+
+	if (_pipelineCache) {
+		FlushPipelineCache();
+		_device.destroyPipelineCache(_pipelineCache);
+	}
 
 	_vertexBlocks.reset();
 	_uniformBlocks.reset();
@@ -1036,6 +1043,55 @@ void Device::CreateFrameContexts(uint32_t count) {
 	for (uint32_t i = 0; i < count; ++i) { _frameContexts.push_back(std::make_unique<FrameContext>(*this, i)); }
 }
 
+void Device::CreatePipelineCache() {
+	constexpr static const auto uuidSize = sizeof(_deviceInfo.Properties.Core.pipelineCacheUUID);
+	constexpr static const auto hashSize = sizeof(Hash);
+
+	auto* filesystem = Filesystem::Get();
+	auto cacheFile   = filesystem->OpenReadOnlyMapping("cache://PipelineCache.bin");
+
+	const uint8_t* data = nullptr;
+	size_t dataSize     = 0;
+	if (cacheFile) {
+		data     = cacheFile->Data<uint8_t>();
+		dataSize = cacheFile->GetSize();
+	}
+
+	vk::PipelineCacheCreateInfo cacheCI({}, 0, nullptr);
+	if (data && dataSize > (uuidSize + hashSize) &&
+	    memcmp(data, _deviceInfo.Properties.Core.pipelineCacheUUID, uuidSize) == 0) {
+		Hash refHash;
+		memcpy(&refHash, data + uuidSize, hashSize);
+
+		Hasher h;
+		h.Data(dataSize, data);
+		if (h.Get() == refHash) {
+			cacheCI.initialDataSize = dataSize - uuidSize - hashSize;
+			cacheCI.pInitialData    = data + uuidSize + hashSize;
+		}
+	}
+
+	if (_pipelineCache) { _device.destroyPipelineCache(_pipelineCache); }
+
+	try {
+		_pipelineCache = _device.createPipelineCache(cacheCI);
+		Log::Trace("Vulkan", "Pipeline Cache created.");
+	} catch (const vk::Error& vkError) {
+		if (cacheCI.pInitialData) {
+			cacheCI.initialDataSize = 0;
+			cacheCI.pInitialData    = nullptr;
+			try {
+				_pipelineCache = _device.createPipelineCache(cacheCI);
+				Log::Trace("Vulkan", "Pipeline Cache created.");
+			} catch (const vk::Error& vkError) {
+				Log::Error("Device", "Failed to initialize Pipeline Cache: {}", vkError.what());
+			}
+		} else {
+			Log::Error("Device", "Failed to initialize Pipeline Cache: {}", vkError.what());
+		}
+	}
+}
+
 void Device::CreateStockSamplers() {
 	for (int i = 0; i < StockSamplerCount; ++i) {
 		const auto type = static_cast<StockSampler>(i);
@@ -1156,6 +1212,33 @@ void Device::DestroyTracingContexts() {
 	for (auto& queue : _queueData) {
 		if (queue.TracingContext) { TracyVkDestroy(queue.TracingContext); }
 	}
+}
+
+void Device::FlushPipelineCache() {
+	constexpr static const auto uuidSize = sizeof(_deviceInfo.Properties.Core.pipelineCacheUUID);
+	constexpr static const auto hashSize = sizeof(Hash);
+
+	if (!_pipelineCache) { return; }
+
+	const auto cacheData = _device.getPipelineCacheData(_pipelineCache);
+	if (cacheData.size() == 0) { return; }
+
+	const auto fileSize = cacheData.size() + uuidSize + hashSize;
+	Hasher h;
+	h.Data(cacheData.size(), cacheData.data());
+	const auto hash = h.Get();
+
+	auto* filesystem = Filesystem::Get();
+	auto cacheFile   = filesystem->OpenTransactionalMapping("cache://PipelineCache.bin", fileSize);
+	auto* fileData   = cacheFile->MutableData<uint8_t>();
+
+	memcpy(fileData, _deviceInfo.Properties.Core.pipelineCacheUUID, uuidSize);
+	fileData += uuidSize;
+
+	memcpy(fileData, &hash, hashSize);
+	fileData += hashSize;
+
+	memcpy(fileData, cacheData.data(), cacheData.size());
 }
 
 Device::FrameContext& Device::Frame() {

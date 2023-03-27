@@ -20,6 +20,8 @@ OSMappedFile::OSMappedFile(const std::filesystem::path& path, FileMode mode) {
 	DWORD access      = 0;
 	DWORD disposition = 0;
 
+	const auto dir = path.parent_path();
+
 	switch (mode) {
 		case FileMode::ReadOnly:
 			access      = GENERIC_READ;
@@ -27,7 +29,7 @@ OSMappedFile::OSMappedFile(const std::filesystem::path& path, FileMode mode) {
 			break;
 
 		case FileMode::ReadWrite:
-			if (!std::filesystem::create_directories(path)) {
+			if (!std::filesystem::is_directory(dir) && !std::filesystem::create_directories(dir)) {
 				throw std::runtime_error("Could not create directories for file!");
 			}
 			access      = GENERIC_READ | GENERIC_WRITE;
@@ -36,7 +38,7 @@ OSMappedFile::OSMappedFile(const std::filesystem::path& path, FileMode mode) {
 
 		case FileMode::WriteOnly:
 		case FileMode::WriteOnlyTransactional:
-			if (!std::filesystem::create_directories(path)) {
+			if (!std::filesystem::is_directory(dir) && !std::filesystem::create_directories(dir)) {
 				throw std::runtime_error("Could not create directories for file!");
 			}
 			access      = GENERIC_READ | GENERIC_WRITE;

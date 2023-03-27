@@ -3,6 +3,7 @@
 .vs/
 .vscode/
 [Bb]uild/
+[Cc]ache/
 Examples/
 
 *~
