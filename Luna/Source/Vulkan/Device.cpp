@@ -1064,8 +1064,9 @@ void Device::CreatePipelineCache() {
 		memcpy(&refHash, data + uuidSize, hashSize);
 
 		Hasher h;
-		h.Data(dataSize, data);
+		h.Data(dataSize - uuidSize - hashSize, data + uuidSize + hashSize);
 		if (h.Get() == refHash) {
+			Log::Debug("Vulkan", "Loading existing Pipeline Cache.");
 			cacheCI.initialDataSize = dataSize - uuidSize - hashSize;
 			cacheCI.pInitialData    = data + uuidSize + hashSize;
 		}
