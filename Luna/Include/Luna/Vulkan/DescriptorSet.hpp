@@ -64,6 +64,33 @@ class BindlessDescriptorPool
 	uint32_t _totalDescriptors     = 0;
 };
 
+class BindlessAllocator {
+ public:
+	BindlessAllocator(Device& device);
+
+	vk::DescriptorSet GetDescriptorSet() const {
+		return _descriptorPool->GetDescriptorSet();
+	}
+
+	void BeginFrame();
+	vk::DescriptorSet Commit();
+	void Reset();
+	uint32_t Texture(const ImageView& view, const Sampler* sampler);
+	uint32_t Texture(const ImageView& view, StockSampler sampler);
+	uint32_t SrgbTexture(const ImageView& view, const Sampler* sampler);
+	uint32_t SrgbTexture(const ImageView& view, StockSampler sampler);
+	uint32_t UnormTexture(const ImageView& view, const Sampler* sampler);
+	uint32_t UnormTexture(const ImageView& view, StockSampler sampler);
+
+ private:
+	uint32_t SetTexture(vk::ImageView view, vk::Sampler sampler, vk::ImageLayout layout);
+
+	Device& _device;
+	BindlessDescriptorPoolHandle _descriptorPool;
+	std::vector<vk::DescriptorImageInfo> _textures;
+	size_t _textureCount;
+};
+
 class DescriptorSetAllocator : public HashedObject<DescriptorSetAllocator> {
 	constexpr static const int DescriptorSetRingSize = 8;
 

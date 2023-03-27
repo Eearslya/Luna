@@ -3,12 +3,12 @@
 #include <Luna/Vulkan/DescriptorSet.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Image.hpp>
+#include <Luna/Vulkan/Sampler.hpp>
 
 namespace Luna {
 namespace Vulkan {
-/*
 void BindlessDescriptorPoolDeleter::operator()(BindlessDescriptorPool* pool) {
-  pool->_device._bindlessDescriptorPoolPool.Free(pool);
+	pool->_device._bindlessDescriptorPoolPool.Free(pool);
 }
 
 BindlessDescriptorPool::BindlessDescriptorPool(Device& device,
@@ -16,54 +16,115 @@ BindlessDescriptorPool::BindlessDescriptorPool(Device& device,
                                                vk::DescriptorPool pool,
                                                uint32_t totalSets,
                                                uint32_t totalDescriptors)
-    : _device(device), _allocator(allocator), _pool(pool), _totalSets(totalSets), _totalDescriptors(totalDescriptors) {}
+		: _device(device), _allocator(allocator), _pool(pool), _totalSets(totalSets), _totalDescriptors(totalDescriptors) {}
 
 BindlessDescriptorPool::~BindlessDescriptorPool() noexcept {
-  if (_pool) {
-    if (_internalSync) {
-      _device.DestroyDescriptorPoolNoLock(_pool);
-    } else {
-      _device.DestroyDescriptorPool(_pool);
-    }
-  }
+	if (_pool) {
+		if (_internalSync) {
+			_device.DestroyDescriptorPoolNoLock(_pool);
+		} else {
+			_device.DestroyDescriptorPool(_pool);
+		}
+	}
 }
 
 bool BindlessDescriptorPool::AllocateDescriptors(uint32_t count) {
-  if (_allocatedSets >= _totalSets || _allocatedDescriptors >= _totalDescriptors) { return false; }
+	if (_allocatedSets >= _totalSets || _allocatedDescriptors >= _totalDescriptors) { return false; }
 
-  _allocatedSets++;
-  _allocatedDescriptors += count;
-  _set = _allocator->AllocateBindlessSet(_pool, count);
+	_allocatedSets++;
+	_allocatedDescriptors += count;
+	_set = _allocator->AllocateBindlessSet(_pool, count);
 
-  return bool(_set);
+	return bool(_set);
 }
 
 void BindlessDescriptorPool::Reset() {
-  if (_pool) { _allocator->ResetBindlessPool(_pool); }
-  _set                  = nullptr;
-  _allocatedSets        = 0;
-  _allocatedDescriptors = 0;
+	if (_pool) { _allocator->ResetBindlessPool(_pool); }
+	_set                  = nullptr;
+	_allocatedSets        = 0;
+	_allocatedDescriptors = 0;
 }
 
 void BindlessDescriptorPool::SetTexture(uint32_t binding, const ImageView& view) {
-  SetTexture(binding, view.GetFloatView(), view.GetImage().GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal));
+	SetTexture(binding, view.GetFloatView(), view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal));
 }
 
 void BindlessDescriptorPool::SetTextureUnorm(uint32_t binding, const ImageView& view) {
-  SetTexture(binding, view.GetIntegerView(), view.GetImage().GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal));
+	SetTexture(binding, view.GetUnormView(), view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal));
 }
 
 void BindlessDescriptorPool::SetTextureSrgb(uint32_t binding, const ImageView& view) {
-  SetTexture(binding, view.GetFloatView(), view.GetImage().GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal));
+	SetTexture(binding, view.GetSrgbView(), view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal));
 }
 
 void BindlessDescriptorPool::SetTexture(uint32_t binding, vk::ImageView view, vk::ImageLayout layout) {
-  const vk::DescriptorImageInfo imageInfo(nullptr, view, layout);
-  const vk::WriteDescriptorSet write(
-    _set, 0, binding, 1, vk::DescriptorType::eSampledImage, &imageInfo, nullptr, nullptr);
-  _device.GetDevice().updateDescriptorSets(write, nullptr);
+	const vk::DescriptorImageInfo imageInfo(nullptr, view, layout);
+	const vk::WriteDescriptorSet write(
+		_set, 0, binding, 1, vk::DescriptorType::eSampledImage, &imageInfo, nullptr, nullptr);
+	_device.GetDevice().updateDescriptorSets(write, nullptr);
 }
-*/
+
+BindlessAllocator::BindlessAllocator(Device& device) : _device(device) {
+	_descriptorPool = _device.CreateBindlessDescriptorPool(1, 16384);
+	_descriptorPool->AllocateDescriptors(16384);
+	_textures.resize(16384);
+}
+
+void BindlessAllocator::BeginFrame() {
+	_textureCount = 0;
+}
+
+vk::DescriptorSet BindlessAllocator::Commit() {
+	vk::DescriptorSet set = _descriptorPool->GetDescriptorSet();
+	const vk::WriteDescriptorSet write(
+		set, 0, 0, _textureCount, vk::DescriptorType::eCombinedImageSampler, _textures.data(), nullptr, nullptr);
+	_device.GetDevice().updateDescriptorSets(write, nullptr);
+
+	return set;
+}
+
+void BindlessAllocator::Reset() {
+	_descriptorPool.Reset();
+}
+
+uint32_t BindlessAllocator::Texture(const ImageView& view, const Sampler* sampler) {
+	return SetTexture(
+		view.GetView(), sampler->GetSampler(), view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal));
+}
+
+uint32_t BindlessAllocator::Texture(const ImageView& view, StockSampler sampler) {
+	return Texture(view, _device.RequestSampler(sampler));
+}
+
+uint32_t BindlessAllocator::SrgbTexture(const ImageView& view, const Sampler* sampler) {
+	return SetTexture(
+		view.GetSrgbView(), sampler->GetSampler(), view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal));
+}
+
+uint32_t BindlessAllocator::SrgbTexture(const ImageView& view, StockSampler sampler) {
+	return SrgbTexture(view, _device.RequestSampler(sampler));
+}
+
+uint32_t BindlessAllocator::UnormTexture(const ImageView& view, const Sampler* sampler) {
+	return SetTexture(
+		view.GetUnormView(), sampler->GetSampler(), view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal));
+}
+
+uint32_t BindlessAllocator::UnormTexture(const ImageView& view, StockSampler sampler) {
+	return SrgbTexture(view, _device.RequestSampler(sampler));
+}
+
+uint32_t BindlessAllocator::SetTexture(vk::ImageView view, vk::Sampler sampler, vk::ImageLayout layout) {
+	const uint32_t index = _textureCount++;
+	_textures[index]     = vk::DescriptorImageInfo(sampler, view, layout);
+
+	vk::DescriptorSet set = _descriptorPool->GetDescriptorSet();
+	const vk::WriteDescriptorSet write(
+		set, 0, index, 1, vk::DescriptorType::eCombinedImageSampler, &_textures[index], nullptr, nullptr);
+	_device.GetDevice().updateDescriptorSets(write, nullptr);
+
+	return index;
+}
 
 DescriptorSetAllocator::DescriptorSetNode::DescriptorSetNode(vk::DescriptorSet set) : Set(set) {}
 

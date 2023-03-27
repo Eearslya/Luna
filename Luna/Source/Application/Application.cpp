@@ -15,7 +15,7 @@ Application::Application() {
 	_instance = this;
 
 	Log::Initialize();
-	Log::SetLevel(Log::Level::Trace);
+	Log::SetLevel(Log::Level::Debug);
 
 	Log::Info("Luna", "Luna Engine initializing...");
 

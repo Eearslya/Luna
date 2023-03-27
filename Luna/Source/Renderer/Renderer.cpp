@@ -2,6 +2,7 @@
 #include <Luna/Renderer/RenderQueue.hpp>
 #include <Luna/Renderer/Renderer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
+#include <Luna/Vulkan/Image.hpp>
 
 namespace Luna {
 Renderer::Renderer(Vulkan::Device& device, RendererType type) : _device(device), _type(type) {

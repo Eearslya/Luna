@@ -23,6 +23,7 @@ namespace Vulkan {
 // ================================
 // ===== Forward Declarations =====
 // ================================
+class BindlessAllocator;
 class BindlessDescriptorPool;
 class Buffer;
 struct BufferCreateInfo;
@@ -79,14 +80,15 @@ using HashedObject = IntrusiveHashMapEnabled<T>;
 // ========================
 // ===== Handle Types =====
 // ========================
-using BufferHandle        = IntrusivePtr<Buffer>;
-using CommandBufferHandle = IntrusivePtr<CommandBuffer>;
-using ContextHandle       = IntrusivePtr<Context>;
-using DeviceHandle        = IntrusivePtr<Device>;
-using FenceHandle         = IntrusivePtr<Fence>;
-using ImageHandle         = IntrusivePtr<Image>;
-using ImageViewHandle     = IntrusivePtr<ImageView>;
-using SemaphoreHandle     = IntrusivePtr<Semaphore>;
+using BindlessDescriptorPoolHandle = IntrusivePtr<BindlessDescriptorPool>;
+using BufferHandle                 = IntrusivePtr<Buffer>;
+using CommandBufferHandle          = IntrusivePtr<CommandBuffer>;
+using ContextHandle                = IntrusivePtr<Context>;
+using DeviceHandle                 = IntrusivePtr<Device>;
+using FenceHandle                  = IntrusivePtr<Fence>;
+using ImageHandle                  = IntrusivePtr<Image>;
+using ImageViewHandle              = IntrusivePtr<ImageView>;
+using SemaphoreHandle              = IntrusivePtr<Semaphore>;
 
 // ===========================
 // ===== Constant Values =====

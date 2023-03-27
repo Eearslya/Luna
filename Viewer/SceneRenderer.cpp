@@ -5,6 +5,7 @@
 #include <Luna/Renderer/Renderer.hpp>
 #include <Luna/Renderer/RendererSuite.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
+#include <Luna/Vulkan/Image.hpp>
 
 SceneRenderer::SceneRenderer(Luna::RenderContext& context,
                              Luna::RendererSuite& suite,

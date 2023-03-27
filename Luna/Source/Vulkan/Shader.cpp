@@ -61,7 +61,7 @@ PipelineLayout::~PipelineLayout() noexcept {
 void PipelineLayout::CreateUpdateTemplates() {
 	for (uint32_t set = 0; set < MaxDescriptorSets; ++set) {
 		if ((_resourceLayout.DescriptorSetMask & (1u << set)) == 0) { continue; }
-		// if ((_resourceLayout.BindlessDescriptorSetMask & (1u << set)) != 0) { continue; }
+		if ((_resourceLayout.BindlessDescriptorSetMask & (1u << set)) != 0) { continue; }
 
 		const auto& setLayout = _resourceLayout.SetLayouts[set];
 
@@ -109,7 +109,7 @@ void PipelineLayout::CreateUpdateTemplates() {
 		});
 
 		ForEachBit(setLayout.SampledImageMask, [&](uint32_t binding) {
-			if (setLayout.ArraySizes[binding] == DescriptorSetLayout::UnsizedArray) { return;  }
+			if (setLayout.ArraySizes[binding] == DescriptorSetLayout::UnsizedArray) { return; }
 
 			updateEntries[updateCount++] = vk::DescriptorUpdateTemplateEntry(
 				binding,

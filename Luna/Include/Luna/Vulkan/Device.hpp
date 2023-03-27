@@ -8,6 +8,8 @@
 namespace Luna {
 namespace Vulkan {
 class Device : public IntrusivePtrEnabled<Device> {
+	friend class BindlessDescriptorPool;
+	friend struct BindlessDescriptorPoolDeleter;
 	friend class Buffer;
 	friend struct BufferDeleter;
 	friend class CommandBuffer;
@@ -74,6 +76,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 	            std::vector<SemaphoreHandle>* semaphores = nullptr);
 	void WaitIdle();
 
+	BindlessDescriptorPoolHandle CreateBindlessDescriptorPool(uint32_t setCount, uint32_t descriptorCount);
 	BufferHandle CreateBuffer(const BufferCreateInfo& bufferCI, const void* initial = nullptr);
 	ImageHandle CreateImage(const ImageCreateInfo& imageCI, const ImageInitialData* initial = nullptr);
 	ImageHandle CreateImageFromStagingBuffer(const ImageCreateInfo& imageCI, const ImageInitialBuffer* buffer);
@@ -120,6 +123,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 
 		std::vector<VmaAllocation> AllocationsToFree;
 		std::vector<vk::Buffer> BuffersToDestroy;
+		std::vector<vk::DescriptorPool> DescriptorPoolsToDestroy;
 		std::vector<vk::Fence> FencesToAwait;
 		std::vector<vk::Fence> FencesToRecycle;
 		std::vector<vk::Framebuffer> FramebuffersToDestroy;
@@ -230,6 +234,8 @@ class Device : public IntrusivePtrEnabled<Device> {
 	void ConsumeSemaphoreNoLock(vk::Semaphore semaphore);
 	void DestroyBuffer(vk::Buffer buffer);
 	void DestroyBufferNoLock(vk::Buffer buffer);
+	void DestroyDescriptorPool(vk::DescriptorPool pool);
+	void DestroyDescriptorPoolNoLock(vk::DescriptorPool pool);
 	void DestroyFramebuffer(vk::Framebuffer framebuffer);
 	void DestroyFramebufferNoLock(vk::Framebuffer framebuffer);
 	void DestroyImage(vk::Image image);
@@ -290,6 +296,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 	uint32_t _swapchainIndex = std::numeric_limits<uint32_t>::max();
 	SemaphoreHandle _swapchainRelease;
 
+	VulkanObjectPool<BindlessDescriptorPool> _bindlessDescriptorPoolPool;
 	VulkanObjectPool<Buffer> _bufferPool;
 	VulkanObjectPool<CommandBuffer> _commandBufferPool;
 	VulkanObjectPool<Fence> _fencePool;

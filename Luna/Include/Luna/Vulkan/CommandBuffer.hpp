@@ -242,6 +242,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	                 int32_t vertexOffset   = 0,
 	                 uint32_t firstInstance = 0);
 	void PushConstants(const void* data, vk::DeviceSize offset, vk::DeviceSize range);
+	void SetBindless(uint32_t set, vk::DescriptorSet descSet);
 	void SetIndexBuffer(const Buffer& buffer, vk::DeviceSize offset, vk::IndexType indexType);
 	void SetInputAttachments(uint32_t set, uint32_t firstBinding);
 	void SetProgram(Program* program);

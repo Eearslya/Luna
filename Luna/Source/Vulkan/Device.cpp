@@ -281,6 +281,21 @@ void Device::WaitIdle() {
 	WaitIdleNoLock();
 }
 
+BindlessDescriptorPoolHandle Device::CreateBindlessDescriptorPool(uint32_t setCount, uint32_t descriptorCount) {
+	DescriptorSetLayout layout;
+	layout.ArraySizes[0]    = DescriptorSetLayout::UnsizedArray;
+	layout.FloatMask        = 1;
+	layout.SampledImageMask = 1;
+
+	const uint32_t stages[MaxDescriptorBindings] = {uint32_t(vk::ShaderStageFlagBits::eAll)};
+
+	auto* allocator         = RequestDescriptorSetAllocator(layout, stages);
+	vk::DescriptorPool pool = allocator->AllocateBindlessPool(setCount, descriptorCount);
+	auto* handle            = _bindlessDescriptorPoolPool.Allocate(*this, allocator, pool, setCount, descriptorCount);
+
+	return BindlessDescriptorPoolHandle(handle);
+}
+
 BufferHandle Device::CreateBuffer(const BufferCreateInfo& bufferInfo, const void* initial) {
 	const bool zeroInit = bufferInfo.Flags & BufferCreateFlagBits::ZeroInitialize;
 	if (initial && zeroInit) {
@@ -1631,6 +1646,15 @@ void Device::DestroyBufferNoLock(vk::Buffer buffer) {
 	Frame().BuffersToDestroy.push_back(buffer);
 }
 
+void Device::DestroyDescriptorPool(vk::DescriptorPool pool) {
+	DeviceLock();
+	DestroyDescriptorPoolNoLock(pool);
+}
+
+void Device::DestroyDescriptorPoolNoLock(vk::DescriptorPool pool) {
+	Frame().DescriptorPoolsToDestroy.push_back(pool);
+}
+
 void Device::DestroyFramebuffer(vk::Framebuffer framebuffer) {
 	DeviceLock();
 	DestroyFramebufferNoLock(framebuffer);
@@ -1772,6 +1796,7 @@ void Device::FrameContext::Begin() {
 	VertexBlocks.clear();
 
 	for (auto& buffer : BuffersToDestroy) { device.destroyBuffer(buffer); }
+	for (auto& pool : DescriptorPoolsToDestroy) { device.destroyDescriptorPool(pool); }
 	for (auto& framebuffer : FramebuffersToDestroy) { device.destroyFramebuffer(framebuffer); }
 	for (auto& image : ImagesToDestroy) { device.destroyImage(image); }
 	for (auto& view : ImageViewsToDestroy) { device.destroyImageView(view); }
@@ -1779,6 +1804,7 @@ void Device::FrameContext::Begin() {
 	for (auto& semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
 	for (auto& semaphore : SemaphoresToRecycle) { Parent.ReleaseSemaphore(semaphore); }
 	BuffersToDestroy.clear();
+	DescriptorPoolsToDestroy.clear();
 	FramebuffersToDestroy.clear();
 	ImagesToDestroy.clear();
 	ImageViewsToDestroy.clear();

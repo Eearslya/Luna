@@ -417,6 +417,11 @@ void CommandBuffer::PushConstants(const void* data, vk::DeviceSize offset, vk::D
 	_dirty |= CommandBufferDirtyFlagBits::PushConstants;
 }
 
+void CommandBuffer::SetBindless(uint32_t set, vk::DescriptorSet descSet) {
+	_bindlessSets[set] = descSet;
+	_dirtySets |= 1u << set;
+}
+
 void CommandBuffer::SetIndexBuffer(const Buffer& buffer, vk::DeviceSize offset, vk::IndexType indexType) {
 	if (_indexState.Buffer == buffer.GetBuffer() && _indexState.Offset == offset && _indexState.IndexType == indexType) {
 		return;
@@ -899,12 +904,12 @@ Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 
 void CommandBuffer::FlushDescriptorSet(uint32_t set) {
 	auto& layout = _programLayout->GetResourceLayout();
-	if (false && layout.BindlessDescriptorSetMask & (1u << set)) {
+	if (layout.BindlessDescriptorSetMask & (1u << set)) {
 		_commandBuffer.bindDescriptorSets(
 			_actualRenderPass ? vk::PipelineBindPoint::eGraphics : vk::PipelineBindPoint::eCompute,
 			_pipelineLayout,
 			set,
-			_allocatedSets[set],
+			_bindlessSets[set],
 			nullptr);
 		return;
 	}

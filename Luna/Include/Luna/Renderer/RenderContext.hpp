@@ -2,6 +2,7 @@
 
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Common.hpp>
+#include <Luna/Vulkan/DescriptorSet.hpp>
 #include <glm/glm.hpp>
 
 namespace Luna {
@@ -39,8 +40,10 @@ class RenderContext {
 		Vulkan::Program* PBRDeferred = nullptr;
 	};
 
-	DefaultImages& GetDefaultImages() {
-		return _defaultImages;
+	RenderContext(Vulkan::Device& device);
+
+	vk::DescriptorSet GetBindlessSet() const {
+		return _bindless.GetDescriptorSet();
 	}
 	const DefaultImages& GetDefaultImages() const {
 		return _defaultImages;
@@ -48,45 +51,26 @@ class RenderContext {
 	const RenderParameters& GetRenderParameters() const {
 		return _camera;
 	}
-	Shaders& GetShaders() {
-		return _shaders;
-	}
 	const Shaders& GetShaders() const {
 		return _shaders;
 	}
 
-	void SetBindless(Vulkan::CommandBuffer& cmd, uint32_t set, uint32_t binding) {
-		_bindlessImages = {_defaultImages.Black2D};
-	}
-
-	void SetCamera(const glm::mat4& projection, const glm::mat4& view) {
-		_camera.Projection        = projection;
-		_camera.View              = view;
-		_camera.ViewProjection    = _camera.Projection * _camera.View;
-		_camera.InvProjection     = glm::inverse(_camera.Projection);
-		_camera.InvView           = glm::inverse(_camera.View);
-		_camera.InvViewProjection = glm::inverse(_camera.ViewProjection);
-
-		glm::mat4 localView            = view;
-		localView[3][0]                = 0;
-		localView[3][1]                = 0;
-		localView[3][2]                = 0;
-		_camera.LocalViewProjection    = _camera.Projection * localView;
-		_camera.InvLocalViewProjection = glm::inverse(_camera.LocalViewProjection);
-
-		_camera.CameraRight    = _camera.InvView[0];
-		_camera.CameraUp       = _camera.InvView[1];
-		_camera.CameraFront    = -_camera.InvView[2];
-		_camera.CameraPosition = _camera.InvView[3];
-
-		glm::mat2 invZW(glm::vec2(_camera.InvProjection[2].z, _camera.InvProjection[2].w),
-		                glm::vec2(_camera.InvProjection[3].z, _camera.InvProjection[3].w));
-		const auto Project = [](const glm::vec2& zw) -> float { return -zw.x / zw.y; };
-		_camera.ZNear      = Project(invZW * glm::vec2(0.0f, 1.0f));
-		_camera.ZFar       = Project(invZW * glm::vec2(1.0f, 1.0f));
-	}
+	void BeginFrame();
+	void ReloadShaders();
+	void SetCamera(const glm::mat4& projection, const glm::mat4& view);
+	uint32_t SetTexture(const Vulkan::ImageView& view, const Vulkan::Sampler* sampler);
+	uint32_t SetTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler);
+	uint32_t SetSrgbTexture(const Vulkan::ImageView& view, const Vulkan::Sampler* sampler);
+	uint32_t SetSrgbTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler);
+	uint32_t SetUnormTexture(const Vulkan::ImageView& view, const Vulkan::Sampler* sampler);
+	uint32_t SetUnormTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler);
 
  private:
+	void CreateDefaultImages();
+
+	Vulkan::Device& _device;
+
+	Vulkan::BindlessAllocator _bindless;
 	RenderParameters _camera;
 	DefaultImages _defaultImages;
 	Shaders _shaders;

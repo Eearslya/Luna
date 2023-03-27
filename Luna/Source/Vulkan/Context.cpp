@@ -485,8 +485,8 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 		enable.Synchronization2.synchronization2 = VK_TRUE;
 	}
 	if (avail.Vulkan12.bufferDeviceAddress) {
-		Log::Trace("Vulkan::Context", "Enabling Buffer Device Addresses.");
-		enable.Vulkan12.bufferDeviceAddress = VK_TRUE;
+		// Log::Trace("Vulkan::Context", "Enabling Buffer Device Addresses.");
+		// enable.Vulkan12.bufferDeviceAddress = VK_TRUE;
 	}
 	if (avail.Vulkan12.descriptorIndexing) {
 		Log::Trace("Vulkan::Context", "Enabling Descriptor Indexing.");
@@ -498,7 +498,11 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 	}
 	if (avail.Vulkan12.descriptorBindingSampledImageUpdateAfterBind) {
 		Log::Trace("Vulkan::Context", "Enabling Sampled Image Update After Bind.");
-		enable.Vulkan12.descriptorBindingStorageImageUpdateAfterBind = VK_TRUE;
+		enable.Vulkan12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+	}
+	if (avail.Vulkan12.descriptorBindingVariableDescriptorCount) {
+		Log::Trace("Vulkan::Context", "Enabling Variable Descriptor Count.");
+		enable.Vulkan12.descriptorBindingVariableDescriptorCount = VK_TRUE;
 	}
 	if (avail.Vulkan12.runtimeDescriptorArray) {
 		Log::Trace("Vulkan::Context", "Enabling Runtime Descriptor Arrays.");

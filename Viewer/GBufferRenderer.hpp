@@ -10,7 +10,7 @@ class Scene;
 
 class GBufferRenderer : public Luna::RenderPassInterface {
  public:
-	GBufferRenderer(const Luna::RenderContext& context, Luna::Scene& scene);
+	GBufferRenderer(Luna::RenderContext& context, Luna::Scene& scene);
 
 	virtual bool GetClearColor(uint32_t attachment, vk::ClearColorValue* value) const override;
 
@@ -18,7 +18,7 @@ class GBufferRenderer : public Luna::RenderPassInterface {
 	virtual void EnqueuePrepareRenderPass(Luna::RenderGraph& graph, Luna::TaskComposer& composer) override;
 
  private:
-	const Luna::RenderContext& _context;
+	Luna::RenderContext& _context;
 	Luna::Scene& _scene;
 	Luna::RenderScene _renderScene;
 };

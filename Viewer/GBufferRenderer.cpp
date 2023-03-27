@@ -13,7 +13,7 @@ struct ForwardPushConstant {
 	glm::mat4 Model;
 };
 
-GBufferRenderer::GBufferRenderer(const Luna::RenderContext& context, Luna::Scene& scene)
+GBufferRenderer::GBufferRenderer(Luna::RenderContext& context, Luna::Scene& scene)
 		: _context(context), _scene(scene), _renderScene(scene) {}
 
 bool GBufferRenderer::GetClearColor(uint32_t attachment, vk::ClearColorValue* value) const {
@@ -24,37 +24,9 @@ bool GBufferRenderer::GetClearColor(uint32_t attachment, vk::ClearColorValue* va
 void GBufferRenderer::BuildRenderPass(Luna::Vulkan::CommandBuffer& cmd) {
 	Luna::RenderParameters* params = cmd.AllocateTypedUniformData<Luna::RenderParameters>(0, 0, 1);
 	*params                        = _context.GetRenderParameters();
+	cmd.SetBindless(1, _context.GetBindlessSet());
 
 	const auto& registry = _scene.GetRegistry();
-
-	const auto SetSrgbTexture =
-		[&](uint32_t set, uint32_t binding, const Luna::Texture& texture, const Luna::Vulkan::ImageHandle& fallback) {
-			if (texture.Image) {
-				cmd.SetSrgbTexture(set, binding, texture.Image->GetView());
-			} else {
-				cmd.SetTexture(set, binding, fallback->GetView());
-			}
-
-			if (texture.Sampler) {
-				cmd.SetSampler(set, binding, texture.Sampler);
-			} else {
-				cmd.SetSampler(set, binding, Luna::Vulkan::StockSampler::DefaultGeometryFilterWrap);
-			}
-		};
-	const auto SetUnormTexture =
-		[&](uint32_t set, uint32_t binding, const Luna::Texture& texture, const Luna::Vulkan::ImageHandle& fallback) {
-			if (texture.Image) {
-				cmd.SetUnormTexture(set, binding, texture.Image->GetView());
-			} else {
-				cmd.SetTexture(set, binding, fallback->GetView());
-			}
-
-			if (texture.Sampler) {
-				cmd.SetSampler(set, binding, texture.Sampler);
-			} else {
-				cmd.SetSampler(set, binding, Luna::Vulkan::StockSampler::DefaultGeometryFilterWrap);
-			}
-		};
 
 	auto renderables = registry.view<Luna::MeshRendererComponent>();
 	for (auto entityId : renderables) {
@@ -84,9 +56,8 @@ void GBufferRenderer::BuildRenderPass(Luna::Vulkan::CommandBuffer& cmd) {
 		for (const auto& submesh : submeshes) {
 			const auto& material = mesh.Materials[submesh->MaterialIndex];
 
+			material->BindMaterial(cmd, _context, 2, 0);
 			cmd.SetCullMode(material->DualSided ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack);
-			SetSrgbTexture(1, 0, material->Albedo, _context.GetDefaultImages().Black2D);
-			SetUnormTexture(1, 1, material->Normal, _context.GetDefaultImages().Normal2D);
 
 			if (submesh->IndexCount > 0) {
 				cmd.DrawIndexed(submesh->IndexCount, 1, submesh->FirstIndex, submesh->FirstVertex, 0);

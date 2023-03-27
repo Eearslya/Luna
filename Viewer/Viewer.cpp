@@ -18,40 +18,6 @@
 #include "IconsFontAwesome6.h"
 #include "SceneLoader.hpp"
 
-static bool LoadGraphicsShader(Luna::Vulkan::Device& device,
-                               const Luna::Path& vertex,
-                               const Luna::Path& fragment,
-                               Luna::Vulkan::Program*& program) {
-	Luna::GlslCompiler vertexCompiler, fragmentCompiler;
-
-	vertexCompiler.SetSourceFromFile(vertex, Luna::Vulkan::ShaderStage::Vertex);
-	fragmentCompiler.SetSourceFromFile(fragment, Luna::Vulkan::ShaderStage::Fragment);
-
-	if (!vertexCompiler.Preprocess()) { return false; }
-	if (!fragmentCompiler.Preprocess()) { return false; }
-
-	std::vector<uint32_t> vertexSpv, fragmentSpv;
-	std::string vertexError, fragmentError;
-	vertexSpv = vertexCompiler.Compile(vertexError);
-	if (vertexSpv.empty()) {
-		Luna::Log::Error("Viewer", "Failed to compile Vertex shader: {}", vertexError);
-		return false;
-	}
-	fragmentSpv = fragmentCompiler.Compile(fragmentError);
-	if (fragmentSpv.empty()) {
-		Luna::Log::Error("Viewer", "Failed to compile Fragment shader: {}", fragmentError);
-		return false;
-	}
-
-	auto* newProgram = device.RequestProgram(
-		vertexSpv.size() * sizeof(uint32_t), vertexSpv.data(), fragmentSpv.size() * sizeof(uint32_t), fragmentSpv.data());
-	if (newProgram) {
-		program = newProgram;
-		return true;
-	}
-	return false;
-};
-
 class ViewerApplication : public Luna::Application {
  public:
 	virtual void OnStart() override {
@@ -60,46 +26,7 @@ class ViewerApplication : public Luna::Application {
 
 		StyleImGui();
 
-		{
-			constexpr uint32_t width    = 1;
-			constexpr uint32_t height   = 1;
-			constexpr size_t pixelCount = width * height;
-			uint32_t pixels[pixelCount];
-			Luna::Vulkan::ImageInitialData initialImages[6];
-			for (int i = 0; i < 6; ++i) { initialImages[i] = Luna::Vulkan::ImageInitialData{.Data = &pixels}; }
-			const Luna::Vulkan::ImageCreateInfo imageCI2D = {
-				.Domain        = Luna::Vulkan::ImageDomain::Physical,
-				.Width         = width,
-				.Height        = height,
-				.Depth         = 1,
-				.MipLevels     = 1,
-				.ArrayLayers   = 1,
-				.Format        = vk::Format::eR8G8B8A8Unorm,
-				.InitialLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-				.Type          = vk::ImageType::e2D,
-				.Usage         = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eInputAttachment,
-				.Samples       = vk::SampleCountFlagBits::e1,
-			};
-
-			std::fill(pixels, pixels + pixelCount, 0xff000000);
-			_renderContext.GetDefaultImages().Black2D = device.CreateImage(imageCI2D, initialImages);
-
-			std::fill(pixels, pixels + pixelCount, 0xff808080);
-			_renderContext.GetDefaultImages().Gray2D = device.CreateImage(imageCI2D, initialImages);
-
-			std::fill(pixels, pixels + pixelCount, 0xff800000);
-			_renderContext.GetDefaultImages().Normal2D = device.CreateImage(imageCI2D, initialImages);
-
-			std::fill(pixels, pixels + pixelCount, 0xffffffff);
-			_renderContext.GetDefaultImages().White2D = device.CreateImage(imageCI2D, initialImages);
-		}
-
 		SceneLoader::LoadGltf(device, _scene, "assets://Models/Sponza/Sponza.gltf");
-
-		Luna::Input::OnKey += [this](Luna::Key key, Luna::InputAction action, Luna::InputMods mods) {
-			if (action == Luna::InputAction::Press && key == Luna::Key::F5) { LoadShaders(); }
-		};
-		LoadShaders();
 
 		_swapchainConfig = GetSwapchainConfig();
 		OnSwapchainChanged += [&](const Luna::Vulkan::SwapchainConfiguration& config) {
@@ -107,7 +34,12 @@ class ViewerApplication : public Luna::Application {
 			_swapchainDirty  = true;
 		};
 
-		_renderGraph = std::make_unique<Luna::RenderGraph>(device);
+		_renderContext = std::make_unique<Luna::RenderContext>(device);
+		_renderGraph   = std::make_unique<Luna::RenderGraph>(device);
+
+		Luna::Input::OnKey += [this](Luna::Key key, Luna::InputAction action, Luna::InputMods mods) {
+			if (action == Luna::InputAction::Press && key == Luna::Key::F5) { _renderContext->ReloadShaders(); }
+		};
 	}
 
 	virtual void OnUpdate() override {
@@ -152,7 +84,7 @@ class ViewerApplication : public Luna::Application {
 			gBuffer.AddColorOutput("GBuffer-Normal", normal);
 			gBuffer.SetDepthStencilOutput("Depth", depth);
 
-			auto renderer = Luna::MakeHandle<GBufferRenderer>(_renderContext, _scene);
+			auto renderer = Luna::MakeHandle<GBufferRenderer>(*_renderContext, _scene);
 			gBuffer.SetRenderPassInterface(renderer);
 		}
 
@@ -170,7 +102,7 @@ class ViewerApplication : public Luna::Application {
 			lighting.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
 				cmd.SetDepthWrite(false);
 				cmd.SetInputAttachments(0, 0);
-				cmd.SetProgram(_renderContext.GetShaders().PBRDeferred);
+				cmd.SetProgram(_renderContext->GetShaders().PBRDeferred);
 				cmd.Draw(3);
 			});
 		}
@@ -237,7 +169,8 @@ class ViewerApplication : public Luna::Application {
 			const float aspectRatio    = float(fbSize.x) / float(fbSize.y);
 			const glm::mat4 projection = glm::perspective(glm::radians(60.0f), aspectRatio, 0.01f, 1000.0f);
 			const glm::mat4 view       = glm::lookAt(glm::vec3(2, 1.0f, 1), glm::vec3(0, 0.8f, 0), glm::vec3(0, 1, 0));
-			_renderContext.SetCamera(projection, view);
+			_renderContext->BeginFrame();
+			_renderContext->SetCamera(projection, view);
 		});
 	}
 
@@ -245,32 +178,7 @@ class ViewerApplication : public Luna::Application {
 		_renderGraph->EnqueueRenderPasses(GetDevice(), composer);
 	}
 
-	void LoadShaders() {
-		auto& shaders = _renderContext.GetShaders();
-
-		if (!LoadGraphicsShader(GetDevice(),
-		                        "res://Shaders/PBRForward.vert.glsl",
-		                        "res://Shaders/PBRForward.frag.glsl",
-		                        shaders.PBRForward)) {
-			return;
-		}
-		if (!LoadGraphicsShader(GetDevice(),
-		                        "res://Shaders/PBRGBuffer.vert.glsl",
-		                        "res://Shaders/PBRGBuffer.frag.glsl",
-		                        shaders.PBRGBuffer)) {
-			return;
-		}
-		if (!LoadGraphicsShader(GetDevice(),
-		                        "res://Shaders/PBRDeferred.vert.glsl",
-		                        "res://Shaders/PBRDeferred.frag.glsl",
-		                        shaders.PBRDeferred)) {
-			return;
-		}
-
-		Luna::Log::Info("Viewer", "Shaders reloaded.");
-	}
-
-	Luna::RenderContext _renderContext;
+	std::unique_ptr<Luna::RenderContext> _renderContext;
 	std::unique_ptr<Luna::RenderGraph> _renderGraph;
 	Luna::Vulkan::SwapchainConfiguration _swapchainConfig;
 	bool _swapchainDirty = true;
