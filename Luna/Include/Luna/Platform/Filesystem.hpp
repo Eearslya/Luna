@@ -82,7 +82,7 @@ class FilesystemBackend {
  public:
 	virtual ~FilesystemBackend() = default;
 
-	virtual std::filesystem::path GetFilesystemPath(const Path& path);
+	virtual std::filesystem::path GetFilesystemPath(const Path& path) const;
 	virtual bool MoveReplace(const Path& dst, const Path& src);
 	virtual bool MoveYield(const Path& dst, const Path& src);
 	void SetProtocol(const std::string& proto);
@@ -92,7 +92,7 @@ class FilesystemBackend {
 	virtual int GetWatchFD() const                                                                        = 0;
 	virtual std::vector<ListEntry> List(const Path& path)                                                 = 0;
 	virtual FileHandle Open(const Path& path, FileMode mode = FileMode::ReadOnly)                         = 0;
-	virtual bool Stat(const Path& path, FileStat& stat)                                                   = 0;
+	virtual bool Stat(const Path& path, FileStat& stat) const                                             = 0;
 	virtual void UnwatchFile(FileNotifyHandle handle)                                                     = 0;
 	virtual void Update()                                                                                 = 0;
 	virtual FileNotifyHandle WatchFile(const Path& path, std::function<void(const FileNotifyInfo&)> func) = 0;
@@ -106,8 +106,10 @@ class Filesystem {
 	Filesystem();
 
 	FilesystemBackend* GetBackend(const std::string& proto = "file");
+	const FilesystemBackend* GetBackend(const std::string& proto = "file") const;
 	void RegisterProtocol(const std::string& proto, std::unique_ptr<FilesystemBackend>&& backend);
 
+	bool Exists(const Path& path) const;
 	std::filesystem::path GetFilesystemPath(const Path& path);
 	std::vector<ListEntry> List(const Path& path);
 	bool MoveReplace(const Path& dst, const Path& src);
@@ -118,7 +120,7 @@ class Filesystem {
 	FileMappingHandle OpenWriteOnlyMapping(const Path& path);
 	bool ReadFileToString(const Path& path, std::string& outStr);
 	bool Remove(const Path& path);
-	bool Stat(const Path& path, FileStat& outStat);
+	bool Stat(const Path& path, FileStat& outStat) const;
 	void Update();
 	std::vector<ListEntry> Walk(const Path& path);
 	bool WriteDataToFile(const Path& path, size_t size, const void* data);
@@ -139,7 +141,7 @@ class ScratchFilesystem : public FilesystemBackend {
 	virtual int GetWatchFD() const override;
 	virtual std::vector<ListEntry> List(const Path& path) override;
 	virtual FileHandle Open(const Path& path, FileMode mode = FileMode::ReadOnly) override;
-	virtual bool Stat(const Path& path, FileStat& stat) override;
+	virtual bool Stat(const Path& path, FileStat& stat) const override;
 	virtual void UnwatchFile(FileNotifyHandle handle) override;
 	virtual void Update() override;
 	virtual FileNotifyHandle WatchFile(const Path& path, std::function<void(const FileNotifyInfo&)> func) override;

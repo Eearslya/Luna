@@ -38,7 +38,8 @@ static uint32_t GetThreadIndex() {
 #	define DeviceFlush() assert(_lock.Counter == 0)
 #endif
 
-constexpr QueueType QueueFlushOrder[] = {QueueType::Transfer, QueueType::Graphics, QueueType::Compute};
+constexpr const char* PipelineCachePath = "cache://PipelineCache.bin";
+constexpr QueueType QueueFlushOrder[]   = {QueueType::Transfer, QueueType::Graphics, QueueType::Compute};
 
 Device::Device(Context& context)
 		: _extensions(context._extensions),
@@ -1048,13 +1049,16 @@ void Device::CreatePipelineCache() {
 	constexpr static const auto hashSize = sizeof(Hash);
 
 	auto* filesystem = Filesystem::Get();
-	auto cacheFile   = filesystem->OpenReadOnlyMapping("cache://PipelineCache.bin");
-
+	FileMappingHandle cacheFile;
 	const uint8_t* data = nullptr;
 	size_t dataSize     = 0;
-	if (cacheFile) {
-		data     = cacheFile->Data<uint8_t>();
-		dataSize = cacheFile->GetSize();
+
+	if (filesystem->Exists(PipelineCachePath)) {
+		cacheFile = filesystem->OpenReadOnlyMapping(PipelineCachePath);
+		if (cacheFile) {
+			data     = cacheFile->Data<uint8_t>();
+			dataSize = cacheFile->GetSize();
+		}
 	}
 
 	vk::PipelineCacheCreateInfo cacheCI({}, 0, nullptr);
@@ -1230,7 +1234,7 @@ void Device::FlushPipelineCache() {
 	const auto hash = h.Get();
 
 	auto* filesystem = Filesystem::Get();
-	auto cacheFile   = filesystem->OpenTransactionalMapping("cache://PipelineCache.bin", fileSize);
+	auto cacheFile   = filesystem->OpenTransactionalMapping(PipelineCachePath, fileSize);
 	auto* fileData   = cacheFile->MutableData<uint8_t>();
 
 	memcpy(fileData, _deviceInfo.Properties.Core.pipelineCacheUUID, uuidSize);

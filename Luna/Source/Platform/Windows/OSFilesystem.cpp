@@ -134,7 +134,7 @@ OSFilesystem::~OSFilesystem() noexcept {
 	}
 }
 
-std::filesystem::path OSFilesystem::GetFilesystemPath(const Path& path) {
+std::filesystem::path OSFilesystem::GetFilesystemPath(const Path& path) const {
 	return _basePath / std::string(path);
 }
 
@@ -198,7 +198,7 @@ bool OSFilesystem::Remove(const Path& path) {
 	return bool(DeleteFileW(p.wstring().c_str()));
 }
 
-bool OSFilesystem::Stat(const Path& path, FileStat& stat) {
+bool OSFilesystem::Stat(const Path& path, FileStat& stat) const {
 	const auto p = GetFilesystemPath(path);
 	struct __stat64 buffer;
 	if (_wstat64(p.wstring().c_str(), &buffer) < 0) { return false; }

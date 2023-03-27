@@ -38,7 +38,7 @@ uint64_t FileMapping::GetSize() const {
 // =============================
 // ===== FilesystemBackend =====
 // =============================
-std::filesystem::path FilesystemBackend::GetFilesystemPath(const Path& path) {
+std::filesystem::path FilesystemBackend::GetFilesystemPath(const Path& path) const {
 	return "";
 }
 
@@ -91,9 +91,21 @@ FilesystemBackend* Filesystem::GetBackend(const std::string& proto) {
 	return it->second.get();
 }
 
+const FilesystemBackend* Filesystem::GetBackend(const std::string& proto) const {
+	const auto it = _protocols.find(proto.empty() ? "file" : proto);
+	if (it == _protocols.end()) { return nullptr; }
+
+	return it->second.get();
+}
+
 void Filesystem::RegisterProtocol(const std::string& proto, std::unique_ptr<FilesystemBackend>&& backend) {
 	backend->SetProtocol(proto);
 	_protocols[proto] = std::move(backend);
+}
+
+bool Filesystem::Exists(const Path& path) const {
+	FileStat stat;
+	return Stat(path, stat);
 }
 
 std::filesystem::path Filesystem::GetFilesystemPath(const Path& path) {
@@ -180,7 +192,7 @@ bool Filesystem::Remove(const Path& path) {
 	return backend->Remove(parts.second);
 }
 
-bool Filesystem::Stat(const Path& path, FileStat& outStat) {
+bool Filesystem::Stat(const Path& path, FileStat& outStat) const {
 	const auto parts = path.ProtocolSplit();
 	auto* backend    = GetBackend(parts.first);
 	if (!backend) { return false; }
@@ -262,7 +274,7 @@ FileHandle ScratchFilesystem::Open(const Path& path, FileMode mode) {
 	}
 }
 
-bool ScratchFilesystem::Stat(const Path& path, FileStat& stat) {
+bool ScratchFilesystem::Stat(const Path& path, FileStat& stat) const {
 	const auto it = _files.find(path);
 	if (it == _files.end()) { return false; }
 
