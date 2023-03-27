@@ -26,6 +26,7 @@ class ViewerApplication : public Luna::Application {
 
 		StyleImGui();
 
+		SceneLoader::LoadGltf(device, _scene, "assets://Models/DamagedHelmet/DamagedHelmet.gltf");
 		SceneLoader::LoadGltf(device, _scene, "assets://Models/Sponza/Sponza.gltf");
 
 		_swapchainConfig = GetSwapchainConfig();
@@ -71,17 +72,27 @@ class ViewerApplication : public Luna::Application {
 		                                              .Height = _swapchainConfig.Extent.height};
 		_renderGraph->SetBackbufferDimensions(backbufferDims);
 
+		Luna::AttachmentInfo emissive;
+		emissive.Format = vk::Format::eR16G16B16A16Sfloat;
+		if (GetDevice().IsFormatSupported(
+					vk::Format::eB10G11R11UfloatPack32, vk::FormatFeatureFlagBits::eColorAttachment, vk::ImageTiling::eOptimal)) {
+			emissive.Format = vk::Format::eB10G11R11UfloatPack32;
+		}
+
 		// Add GBuffer Render Pass.
 		{
-			Luna::AttachmentInfo albedo, normal, depth;
+			Luna::AttachmentInfo albedo, normal, pbr, depth;
 			albedo.Format = vk::Format::eR8G8B8A8Srgb;
 			normal.Format = vk::Format::eR16G16Snorm;
+			pbr.Format    = vk::Format::eR8G8Unorm;
 			depth.Format  = GetDevice().GetDefaultDepthFormat();
 
 			auto& gBuffer = _renderGraph->AddPass("GBuffer", Luna::RenderGraphQueueFlagBits::Graphics);
 
 			gBuffer.AddColorOutput("GBuffer-Albedo", albedo);
 			gBuffer.AddColorOutput("GBuffer-Normal", normal);
+			gBuffer.AddColorOutput("GBuffer-PBR", pbr);
+			gBuffer.AddColorOutput("GBuffer-Emissive", emissive);
 			gBuffer.SetDepthStencilOutput("Depth", depth);
 
 			auto renderer = Luna::MakeHandle<GBufferRenderer>(*_renderContext, _scene);
@@ -90,16 +101,17 @@ class ViewerApplication : public Luna::Application {
 
 		// Add Lighting Render Pass.
 		{
-			Luna::AttachmentInfo lit;
-
 			auto& lighting = _renderGraph->AddPass("Lighting", Luna::RenderGraphQueueFlagBits::Graphics);
 
 			lighting.AddAttachmentInput("GBuffer-Albedo");
 			lighting.AddAttachmentInput("GBuffer-Normal");
+			lighting.AddAttachmentInput("GBuffer-PBR");
 			lighting.SetDepthStencilInput("Depth");
-			lighting.AddColorOutput("Lighting", lit);
+			lighting.AddColorOutput("Lighting", emissive, "GBuffer-Emissive");
 
 			lighting.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
+				cmd.SetBlendEnable(true);
+				cmd.SetColorBlend(vk::BlendFactor::eOne, vk::BlendOp::eAdd, vk::BlendFactor::eOne);
 				cmd.SetDepthWrite(false);
 				cmd.SetInputAttachments(0, 0);
 				cmd.SetProgram(_renderContext->GetShaders().PBRDeferred);

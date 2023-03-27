@@ -1616,8 +1616,9 @@ void RenderGraph::PerformScaleRequests(Vulkan::CommandBuffer& cmd, const std::ve
 #version 460 core
 layout(location = 0) out vec2 outUV;
 void main() {
-  outUV = vec2((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2);
-  gl_Position = vec4(outUV.x * 2.0f - 1.0f, 1.0f - (outUV.y * 2.0f - 1.0f), 0.0f, 1.0f);
+  vec2 p = vec2((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2);
+  outUV = vec2(p.x, 1.0f - p.y);
+  gl_Position = vec4(p * 2.0f - 1.0f, 0.0f, 1.0f);
 }
 )VERTEX";
 
@@ -1651,6 +1652,8 @@ layout(location = {0}) out vec4 output{0};
 	const std::string scaleShaderFrag =
 		fmt::format(scaleShaderFragFmt, fmt::join(fragmentInputs, "\n"), fmt::join(fragmentOutputs, "\n"));
 	auto* program = _device.RequestProgram(scaleShaderVert, scaleShaderFrag);
+	cmd.SetOpaqueState();
+	cmd.SetCullMode(vk::CullModeFlagBits::eNone);
 	cmd.SetProgram(program);
 	cmd.Draw(3);
 }

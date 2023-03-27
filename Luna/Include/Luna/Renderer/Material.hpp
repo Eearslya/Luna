@@ -23,9 +23,11 @@ struct Texture {
 class Material : public IntrusivePtrEnabled<Material> {
  public:
 	void BindMaterial(Vulkan::CommandBuffer& cmd, RenderContext& context, uint32_t set, uint32_t binding) const {
-		auto* data        = cmd.AllocateTypedUniformData<MaterialData>(set, binding, 1);
-		data->AlbedoIndex = BindTexture(cmd, context, Albedo, true, context.GetDefaultImages().Black2D);
-		data->NormalIndex = BindTexture(cmd, context, Normal, false, context.GetDefaultImages().Normal2D);
+		auto* data          = cmd.AllocateTypedUniformData<MaterialData>(set, binding, 1);
+		data->AlbedoIndex   = BindTexture(cmd, context, Albedo, true, context.GetDefaultImages().Black2D);
+		data->NormalIndex   = BindTexture(cmd, context, Normal, false, context.GetDefaultImages().Normal2D);
+		data->PBRIndex      = BindTexture(cmd, context, PBR, false, context.GetDefaultImages().White2D);
+		data->EmissiveIndex = BindTexture(cmd, context, Emissive, true, context.GetDefaultImages().Black2D);
 	}
 
 	Texture Albedo;

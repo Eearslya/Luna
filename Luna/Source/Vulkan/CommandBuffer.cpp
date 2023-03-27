@@ -388,6 +388,16 @@ void CommandBuffer::SetTransparentSpriteState() {
 		}                                            \
 	} while (0)
 
+void CommandBuffer::SetBlendEnable(bool enable) {
+	SetStaticState(BlendEnable, enable);
+}
+
+void CommandBuffer::SetColorBlend(vk::BlendFactor srcColor, vk::BlendOp op, vk::BlendFactor dstColor) {
+	SetStaticState(SrcColorBlend, srcColor);
+	SetStaticState(ColorBlendOp, op);
+	SetStaticState(DstColorBlend, dstColor);
+}
+
 void CommandBuffer::SetCullMode(vk::CullModeFlagBits mode) {
 	SetStaticState(CullMode, mode);
 }
