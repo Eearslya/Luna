@@ -286,7 +286,9 @@ class Device : public IntrusivePtrEnabled<Device> {
 	struct {
 		std::condition_variable Condition;
 		uint32_t Counter = 0;
-		std::mutex Mutex;
+		std::mutex Lock;
+		std::mutex MemoryLock;
+		RWSpinLock ReadOnlyCache;
 	} _lock;
 
 	SemaphoreHandle _swapchainAcquire;

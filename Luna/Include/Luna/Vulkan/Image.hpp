@@ -134,10 +134,8 @@ struct ImageViewCreateInfo {
 vk::AccessFlags ImageLayoutToAccess(vk::ImageLayout layout);
 vk::AccessFlags2 ImageLayoutToAccess2(vk::ImageLayout layout);
 vk::AccessFlags ImageUsageToAccess(vk::ImageUsageFlags usage);
-vk::AccessFlags2 ImageUsageToAccess2(vk::ImageUsageFlags usage);
 vk::FormatFeatureFlags ImageUsageToFeatures(vk::ImageUsageFlags usage);
 vk::PipelineStageFlags ImageUsageToStages(vk::ImageUsageFlags usage);
-vk::PipelineStageFlags2 ImageUsageToStages2(vk::ImageUsageFlags usage);
 
 struct ImageDeleter {
 	void operator()(Image* image);

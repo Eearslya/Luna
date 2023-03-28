@@ -82,8 +82,6 @@ vk::AccessFlags ImageUsageToAccess(vk::ImageUsageFlags usage) {
 	return access;
 }
 
-vk::AccessFlags2 ImageUsageToAccess2(vk::ImageUsageFlags usage) {}
-
 vk::FormatFeatureFlags ImageUsageToFeatures(vk::ImageUsageFlags usage) {
 	vk::FormatFeatureFlags features = {};
 
@@ -126,8 +124,6 @@ vk::PipelineStageFlags ImageUsageToStages(vk::ImageUsageFlags usage) {
 
 	return stages;
 }
-
-vk::PipelineStageFlags2 ImageUsageToStages2(vk::ImageUsageFlags usage) {}
 
 void ImageDeleter::operator()(Image* image) {
 	image->_device._imagePool.Free(image);
