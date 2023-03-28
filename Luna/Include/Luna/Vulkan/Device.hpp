@@ -282,19 +282,12 @@ class Device : public IntrusivePtrEnabled<Device> {
 	std::unique_ptr<BufferPool> _vertexBlocks;
 	std::vector<BufferBlock> _vertexBlocksToCopy;
 
-#ifdef LUNA_VULKAN_MT
 	std::atomic_uint64_t _nextCookie;
 	struct {
 		std::condition_variable Condition;
 		uint32_t Counter = 0;
 		std::mutex Mutex;
 	} _lock;
-#else
-	uint64_t _nextCookie = 0;
-	struct {
-		uint32_t Counter = 0;
-	} _lock;
-#endif
 
 	SemaphoreHandle _swapchainAcquire;
 	bool _swapchainAcquireConsumed = false;

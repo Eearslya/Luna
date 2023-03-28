@@ -24,9 +24,7 @@ Fence::~Fence() noexcept {
 }
 
 void Fence::Wait() {
-#ifdef LUNA_VULKAN_MT
 	std::lock_guard<std::mutex> lock(_mutex);
-#endif
 
 	if (_observedWait) { return; }
 

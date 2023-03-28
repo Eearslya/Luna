@@ -490,12 +490,8 @@ Program::Program(Hash hash, Device& device, ProgramBuilder& builder) : HashedObj
 }
 
 Program::~Program() noexcept {
-#ifdef LUNA_VULKAN_MT
 	for (auto& pipeline : _pipelines.GetReadOnly()) { _device.GetDevice().destroyPipeline(pipeline.Value); }
 	for (auto& pipeline : _pipelines.GetReadWrite()) { _device.GetDevice().destroyPipeline(pipeline.Value); }
-#else
-	for (auto& pipeline : _pipelines) { _device.GetDevice().destroyPipeline(pipeline.Value); }
-#endif
 }
 
 void Program::Bake() {

@@ -33,9 +33,7 @@ class Fence : public IntrusivePtrEnabled<Fence, FenceDeleter, HandleCounter>, pu
 	vk::Semaphore _timelineSemaphore;
 	uint64_t _timelineValue = 0;
 	bool _observedWait      = false;
-#ifdef LUNA_VULKAN_MT
 	std::mutex _mutex;
-#endif
 };
 }  // namespace Vulkan
 }  // namespace Luna

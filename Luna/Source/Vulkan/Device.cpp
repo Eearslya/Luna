@@ -20,7 +20,6 @@
 
 namespace Luna {
 namespace Vulkan {
-#ifdef LUNA_VULKAN_MT
 static uint32_t GetThreadIndex() {
 	return Threading::GetThreadID();
 }
@@ -30,13 +29,6 @@ static uint32_t GetThreadIndex() {
 			std::unique_lock<std::mutex> lock(_lock.Mutex);                   \
 			_lock.Condition.wait(lock, [&]() { return _lock.Counter == 0; }); \
 		} while (0)
-#else
-static uint32_t GetThreadIndex() {
-	return 0;
-}
-#	define DeviceLock()  ((void) 0)
-#	define DeviceFlush() assert(_lock.Counter == 0)
-#endif
 
 constexpr const char* PipelineCachePath = "cache://PipelineCache.bin";
 constexpr QueueType QueueFlushOrder[]   = {QueueType::Transfer, QueueType::Graphics, QueueType::Compute};
@@ -998,12 +990,7 @@ void Device::AddWaitSemaphoreNoLock(QueueType queueType,
 }
 
 uint64_t Device::AllocateCookie() {
-#ifdef LUNA_VULKAN_MT
 	return _nextCookie.fetch_add(16, std::memory_order_relaxed) + 16;
-#else
-	_nextCookie += 16;
-	return _nextCookie;
-#endif
 }
 
 vk::Fence Device::AllocateFence() {
@@ -1430,9 +1417,7 @@ void Device::SubmitNoLock(CommandBufferHandle cmd, FenceHandle* fence, std::vect
 	}
 
 	_lock.Counter--;
-#ifdef LUNA_VULKAN_MT
 	_lock.Condition.notify_all();
-#endif
 }
 
 void Device::SubmitQueue(QueueType queueType, InternalFence* submitFence, std::vector<SemaphoreHandle>* semaphores) {

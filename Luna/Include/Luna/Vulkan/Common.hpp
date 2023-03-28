@@ -16,7 +16,6 @@
 #include <vulkan/vulkan.hpp>
 
 #define LUNA_VULKAN_DEBUG
-#define LUNA_VULKAN_MT
 
 namespace Luna {
 namespace Vulkan {
@@ -57,7 +56,6 @@ class TextureFormatLayout;
 class TransientAttachmentAllocator;
 class WSI;
 
-#ifdef LUNA_VULKAN_MT
 using HandleCounter = MultiThreadCounter;
 template <typename T>
 using VulkanCache = ThreadSafeIntrusiveHashMapReadCached<T>;
@@ -65,15 +63,6 @@ template <typename T>
 using VulkanCacheReadWrite = ThreadSafeIntrusiveHashMap<T>;
 template <typename T>
 using VulkanObjectPool = ThreadSafeObjectPool<T>;
-#else
-using HandleCounter = SingleThreadCounter;
-template <typename T>
-using VulkanCache = IntrusiveHashMap<T>;
-template <typename T>
-using VulkanCacheReadWrite = IntrusiveHashMap<T>;
-template <typename T>
-using VulkanObjectPool = ObjectPool<T>;
-#endif
 template <typename T>
 using HashedObject = IntrusiveHashMapEnabled<T>;
 

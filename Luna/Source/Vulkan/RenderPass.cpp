@@ -735,9 +735,7 @@ ImageHandle TransientAttachmentAllocator::RequestAttachment(
 	h(layers);
 	const auto hash = h.Get();
 
-#ifdef LUNA_VULKAN_MT
 	std::lock_guard<std::mutex> lock(_mutex);
-#endif
 	auto* node = _attachments.Request(hash);
 	if (node) { return node->Image; }
 

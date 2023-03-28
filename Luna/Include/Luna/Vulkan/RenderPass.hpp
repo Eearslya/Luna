@@ -167,9 +167,7 @@ class TransientAttachmentAllocator {
 
 	Device& _device;
 	TemporaryHashMap<TransientNode, TransientAttachmentRingSize, false> _attachments;
-#ifdef LUNA_VULKAN_MT
 	std::mutex _mutex;
-#endif
 };
 }  // namespace Vulkan
 }  // namespace Luna
