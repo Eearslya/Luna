@@ -997,10 +997,8 @@ void SceneLoader::LoadGltf(Luna::Vulkan::Device& device, Luna::Scene& scene, con
 	if (!context.Asset) { return; }
 
 	Preallocate(context);
-
-	auto& importing = composer.BeginPipelineStage();
-	importing.Enqueue([&context]() { ImportSamplers(context); });
-	importing.Enqueue([&context]() { ImportNodes(context); });
+	ImportSamplers(context);
+	ImportNodes(context);
 
 	LoadBuffers(composer, context);
 	LoadImages(composer, context);
