@@ -41,8 +41,12 @@ Device::Device(Context& context)
 			_deviceInfo(context._deviceInfo),
 			_queueInfo(context._queueInfo),
 			_device(context._device) {
+	_nextCookie.store(0);
+
 	// Create the VMA allocator.
 	{
+		// Because we're using the Vulkan.hpp dynamic dispatcher, we must give VMA all of the necessary function pointers
+		// manually.
 #define FN(name) .name = VULKAN_HPP_DEFAULT_DISPATCHER.name
 		VmaVulkanFunctions vmaFunctions = {FN(vkGetInstanceProcAddr),
 		                                   FN(vkGetDeviceProcAddr),
@@ -64,6 +68,9 @@ Device::Device(Context& context)
 		                                   FN(vkDestroyImage),
 		                                   FN(vkCmdCopyBuffer)};
 #undef FN
+
+		// Some of these functions are extensions, but because we're targeting Vulkan 1.2, we want to load their core
+		// variants instead.
 #define FN(core) vmaFunctions.core##KHR = reinterpret_cast<PFN_##core##KHR>(VULKAN_HPP_DEFAULT_DISPATCHER.core)
 		FN(vkGetBufferMemoryRequirements2);
 		FN(vkGetImageMemoryRequirements2);
@@ -86,16 +93,17 @@ Device::Device(Context& context)
 		}
 	}
 
-	CreateFrameContexts(2);
-	CreatePipelineCache();
-	CreateStockSamplers();
-	CreateTimelineSemaphores();
-	CreateTracingContexts();
-
 	_framebufferAllocator         = std::make_unique<FramebufferAllocator>(*this);
 	_shaderCompiler               = std::make_unique<ShaderCompiler>();
 	_shaderManager                = std::make_unique<ShaderManager>(*this);
 	_transientAttachmentAllocator = std::make_unique<TransientAttachmentAllocator>(*this);
+
+	CreateStockSamplers();
+	CreatePipelineCache();
+	CreateTimelineSemaphores();
+	CreateFrameContexts(2);
+
+	CreateTracingContexts();
 
 	_indexBlocks = std::make_unique<BufferPool>(*this, 4 * 1024, 16, vk::BufferUsageFlagBits::eIndexBuffer, false);
 	_indexBlocks->SetMaxRetainedBlocks(256);
@@ -134,6 +142,7 @@ Device::~Device() noexcept {
 
 	DestroyTracingContexts();
 	DestroyTimelineSemaphores();
+	_immutableSamplers.Clear();
 	_frameContexts.clear();
 	for (auto& semaphore : _availableSemaphores) { _device.destroySemaphore(semaphore); }
 	for (auto& fence : _availableFences) { _device.destroyFence(fence); }
@@ -797,6 +806,20 @@ ImageViewHandle Device::CreateImageView(const ImageViewCreateInfo& viewCI) {
 	return {};
 }
 
+SamplerHandle Device::CreateSampler(const SamplerCreateInfo& samplerCI) {
+	try {
+		return SamplerHandle(_samplerPool.Allocate(*this, samplerCI, false));
+	} catch (const std::exception& e) {
+		Log::Error("Vulkan", "Failed to create Sampler: {}", e.what());
+
+		return {};
+	}
+}
+
+const Sampler& Device::GetStockSampler(StockSampler type) const {
+	return _stockSamplers[int(type)]->GetSampler();
+}
+
 RenderPassInfo Device::GetSwapchainRenderPass(SwapchainRenderPassType type) {
 	RenderPassInfo info       = {};
 	info.ColorAttachmentCount = 1;
@@ -863,6 +886,16 @@ PipelineLayout* Device::RequestPipelineLayout(const ProgramResourceLayout& layou
 	if (!ret) { ret = _pipelineLayouts.EmplaceYield(hash, hash, *this, layout); }
 
 	return ret;
+}
+
+const ImmutableSampler* Device::RequestImmutableSampler(const SamplerCreateInfo& samplerCI) {
+	const auto hash = Hasher(samplerCI).Get();
+
+	DeviceCacheLock();
+	auto* sampler = _immutableSamplers.Find(hash);
+	if (!sampler) { sampler = _immutableSamplers.EmplaceYield(hash, hash, *this, samplerCI); }
+
+	return sampler;
 }
 
 Program* Device::RequestProgram(size_t compCodeSize, const void* compCode) {
@@ -932,19 +965,6 @@ Program* Device::RequestProgram(const std::string& vertexGlsl, const std::string
 	} else {
 		return nullptr;
 	}
-}
-
-Sampler* Device::RequestSampler(const SamplerCreateInfo& createInfo) {
-	Hasher h(createInfo);
-	const auto hash = h.Get();
-	auto* ret       = _samplers.Find(hash);
-	if (!ret) { ret = _samplers.EmplaceYield(hash, hash, *this, createInfo); }
-
-	return ret;
-}
-
-Sampler* Device::RequestSampler(StockSampler type) {
-	return _stockSamplers[static_cast<int>(type)];
 }
 
 Shader* Device::RequestShader(size_t codeSize, const void* code) {
@@ -1090,43 +1110,86 @@ void Device::CreateStockSamplers() {
 	for (int i = 0; i < StockSamplerCount; ++i) {
 		const auto type = static_cast<StockSampler>(i);
 		SamplerCreateInfo info{};
-		info.MinLod = 0.0f;
-		info.MaxLod = 12.0f;
+		info.MinLod        = 0.0f;
+		info.MaxLod        = VK_LOD_CLAMP_NONE;
+		info.MaxAnisotropy = 1.0f;
 
-		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::DefaultGeometryFilterWrap ||
-		    type == StockSampler::LinearClamp || type == StockSampler::LinearShadow || type == StockSampler::LinearWrap ||
-		    type == StockSampler::TrilinearClamp || type == StockSampler::TrilinearWrap) {
-			info.MagFilter = vk::Filter::eLinear;
-			info.MinFilter = vk::Filter::eLinear;
+		switch (type) {
+			case StockSampler::LinearShadow:
+			case StockSampler::NearestShadow:
+				info.CompareEnable = VK_TRUE;
+				info.CompareOp     = vk::CompareOp::eLessOrEqual;
+				break;
+
+			default:
+				info.CompareEnable = VK_FALSE;
+				break;
 		}
 
-		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::DefaultGeometryFilterWrap ||
-		    type == StockSampler::LinearClamp || type == StockSampler::TrilinearClamp ||
-		    type == StockSampler::TrilinearWrap) {
-			info.MipmapMode = vk::SamplerMipmapMode::eLinear;
+		switch (type) {
+			case StockSampler::DefaultGeometryFilterClamp:
+			case StockSampler::DefaultGeometryFilterWrap:
+			case StockSampler::TrilinearClamp:
+			case StockSampler::TrilinearWrap:
+				info.MipmapMode = vk::SamplerMipmapMode::eLinear;
+				break;
+
+			default:
+				info.MipmapMode = vk::SamplerMipmapMode::eNearest;
+				break;
 		}
 
-		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::LinearClamp ||
-		    type == StockSampler::LinearShadow || type == StockSampler::NearestClamp ||
-		    type == StockSampler::NearestShadow || type == StockSampler::TrilinearClamp) {
-			info.AddressModeU = vk::SamplerAddressMode::eClampToEdge;
-			info.AddressModeV = vk::SamplerAddressMode::eClampToEdge;
-			info.AddressModeW = vk::SamplerAddressMode::eClampToEdge;
+		switch (type) {
+			case StockSampler::DefaultGeometryFilterClamp:
+			case StockSampler::DefaultGeometryFilterWrap:
+			case StockSampler::LinearClamp:
+			case StockSampler::LinearShadow:
+			case StockSampler::LinearWrap:
+			case StockSampler::TrilinearClamp:
+			case StockSampler::TrilinearWrap:
+				info.MagFilter = vk::Filter::eLinear;
+				info.MinFilter = vk::Filter::eLinear;
+				break;
+
+			default:
+				info.MagFilter = vk::Filter::eNearest;
+				info.MinFilter = vk::Filter::eNearest;
+				break;
 		}
 
-		if (type == StockSampler::DefaultGeometryFilterClamp || type == StockSampler::DefaultGeometryFilterWrap) {
-			if (_deviceInfo.EnabledFeatures.Core.samplerAnisotropy) {
-				info.AnisotropyEnable = VK_TRUE;
-				info.MaxAnisotropy    = std::min(_deviceInfo.Properties.Core.limits.maxSamplerAnisotropy, 16.0f);
-			}
+		switch (type) {
+			case StockSampler::DefaultGeometryFilterClamp:
+			case StockSampler::LinearClamp:
+			case StockSampler::LinearShadow:
+			case StockSampler::NearestClamp:
+			case StockSampler::NearestShadow:
+			case StockSampler::TrilinearClamp:
+				info.AddressModeU = vk::SamplerAddressMode::eClampToEdge;
+				info.AddressModeV = vk::SamplerAddressMode::eClampToEdge;
+				info.AddressModeW = vk::SamplerAddressMode::eClampToEdge;
+				break;
+
+			default:
+				info.AddressModeU = vk::SamplerAddressMode::eRepeat;
+				info.AddressModeV = vk::SamplerAddressMode::eRepeat;
+				info.AddressModeW = vk::SamplerAddressMode::eRepeat;
 		}
 
-		if (type == StockSampler::LinearShadow || type == StockSampler::NearestShadow) {
-			info.CompareEnable = VK_TRUE;
-			info.CompareOp     = vk::CompareOp::eLessOrEqual;
+		switch (type) {
+			case StockSampler::DefaultGeometryFilterClamp:
+			case StockSampler::DefaultGeometryFilterWrap:
+				if (_deviceInfo.EnabledFeatures.Core.samplerAnisotropy) {
+					info.AnisotropyEnable = VK_TRUE;
+					info.MaxAnisotropy    = std::min(16.0f, _deviceInfo.Properties.Core.limits.maxSamplerAnisotropy);
+				}
+				info.MipLodBias = 0.0f;
+				break;
+
+			default:
+				break;
 		}
 
-		_stockSamplers[i] = RequestSampler(info);
+		_stockSamplers[i] = RequestImmutableSampler(info);
 	}
 }
 
@@ -1757,6 +1820,15 @@ void Device::DestroyImageViewNoLock(vk::ImageView view) {
 	Frame().ImageViewsToDestroy.push_back(view);
 }
 
+void Device::DestroySampler(vk::Sampler sampler) {
+	DeviceLock();
+	DestroySamplerNoLock(sampler);
+}
+
+void Device::DestroySamplerNoLock(vk::Sampler sampler) {
+	Frame().SamplersToDestroy.push_back(sampler);
+}
+
 void Device::DestroySemaphore(vk::Semaphore semaphore) {
 	DeviceLock();
 	DestroySemaphoreNoLock(semaphore);
@@ -1876,6 +1948,7 @@ void Device::FrameContext::Begin() {
 	for (auto& image : ImagesToDestroy) { device.destroyImage(image); }
 	for (auto& view : ImageViewsToDestroy) { device.destroyImageView(view); }
 	for (auto& allocation : AllocationsToFree) { vmaFreeMemory(Parent._allocator, allocation); }
+	for (auto& sampler : SamplersToDestroy) { device.destroySampler(sampler); }
 	for (auto& semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
 	for (auto& semaphore : SemaphoresToRecycle) { Parent.ReleaseSemaphore(semaphore); }
 	BuffersToDestroy.clear();
@@ -1884,6 +1957,7 @@ void Device::FrameContext::Begin() {
 	ImagesToDestroy.clear();
 	ImageViewsToDestroy.clear();
 	AllocationsToFree.clear();
+	SamplersToDestroy.clear();
 	SemaphoresToDestroy.clear();
 	SemaphoresToRecycle.clear();
 }

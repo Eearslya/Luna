@@ -248,18 +248,19 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void SetIndexBuffer(const Buffer& buffer, vk::DeviceSize offset, vk::IndexType indexType);
 	void SetInputAttachments(uint32_t set, uint32_t firstBinding);
 	void SetProgram(Program* program);
-	void SetSampler(uint32_t set, uint32_t binding, const Sampler* sampler);
-	void SetSampler(uint32_t set, uint32_t binding, StockSampler sampler);
 	void SetScissor(const vk::Rect2D& scissor);
 
+	void SetSampler(uint32_t set, uint32_t binding, const Sampler& sampler);
+	void SetSampler(uint32_t set, uint32_t binding, StockSampler sampler);
+
 	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view);
-	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler* sampler);
+	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler);
 	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler);
 	void SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view);
-	void SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler* sampler);
+	void SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler);
 	void SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler);
 	void SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view);
-	void SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler* sampler);
+	void SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler);
 	void SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler);
 
 	void SetUniformBuffer(

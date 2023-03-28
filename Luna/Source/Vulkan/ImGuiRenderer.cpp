@@ -189,7 +189,7 @@ void main() {
 		                                  .MaxAnisotropy    = 1.0f,
 		                                  .MinLod           = -1000.0f,
 		                                  .MaxLod           = 1000.0f};
-		_fontSampler = device.RequestSampler(samplerCI);
+		_fontSampler = device.CreateSampler(samplerCI);
 	}
 
 	Input::OnChar += [this](int c) {
@@ -336,11 +336,11 @@ void ImGuiRenderer::Render(CommandBuffer& cmd, bool clear) {
 
 					ImGuiSampleMode sampleMode = ImGuiSampleMode::Standard;
 					if (drawCmd.TextureId == 0) {
-						cmd.SetTexture(0, 0, _fontTexture->GetView(), _fontSampler);
+						cmd.SetTexture(0, 0, _fontTexture->GetView(), *_fontSampler);
 						sampleMode = ImGuiSampleMode::ImGuiFont;
 					} else {
 						ImGuiTexture* texture = reinterpret_cast<ImGuiTexture*>(drawCmd.TextureId);
-						cmd.SetTexture(0, 0, *texture->View, texture->Sampler);
+						cmd.SetTexture(0, 0, *texture->View, *texture->Sampler);
 
 						if (FormatChannelCount(texture->View->GetCreateInfo().Format) == 1) {
 							sampleMode = ImGuiSampleMode::Grayscale;
@@ -366,10 +366,10 @@ void ImGuiRenderer::Render(CommandBuffer& cmd, bool clear) {
 	}
 }
 
-ImGuiTextureId ImGuiRenderer::Texture(ImageView& view, Sampler* sampler, uint32_t arrayLayer) {
+ImGuiTextureId ImGuiRenderer::Texture(ImageView& view, const Sampler& sampler, uint32_t arrayLayer) {
 	Hasher h;
 	h(view.GetCookie());
-	h(sampler->GetHash());
+	h(sampler.GetCookie());
 	h(arrayLayer);
 	const auto hash = h.Get();
 
@@ -380,7 +380,7 @@ ImGuiTextureId ImGuiRenderer::Texture(ImageView& view, Sampler* sampler, uint32_
 }
 
 ImGuiTextureId ImGuiRenderer::Texture(ImageView& view, StockSampler sampler, uint32_t arrayLayer) {
-	return Texture(view, _wsi.GetDevice().RequestSampler(sampler), arrayLayer);
+	return Texture(view, _wsi.GetDevice().GetStockSampler(sampler), arrayLayer);
 }
 
 void ImGuiRenderer::SetRenderState(CommandBuffer& cmd, ImDrawData* drawData, uint32_t frameIndex) const {

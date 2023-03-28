@@ -75,11 +75,11 @@ class BindlessAllocator {
 	void BeginFrame();
 	vk::DescriptorSet Commit();
 	void Reset();
-	uint32_t Texture(const ImageView& view, const Sampler* sampler);
+	uint32_t Texture(const ImageView& view, const Sampler& sampler);
 	uint32_t Texture(const ImageView& view, StockSampler sampler);
-	uint32_t SrgbTexture(const ImageView& view, const Sampler* sampler);
+	uint32_t SrgbTexture(const ImageView& view, const Sampler& sampler);
 	uint32_t SrgbTexture(const ImageView& view, StockSampler sampler);
-	uint32_t UnormTexture(const ImageView& view, const Sampler* sampler);
+	uint32_t UnormTexture(const ImageView& view, const Sampler& sampler);
 	uint32_t UnormTexture(const ImageView& view, StockSampler sampler);
 
  private:

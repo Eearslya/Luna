@@ -129,7 +129,7 @@ void RenderContext::SetCamera(const glm::mat4& projection, const glm::mat4& view
 	_camera.ZFar       = Project(invZW * glm::vec2(1.0f, 1.0f));
 }
 
-uint32_t RenderContext::SetTexture(const Vulkan::ImageView& view, const Vulkan::Sampler* sampler) {
+uint32_t RenderContext::SetTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler) {
 	return _bindless.Texture(view, sampler);
 }
 
@@ -137,7 +137,7 @@ uint32_t RenderContext::SetTexture(const Vulkan::ImageView& view, Vulkan::StockS
 	return _bindless.Texture(view, sampler);
 }
 
-uint32_t RenderContext::SetSrgbTexture(const Vulkan::ImageView& view, const Vulkan::Sampler* sampler) {
+uint32_t RenderContext::SetSrgbTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler) {
 	return _bindless.SrgbTexture(view, sampler);
 }
 
@@ -145,7 +145,7 @@ uint32_t RenderContext::SetSrgbTexture(const Vulkan::ImageView& view, Vulkan::St
 	return _bindless.SrgbTexture(view, sampler);
 }
 
-uint32_t RenderContext::SetUnormTexture(const Vulkan::ImageView& view, const Vulkan::Sampler* sampler) {
+uint32_t RenderContext::SetUnormTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler) {
 	return _bindless.UnormTexture(view, sampler);
 }
 

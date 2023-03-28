@@ -25,6 +25,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 	friend class ImageView;
 	friend struct ImageViewDeleter;
 	friend class Sampler;
+	friend struct SamplerDeleter;
 	friend class Semaphore;
 	friend struct SemaphoreDeleter;
 	friend class TransientAttachmentAllocator;
@@ -86,6 +87,8 @@ class Device : public IntrusivePtrEnabled<Device> {
 	ImageInitialBuffer CreateImageStagingBuffer(const ImageCreateInfo& imageCI, const ImageInitialData* initial);
 	ImageInitialBuffer CreateImageStagingBuffer(const TextureFormatLayout& layout);
 	ImageViewHandle CreateImageView(const ImageViewCreateInfo& viewCI);
+	SamplerHandle CreateSampler(const SamplerCreateInfo& samplerCI);
+	const Sampler& GetStockSampler(StockSampler type) const;
 	RenderPassInfo GetSwapchainRenderPass(SwapchainRenderPassType type = SwapchainRenderPassType::ColorOnly);
 	ImageView& GetSwapchainView();
 	ImageView& GetSwapchainView(uint32_t index);
@@ -96,14 +99,13 @@ class Device : public IntrusivePtrEnabled<Device> {
 	                                   uint32_t arrayLayers            = 1);
 	DescriptorSetAllocator* RequestDescriptorSetAllocator(const DescriptorSetLayout& layout,
 	                                                      const uint32_t* stagesForBindings);
+	const ImmutableSampler* RequestImmutableSampler(const SamplerCreateInfo& samplerCI);
 	Program* RequestProgram(size_t compCodeSize, const void* compCode);
 	Program* RequestProgram(size_t vertCodeSize, const void* vertCode, size_t fragCodeSize, const void* fragCode);
 	Program* RequestProgram(Shader* compute);
 	Program* RequestProgram(const std::string& computeGlsl);
 	Program* RequestProgram(Shader* vertex, Shader* fragment);
 	Program* RequestProgram(const std::string& vertexGlsl, const std::string& fragmentGlsl);
-	Sampler* RequestSampler(const SamplerCreateInfo& createInfo);
-	Sampler* RequestSampler(StockSampler type);
 	Shader* RequestShader(size_t codeSize, const void* code);
 	Shader* RequestShader(vk::ShaderStageFlagBits stage, const std::string& glsl);
 	Shader* RequestShader(Hash hash);
@@ -132,6 +134,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 		std::vector<vk::Framebuffer> FramebuffersToDestroy;
 		std::vector<vk::Image> ImagesToDestroy;
 		std::vector<vk::ImageView> ImageViewsToDestroy;
+		std::vector<vk::Sampler> SamplersToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToConsume;
 		std::vector<vk::Semaphore> SemaphoresToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToRecycle;
@@ -247,6 +250,8 @@ class Device : public IntrusivePtrEnabled<Device> {
 	void DestroyImageNoLock(vk::Image image);
 	void DestroyImageView(vk::ImageView view);
 	void DestroyImageViewNoLock(vk::ImageView view);
+	void DestroySampler(vk::Sampler sampler);
+	void DestroySamplerNoLock(vk::Sampler sampler);
 	void DestroySemaphore(vk::Semaphore semaphore);
 	void DestroySemaphoreNoLock(vk::Semaphore semaphore);
 	void FreeAllocation(const VmaAllocation& allocation);
@@ -256,33 +261,17 @@ class Device : public IntrusivePtrEnabled<Device> {
 	void ResetFence(vk::Fence fence, bool observedWait);
 	void ResetFenceNoLock(vk::Fence fence, bool observedWait);
 
-	Extensions _extensions;
-	vk::Instance _instance;
-	DeviceInfo _deviceInfo;
-	QueueInfo _queueInfo;
-	vk::Device _device;
+	// Constant Vulkan data.
+	const Extensions _extensions;
+	const vk::Instance _instance;
+	const DeviceInfo _deviceInfo;
+	const QueueInfo _queueInfo;
+	const vk::Device _device;
 
-	uint32_t _currentFrameContext = 0;
-	std::vector<std::unique_ptr<FrameContext>> _frameContexts;
-	std::array<QueueData, QueueTypeCount> _queueData;
-
-	VmaAllocator _allocator;
-	std::vector<vk::Fence> _availableFences;
-	std::vector<vk::Semaphore> _availableSemaphores;
-	std::unique_ptr<FramebufferAllocator> _framebufferAllocator;
-	vk::PipelineCache _pipelineCache;
-	std::unique_ptr<ShaderCompiler> _shaderCompiler;
-	std::unique_ptr<ShaderManager> _shaderManager;
-	std::unique_ptr<TransientAttachmentAllocator> _transientAttachmentAllocator;
-
-	std::unique_ptr<BufferPool> _indexBlocks;
-	std::vector<BufferBlock> _indexBlocksToCopy;
-	std::unique_ptr<BufferPool> _uniformBlocks;
-	std::vector<BufferBlock> _uniformBlocksToCopy;
-	std::unique_ptr<BufferPool> _vertexBlocks;
-	std::vector<BufferBlock> _vertexBlocksToCopy;
-
+	// Next cookie value to assign to child objects.
 	std::atomic_uint64_t _nextCookie;
+
+	// Synchronization objects.
 	struct {
 		std::condition_variable Condition;
 		uint32_t Counter = 0;
@@ -291,28 +280,63 @@ class Device : public IntrusivePtrEnabled<Device> {
 		RWSpinLock ReadOnlyCache;
 	} _lock;
 
-	SemaphoreHandle _swapchainAcquire;
-	bool _swapchainAcquireConsumed = false;
-	std::vector<ImageHandle> _swapchainImages;
-	uint32_t _swapchainIndex = std::numeric_limits<uint32_t>::max();
-	SemaphoreHandle _swapchainRelease;
+	// Per-Frame-In-Flight data.
+	uint32_t _currentFrameContext = 0;
+	std::vector<std::unique_ptr<FrameContext>> _frameContexts;
 
+	// Resource managers.
+	VmaAllocator _allocator;
+	std::vector<vk::Fence> _availableFences;
+	std::vector<vk::Semaphore> _availableSemaphores;
+	std::unique_ptr<BufferPool> _indexBlocks;
+	std::unique_ptr<ShaderCompiler> _shaderCompiler;
+	std::unique_ptr<BufferPool> _uniformBlocks;
+	std::unique_ptr<BufferPool> _vertexBlocks;
+
+	// Object pools.
 	VulkanObjectPool<BindlessDescriptorPool> _bindlessDescriptorPoolPool;
 	VulkanObjectPool<Buffer> _bufferPool;
 	VulkanObjectPool<CommandBuffer> _commandBufferPool;
 	VulkanObjectPool<Fence> _fencePool;
 	VulkanObjectPool<Image> _imagePool;
 	VulkanObjectPool<ImageView> _imageViewPool;
+	VulkanObjectPool<Sampler> _samplerPool;
 	VulkanObjectPool<Semaphore> _semaphorePool;
 
+	// WSI/Swapchain data.
+	SemaphoreHandle _swapchainAcquire;
+	bool _swapchainAcquireConsumed = false;
+	std::vector<ImageHandle> _swapchainImages;
+	uint32_t _swapchainIndex = std::numeric_limits<uint32_t>::max();
+	SemaphoreHandle _swapchainRelease;
+
+	// Vulkan Queue data.
+	std::array<QueueData, QueueTypeCount> _queueData;
+
+	// Temporary buffer pools.
+	std::vector<BufferBlock> _indexBlocksToCopy;
+	std::vector<BufferBlock> _uniformBlocksToCopy;
+	std::vector<BufferBlock> _vertexBlocksToCopy;
+
+	// Hashed object caches.
 	VulkanCache<DescriptorSetAllocator> _descriptorSetAllocators;
+	VulkanCache<ImmutableSampler> _immutableSamplers;
 	VulkanCache<PipelineLayout> _pipelineLayouts;
 	VulkanCache<Program> _programs;
 	VulkanCache<RenderPass> _renderPasses;
-	VulkanCache<Sampler> _samplers;
 	VulkanCache<Shader> _shaders;
 
-	std::array<Sampler*, StockSamplerCount> _stockSamplers;
+	// Render Target managers.
+	std::unique_ptr<FramebufferAllocator> _framebufferAllocator;
+	std::unique_ptr<TransientAttachmentAllocator> _transientAttachmentAllocator;
+
+	// Shader Pipeline cache.
+	vk::PipelineCache _pipelineCache;
+
+	// High-level asset managers.
+	std::unique_ptr<ShaderManager> _shaderManager;
+
+	std::array<const ImmutableSampler*, StockSamplerCount> _stockSamplers;
 };
 }  // namespace Vulkan
 }  // namespace Luna

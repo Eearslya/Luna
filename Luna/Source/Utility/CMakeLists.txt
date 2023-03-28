@@ -3,4 +3,5 @@ target_sources(Luna PRIVATE
 	Memory.cpp
 	Path.cpp
 	String.cpp
-	Threading.cpp)
+	Threading.cpp
+	Timer.cpp)

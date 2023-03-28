@@ -4,8 +4,12 @@
 
 namespace Luna {
 namespace Vulkan {
-Sampler::Sampler(Hash hash, Device& device, const SamplerCreateInfo& info)
-		: Cookie(device), HashedObject<Sampler>(hash), _device(device), _createInfo(info) {
+void SamplerDeleter::operator()(Sampler* sampler) {
+	sampler->_device._samplerPool.Free(sampler);
+}
+
+Sampler::Sampler(Device& device, const SamplerCreateInfo& info, bool immutable)
+		: Cookie(device), _device(device), _createInfo(info), _immutable(immutable) {
 	const vk::SamplerCreateInfo samplerCI({},
 	                                      info.MagFilter,
 	                                      info.MinFilter,
@@ -28,7 +32,20 @@ Sampler::Sampler(Hash hash, Device& device, const SamplerCreateInfo& info)
 }
 
 Sampler::~Sampler() noexcept {
-	if (_sampler) { _device.GetDevice().destroySampler(_sampler); }
+	if (_sampler) {
+		if (_immutable) {
+			_device.GetDevice().destroySampler(_sampler);
+		} else if (_internalSync) {
+			_device.DestroySamplerNoLock(_sampler);
+		} else {
+			_device.DestroySampler(_sampler);
+		}
+	}
+}
+
+ImmutableSampler::ImmutableSampler(Hash hash, Device& device, const SamplerCreateInfo& samplerCI)
+		: HashedObject<ImmutableSampler>(hash), _device(device) {
+	_sampler = _device.CreateSampler(samplerCI);
 }
 }  // namespace Vulkan
 }  // namespace Luna

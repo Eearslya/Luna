@@ -5,6 +5,7 @@
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Image.hpp>
+#include <Luna/Vulkan/Sampler.hpp>
 
 namespace Luna {
 struct MaterialData {
@@ -17,7 +18,7 @@ struct MaterialData {
 
 struct Texture {
 	Luna::Vulkan::ImageHandle Image;
-	Luna::Vulkan::Sampler* Sampler = nullptr;
+	Luna::Vulkan::SamplerHandle Sampler;
 };
 
 class Material : public IntrusivePtrEnabled<Material> {
@@ -43,9 +44,9 @@ class Material : public IntrusivePtrEnabled<Material> {
 	                     const Texture& texture,
 	                     bool srgb,
 	                     const Vulkan::ImageHandle& fallback) const {
-		const Vulkan::Sampler* sampler =
-			texture.Sampler ? texture.Sampler
-											: cmd.GetDevice().RequestSampler(Vulkan::StockSampler::DefaultGeometryFilterWrap);
+		const Vulkan::Sampler& sampler =
+			texture.Sampler ? *texture.Sampler
+											: cmd.GetDevice().GetStockSampler(Vulkan::StockSampler::DefaultGeometryFilterWrap);
 		if (texture.Image) {
 			if (srgb) {
 				return context.SetSrgbTexture(texture.Image->GetView(), sampler);

@@ -48,9 +48,9 @@ class IntrusivePtrEnabled {
 	using EnabledReferenceOpsT = ReferenceOps;
 	using IntrusivePtrT        = IntrusivePtr<T>;
 
-	IntrusivePtrEnabled()                                      = default;
-	IntrusivePtrEnabled(const IntrusivePtrEnabled&)            = delete;
-	IntrusivePtrEnabled& operator=(const IntrusivePtrEnabled&) = delete;
+	IntrusivePtrEnabled()                           = default;
+	IntrusivePtrEnabled(const IntrusivePtrEnabled&) = delete;
+	void operator=(const IntrusivePtrEnabled&)      = delete;
 
 	void AddReference() {
 		_refCount.AddReference();
@@ -96,6 +96,7 @@ class IntrusivePtr {
 	IntrusivePtr& operator=(const IntrusivePtr& other) {
 		using RefBaseT =
 			IntrusivePtrEnabled<typename T::EnabledBaseT, typename T::EnabledDeleterT, typename T::EnabledReferenceOpsT>;
+
 		if (this != &other) {
 			Reset();
 			_data = other._data;
@@ -110,8 +111,9 @@ class IntrusivePtr {
 
 		using RefBaseT =
 			IntrusivePtrEnabled<typename T::EnabledBaseT, typename T::EnabledDeleterT, typename T::EnabledReferenceOpsT>;
+
 		Reset();
-		_data = other._data;
+		_data = static_cast<T*>(other._data);
 		if (_data) { static_cast<RefBaseT*>(_data)->AddReference(); }
 
 		return *this;
@@ -128,7 +130,7 @@ class IntrusivePtr {
 	template <typename U>
 	IntrusivePtr& operator=(IntrusivePtr<U>&& other) noexcept {
 		Reset();
-		_data       = reinterpret_cast<T*>(other._data);
+		_data       = static_cast<T*>(other._data);
 		other._data = nullptr;
 
 		return *this;
@@ -139,6 +141,18 @@ class IntrusivePtr {
 	}
 	const T* Get() const {
 		return _data;
+	}
+	T* Release() & {
+		T* ret = _data;
+		_data  = nullptr;
+
+		return ret;
+	}
+	T* Release() && {
+		T* ret = _data;
+		_data  = nullptr;
+
+		return ret;
 	}
 	void Reset() {
 		using RefBaseT =
@@ -195,5 +209,5 @@ typename Base::IntrusivePtrT MakeDerivedHandle(Args&&... args) {
 }
 
 template <typename T, typename Deleter = std::default_delete<T>>
-using ThreadSafeIntrusivePtr = IntrusivePtrEnabled<T, Deleter, MultiThreadCounter>;
+using ThreadSafeIntrusivePtrEnabled = IntrusivePtrEnabled<T, Deleter, MultiThreadCounter>;
 }  // namespace Luna

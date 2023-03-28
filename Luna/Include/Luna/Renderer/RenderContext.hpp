@@ -58,11 +58,11 @@ class RenderContext {
 	void BeginFrame();
 	void ReloadShaders();
 	void SetCamera(const glm::mat4& projection, const glm::mat4& view);
-	uint32_t SetTexture(const Vulkan::ImageView& view, const Vulkan::Sampler* sampler);
+	uint32_t SetTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler);
 	uint32_t SetTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler);
-	uint32_t SetSrgbTexture(const Vulkan::ImageView& view, const Vulkan::Sampler* sampler);
+	uint32_t SetSrgbTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler);
 	uint32_t SetSrgbTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler);
-	uint32_t SetUnormTexture(const Vulkan::ImageView& view, const Vulkan::Sampler* sampler);
+	uint32_t SetUnormTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler);
 	uint32_t SetUnormTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler);
 
  private:

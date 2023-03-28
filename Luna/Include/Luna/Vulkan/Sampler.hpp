@@ -24,9 +24,17 @@ struct SamplerCreateInfo {
 	vk::Bool32 UnnormalizedCoordinates  = VK_FALSE;
 };
 
-class Sampler : public HashedObject<Sampler>, public Cookie, public InternalSyncEnabled {
+struct SamplerDeleter {
+	void operator()(Sampler* sampler);
+};
+
+class Sampler : public IntrusivePtrEnabled<Sampler, SamplerDeleter, HandleCounter>,
+								public Cookie,
+								public InternalSyncEnabled {
+	friend class ObjectPool<Sampler>;
+	friend struct SamplerDeleter;
+
  public:
-	Sampler(Hash hash, Device& device, const SamplerCreateInfo& info);
 	~Sampler() noexcept;
 
 	const SamplerCreateInfo& GetCreateInfo() const {
@@ -37,9 +45,27 @@ class Sampler : public HashedObject<Sampler>, public Cookie, public InternalSync
 	}
 
  private:
+	Sampler(Device& device, const SamplerCreateInfo& info, bool immutable);
+
 	Device& _device;
 	vk::Sampler _sampler;
 	SamplerCreateInfo _createInfo;
+	bool _immutable;
+};
+
+class ImmutableSampler : public HashedObject<ImmutableSampler> {
+ public:
+	ImmutableSampler(Hash hash, Device& device, const SamplerCreateInfo& samplerCI);
+	ImmutableSampler(const ImmutableSampler&) = delete;
+	void operator=(const ImmutableSampler&)   = delete;
+
+	const Sampler& GetSampler() const {
+		return *_sampler;
+	}
+
+ private:
+	Device& _device;
+	SamplerHandle _sampler;
 };
 }  // namespace Vulkan
 }  // namespace Luna
@@ -63,6 +89,7 @@ struct std::hash<Luna::Vulkan::SamplerCreateInfo> {
 		h(info.MaxLod);
 		h(info.BorderColor);
 		h(info.UnnormalizedCoordinates);
+
 		return static_cast<size_t>(h.Get());
 	}
 };

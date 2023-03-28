@@ -167,10 +167,6 @@ struct Buffer {
 	std::vector<uint8_t> Data;
 };
 
-struct Sampler {
-	Luna::Vulkan::Sampler* Handle = nullptr;
-};
-
 struct Submesh {
 	uint32_t MaterialIndex     = 0;
 	vk::DeviceSize VertexCount = 0;
@@ -204,9 +200,9 @@ struct GltfContext {
 	std::vector<Luna::IntrusivePtr<Luna::Material>> Materials;
 	std::vector<Luna::IntrusivePtr<Luna::StaticMesh>> Meshes;
 	std::vector<Node> Nodes;
-	std::vector<Sampler> Samplers;
+	std::vector<Luna::Vulkan::SamplerHandle> Samplers;
 
-	Sampler* DefaultSampler = nullptr;
+	Luna::Vulkan::SamplerHandle* DefaultSampler = nullptr;
 	std::vector<Node*> RootNodes;
 };
 
@@ -554,7 +550,7 @@ static void ImportSamplers(GltfContext& context) {
 				break;
 		}
 
-		sampler.Handle = device.RequestSampler(samplerCI);
+		sampler = device.CreateSampler(samplerCI);
 	}
 
 	const Luna::Vulkan::SamplerCreateInfo samplerCI{
@@ -567,7 +563,7 @@ static void ImportSamplers(GltfContext& context) {
 		.MaxAnisotropy    = device.GetDeviceInfo().Properties.Core.limits.maxSamplerAnisotropy,
 		.MinLod           = 0.0f,
 		.MaxLod           = 16.0f};
-	context.DefaultSampler->Handle = device.RequestSampler(samplerCI);
+	*context.DefaultSampler = device.CreateSampler(samplerCI);
 }
 
 static void ImportNodes(GltfContext& context) {
@@ -697,7 +693,7 @@ static void LoadMaterials(Luna::TaskComposer& composer, GltfContext& context) {
 				if (!texInfo) { return; }
 				const auto& gltfTexture = context.Asset->textures[texInfo->textureIndex];
 				texture.Image           = context.Images[*gltfTexture.imageIndex];
-				texture.Sampler         = context.Samplers[*gltfTexture.samplerIndex].Handle;
+				texture.Sampler         = context.Samplers[*gltfTexture.samplerIndex];
 			};
 
 			if (gltfMaterial.pbrData) {

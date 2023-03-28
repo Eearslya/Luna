@@ -34,7 +34,7 @@ struct ListEntry {
 	PathType Type;
 };
 
-class File : public ThreadSafeIntrusivePtr<File> {
+class File : public ThreadSafeIntrusivePtrEnabled<File> {
  public:
 	virtual ~File() = default;
 
@@ -47,7 +47,7 @@ class File : public ThreadSafeIntrusivePtr<File> {
 };
 using FileHandle = IntrusivePtr<File>;
 
-class FileMapping : public ThreadSafeIntrusivePtr<FileMapping> {
+class FileMapping : public ThreadSafeIntrusivePtrEnabled<FileMapping> {
  public:
 	FileMapping(
 		FileHandle handle, uint64_t fileOffset, void* mapped, size_t mappedSize, size_t mapOffset, size_t accessibleSize);

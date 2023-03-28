@@ -61,7 +61,7 @@ void ForwardRenderer::BuildRenderPass(Luna::Vulkan::CommandBuffer& cmd) {
 			const auto& material = mesh.Materials[submesh->MaterialIndex];
 
 			cmd.SetCullMode(material->DualSided ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack);
-			cmd.SetSrgbTexture(1, 0, material->Albedo.Image->GetView(), material->Albedo.Sampler);
+			cmd.SetSrgbTexture(1, 0, material->Albedo.Image->GetView(), *material->Albedo.Sampler);
 
 			if (submesh->IndexCount > 0) {
 				cmd.DrawIndexed(submesh->IndexCount, 1, submesh->FirstIndex, submesh->FirstVertex, 0);

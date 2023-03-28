@@ -87,31 +87,31 @@ void BindlessAllocator::Reset() {
 	_descriptorPool.Reset();
 }
 
-uint32_t BindlessAllocator::Texture(const ImageView& view, const Sampler* sampler) {
+uint32_t BindlessAllocator::Texture(const ImageView& view, const Sampler& sampler) {
 	return SetTexture(
-		view.GetView(), sampler->GetSampler(), view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal));
+		view.GetView(), sampler.GetSampler(), view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal));
 }
 
 uint32_t BindlessAllocator::Texture(const ImageView& view, StockSampler sampler) {
-	return Texture(view, _device.RequestSampler(sampler));
+	return Texture(view, _device.GetStockSampler(sampler));
 }
 
-uint32_t BindlessAllocator::SrgbTexture(const ImageView& view, const Sampler* sampler) {
+uint32_t BindlessAllocator::SrgbTexture(const ImageView& view, const Sampler& sampler) {
 	return SetTexture(
-		view.GetSrgbView(), sampler->GetSampler(), view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal));
+		view.GetSrgbView(), sampler.GetSampler(), view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal));
 }
 
 uint32_t BindlessAllocator::SrgbTexture(const ImageView& view, StockSampler sampler) {
-	return SrgbTexture(view, _device.RequestSampler(sampler));
+	return SrgbTexture(view, _device.GetStockSampler(sampler));
 }
 
-uint32_t BindlessAllocator::UnormTexture(const ImageView& view, const Sampler* sampler) {
+uint32_t BindlessAllocator::UnormTexture(const ImageView& view, const Sampler& sampler) {
 	return SetTexture(
-		view.GetUnormView(), sampler->GetSampler(), view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal));
+		view.GetUnormView(), sampler.GetSampler(), view.GetImage()->GetLayout(vk::ImageLayout::eShaderReadOnlyOptimal));
 }
 
 uint32_t BindlessAllocator::UnormTexture(const ImageView& view, StockSampler sampler) {
-	return SrgbTexture(view, _device.RequestSampler(sampler));
+	return SrgbTexture(view, _device.GetStockSampler(sampler));
 }
 
 uint32_t BindlessAllocator::SetTexture(vk::ImageView view, vk::Sampler sampler, vk::ImageLayout layout) {

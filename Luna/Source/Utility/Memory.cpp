@@ -11,7 +11,7 @@ void* AlignedAlloc(size_t size, size_t alignment) {
 #if defined(_WIN32)
 	return _aligned_malloc(size, alignment);
 #elif defined(_ISOC11_SOURCE)
-	return aligned_alloc(alignment, size);
+	return aligned_alloc(alignment, (size + alignment - 1) & ~(alignment - 1));
 #elif (_POSIX_C_SOURCE >= 200112L) || (_XOPEN_SOURCE >= 600)
 	void* ptr = nullptr;
 	if (posix_memalign(&ptr, alignment, size) < 0) { return nullptr; }

@@ -9,15 +9,13 @@ namespace Luna {
 template <typename T>
 class ObjectPool {
  public:
-	~ObjectPool() noexcept {}
-
 	template <typename... Args>
 	T* Allocate(Args&&... args) {
 		if (_available.empty()) {
 			const uint32_t objectCount = 64u << _memory.size();
-			T* ptr = static_cast<T*>(AlignedAlloc(objectCount * sizeof(T), std::max(std::size_t(64), alignof(T))));
+			T* ptr = static_cast<T*>(AlignedAlloc(objectCount * sizeof(T), std::max<size_t>(64, alignof(T))));
 			if (!ptr) { return nullptr; }
-			_totalObjectCount += objectCount;
+
 			for (uint32_t i = 0; i < objectCount; ++i) { _available.push_back(&ptr[i]); }
 			_memory.emplace_back(ptr);
 		}
@@ -32,7 +30,6 @@ class ObjectPool {
 	void Clear() {
 		_available.clear();
 		_memory.clear();
-		_totalObjectCount = 0;
 	}
 
 	void Free(T* ptr) {
@@ -49,7 +46,6 @@ class ObjectPool {
 
 	std::vector<T*> _available;
 	std::vector<std::unique_ptr<T, PoolDeleter>> _memory;
-	size_t _totalObjectCount = 0;
 };
 
 template <typename T>

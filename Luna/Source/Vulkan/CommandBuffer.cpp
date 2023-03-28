@@ -498,19 +498,19 @@ void CommandBuffer::SetProgram(Program* program) {
 	_pipelineLayout = _programLayout->GetPipelineLayout();
 }
 
-void CommandBuffer::SetSampler(uint32_t set, uint32_t binding, const Sampler* sampler) {
-	const auto cookie = sampler->GetCookie();
+void CommandBuffer::SetSampler(uint32_t set, uint32_t binding, const Sampler& sampler) {
+	const auto cookie = sampler.GetCookie();
 	if (cookie == _bindings.Bindings[set][binding].SecondaryCookie) { return; }
 
 	auto& bind                 = _bindings.Bindings[set][binding];
-	bind.Image.Float.sampler   = sampler->GetSampler();
-	bind.Image.Integer.sampler = sampler->GetSampler();
+	bind.Image.Float.sampler   = sampler.GetSampler();
+	bind.Image.Integer.sampler = sampler.GetSampler();
 	_dirtySets |= 1u << set;
 	_bindings.Bindings[set][binding].SecondaryCookie = cookie;
 }
 
 void CommandBuffer::SetSampler(uint32_t set, uint32_t binding, StockSampler sampler) {
-	SetSampler(set, binding, _device.RequestSampler(sampler));
+	SetSampler(set, binding, _device.GetStockSampler(sampler));
 }
 
 void CommandBuffer::SetScissor(const vk::Rect2D& scissor) {
@@ -527,7 +527,7 @@ void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& 
 	           view.GetCookie());
 }
 
-void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler* sampler) {
+void CommandBuffer::SetTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler) {
 	SetTexture(set, binding, view);
 	SetSampler(set, binding, sampler);
 }
@@ -547,7 +547,7 @@ void CommandBuffer::SetSrgbTexture(uint32_t set, uint32_t binding, const ImageVi
 	           view.GetCookie() | CookieSrgbBit);
 }
 
-void CommandBuffer::SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler* sampler) {
+void CommandBuffer::SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler) {
 	SetSrgbTexture(set, binding, view);
 	SetSampler(set, binding, sampler);
 }
@@ -567,7 +567,7 @@ void CommandBuffer::SetUnormTexture(uint32_t set, uint32_t binding, const ImageV
 	           view.GetCookie() | CookieUnormBit);
 }
 
-void CommandBuffer::SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler* sampler) {
+void CommandBuffer::SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler) {
 	SetUnormTexture(set, binding, view);
 	SetSampler(set, binding, sampler);
 }

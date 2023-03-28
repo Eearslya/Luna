@@ -40,6 +40,7 @@ class Image;
 struct ImageCreateInfo;
 class ImageView;
 struct ImageViewCreateInfo;
+class ImmutableSampler;
 class PipelineLayout;
 class Program;
 struct ProgramResourceLayout;
@@ -47,6 +48,7 @@ class RenderPass;
 struct RenderPassInfo;
 class Sampler;
 struct SamplerCreateInfo;
+struct SamplerDeleter;
 class Semaphore;
 class Shader;
 class ShaderCompiler;
@@ -77,6 +79,7 @@ using DeviceHandle                 = IntrusivePtr<Device>;
 using FenceHandle                  = IntrusivePtr<Fence>;
 using ImageHandle                  = IntrusivePtr<Image>;
 using ImageViewHandle              = IntrusivePtr<ImageView>;
+using SamplerHandle                = IntrusivePtr<Sampler>;
 using SemaphoreHandle              = IntrusivePtr<Semaphore>;
 
 // ===========================

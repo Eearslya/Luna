@@ -2,6 +2,7 @@
 
 #include <Luna/Application/Input.hpp>
 #include <Luna/Utility/Delegate.hpp>
+#include <Luna/Utility/Timer.hpp>
 #include <Luna/Vulkan/Common.hpp>
 #include <glm/glm.hpp>
 #include <vector>
@@ -27,6 +28,13 @@ class WSIPlatform {
 	virtual void Initialize()                               = 0;
 	virtual void Update()                                   = 0;
 	virtual void Shutdown()                                 = 0;
+
+	FrameTimer& GetFrameTimer() {
+		return _timer;
+	}
+
+ private:
+	FrameTimer _timer;
 };
 
 class WSI {
