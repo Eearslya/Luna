@@ -209,6 +209,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 	void DestroyTracingContexts();
 	void FlushPipelineCache();
 	FrameContext& Frame();
+	void PromoteReadWriteCachesToReadOnly();
 	void ReleaseFence(vk::Fence fence);
 	void ReleaseSemaphore(vk::Semaphore semaphore);
 	const Framebuffer& RequestFramebuffer(const RenderPassInfo& rpInfo);

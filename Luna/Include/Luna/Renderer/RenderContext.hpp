@@ -55,7 +55,7 @@ class RenderContext {
 		return _shaders;
 	}
 
-	void BeginFrame();
+	void BeginFrame(uint32_t frameIndex);
 	void ReloadShaders();
 	void SetCamera(const glm::mat4& projection, const glm::mat4& view);
 	uint32_t SetTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler);
@@ -73,6 +73,7 @@ class RenderContext {
 	Vulkan::BindlessAllocator _bindless;
 	RenderParameters _camera;
 	DefaultImages _defaultImages;
+	uint32_t _frameIndex = 0;
 	Shaders _shaders;
 
 	std::vector<Vulkan::ImageHandle> _bindlessImages;

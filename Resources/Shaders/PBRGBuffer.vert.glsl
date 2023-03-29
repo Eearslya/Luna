@@ -1,9 +1,7 @@
 #version 460 core
 
-layout(location = 0) in vec3 inPosition;
-layout(location = 1) in vec3 inNormal;
-layout(location = 2) in vec4 inTangent;
-layout(location = 3) in vec2 inUV0;
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_scalar_block_layout : require
 
 layout(set = 0, binding = 0) uniform TransformData {
   mat4 Projection;
@@ -22,14 +20,35 @@ layout(set = 0, binding = 0) uniform TransformData {
 	float ZFar;
 } Transform;
 
+struct Vertex {
+	vec3 Normal;
+	vec4 Tangent;
+	vec2 Texcoord0;
+	vec2 Texcoord1;
+	vec4 Color0;
+	uvec4 Joints0;
+	vec4 Weights0;
+};
+
+layout(buffer_reference, scalar) readonly buffer PositionData { vec3 P[]; };
+layout(buffer_reference, scalar) readonly buffer VertexData { Vertex V[]; };
+
 layout(push_constant) uniform PushConstant {
 	mat4 Model;
+	PositionData Positions;
+	VertexData Vertices;
 } PC;
 
 layout(location = 0) out vec2 outUV0;
 layout(location = 1) out mat3 outTBN;
 
 void main() {
+	vec3 inPosition = PC.Positions.P[gl_VertexIndex];
+	Vertex inVertex = PC.Vertices.V[gl_VertexIndex];
+	vec3 inNormal = inVertex.Normal;
+	vec4 inTangent = inVertex.Tangent;
+	vec2 inUV0 = inVertex.Texcoord0;
+
 	mat4x3 worldTransform = mat4x3(PC.Model);
 
 	vec3 worldPosition = worldTransform * vec4(inPosition, 1.0f);

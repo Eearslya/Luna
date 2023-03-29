@@ -11,6 +11,8 @@
 
 struct ForwardPushConstant {
 	glm::mat4 Model;
+	vk::DeviceAddress PositionBuffer;
+	vk::DeviceAddress AttributeBuffer;
 };
 
 GBufferRenderer::GBufferRenderer(Luna::RenderContext& context, Luna::Scene& scene)
@@ -28,6 +30,8 @@ void GBufferRenderer::BuildRenderPass(Luna::Vulkan::CommandBuffer& cmd) {
 
 	const auto& registry = _scene.GetRegistry();
 
+	std::vector<const Luna::StaticMesh*> staticMeshes;
+
 	auto renderables = registry.view<Luna::MeshRendererComponent>();
 	for (auto entityId : renderables) {
 		auto [cMeshRenderer] = renderables.get(entityId);
@@ -36,20 +40,11 @@ void GBufferRenderer::BuildRenderPass(Luna::Vulkan::CommandBuffer& cmd) {
 		const auto& mesh = *cMeshRenderer.StaticMesh;
 		const Luna::Entity entity(entityId, _scene);
 		const auto transform = entity.GetGlobalTransform();
-		ForwardPushConstant pc{transform};
+		ForwardPushConstant pc{
+			transform, mesh.PositionBuffer->GetDeviceAddress(), mesh.AttributeBuffer->GetDeviceAddress()};
 
 		cmd.SetProgram(_context.GetShaders().PBRGBuffer);
-		cmd.SetVertexBinding(0, *mesh.PositionBuffer, 0, mesh.PositionStride, vk::VertexInputRate::eVertex);
 		if (mesh.IndexOffset > 0) { cmd.SetIndexBuffer(*mesh.PositionBuffer, mesh.IndexOffset, mesh.IndexType); }
-		if (mesh.AttributeBuffer) {
-			cmd.SetVertexBinding(1, *mesh.AttributeBuffer, 0, mesh.AttributeStride, vk::VertexInputRate::eVertex);
-		}
-		for (int i = 0; i < Luna::MeshAttributeTypeCount; ++i) {
-			const auto& attr = mesh.Attributes[i];
-			if (attr.Format != vk::Format::eUndefined) {
-				cmd.SetVertexAttribute(i, i == 0 ? 0 : 1, attr.Format, attr.Offset);
-			}
-		}
 		cmd.PushConstants(&pc, 0, sizeof(pc));
 
 		const auto submeshes = mesh.GatherOpaque();

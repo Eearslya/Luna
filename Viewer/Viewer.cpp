@@ -181,7 +181,7 @@ class ViewerApplication : public Luna::Application {
 			const float aspectRatio    = float(fbSize.x) / float(fbSize.y);
 			const glm::mat4 projection = glm::perspective(glm::radians(60.0f), aspectRatio, 0.01f, 1000.0f);
 			const glm::mat4 view       = glm::lookAt(glm::vec3(2, 1.0f, 1), glm::vec3(0, 0.8f, 0), glm::vec3(0, 1, 0));
-			_renderContext->BeginFrame();
+			_renderContext->BeginFrame(GetDevice().GetFrameIndex());
 			_renderContext->SetCamera(projection, view);
 		});
 	}

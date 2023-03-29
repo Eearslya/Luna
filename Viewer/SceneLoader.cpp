@@ -931,7 +931,7 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 			const Luna::Vulkan::BufferCreateInfo posBufferCI(
 				Luna::Vulkan::BufferDomain::Device,
 				positionSize + indexSize,
-				vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer);
+				vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress);
 			mesh->PositionBuffer = context.Device.CreateBuffer(posBufferCI, posBufferData.data());
 
 			mesh->PositionStride                                            = sizeof(glm::vec3);
@@ -941,7 +941,7 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 			mesh->Attributes[int(Luna::MeshAttributeType::Position)].Offset = 0;
 
 			const Luna::Vulkan::BufferCreateInfo attrBufferCI(
-				Luna::Vulkan::BufferDomain::Device, vertexSize, vk::BufferUsageFlagBits::eVertexBuffer);
+				Luna::Vulkan::BufferDomain::Device, vertexSize, vk::BufferUsageFlagBits::eShaderDeviceAddress);
 			mesh->AttributeBuffer = context.Device.CreateBuffer(attrBufferCI, attrBufferData.data());
 			mesh->AttributeStride = sizeof(Vertex);
 			mesh->Attributes[int(Luna::MeshAttributeType::Normal)].Format    = vk::Format::eR32G32B32Sfloat;

@@ -269,7 +269,13 @@ void Device::NextFrame() {
 	_framebufferAllocator->BeginFrame();
 	_transientAttachmentAllocator->BeginFrame();
 
+	for (auto& allocator : _descriptorSetAllocators.GetReadOnly()) { allocator.BeginFrame(); }
+	for (auto& allocator : _descriptorSetAllocators.GetReadWrite()) { allocator.BeginFrame(); }
+
 	_currentFrameContext = (_currentFrameContext + 1) % _frameContexts.size();
+
+	PromoteReadWriteCachesToReadOnly();
+
 	Frame().Begin();
 }
 
@@ -309,10 +315,16 @@ BindlessDescriptorPoolHandle Device::CreateBindlessDescriptorPool(uint32_t setCo
 
 BufferHandle Device::CreateBuffer(const BufferCreateInfo& bufferInfo, const void* initial) {
 	const bool zeroInit = bufferInfo.Flags & BufferCreateFlagBits::ZeroInitialize;
+
+	// Sanity checks.
 	if (initial && zeroInit) {
-		throw std::logic_error("[Vulkan] Cannot create a buffer with initial data and zero-initialize flag set.");
+		Log::Error("Vulkan", "Cannot create a buffer with initial data and zero-initialize flag set.");
+		return {};
 	}
-	if (bufferInfo.Size == 0) { throw std::logic_error("[Vulkan] Cannot create a buffer of 0 size."); }
+	if (bufferInfo.Size == 0) {
+		Log::Error("Vulkan", "Cannot create a buffer of 0 size.");
+		return {};
+	}
 
 	BufferCreateInfo actualInfo = bufferInfo;
 	actualInfo.Usage |= vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eTransferSrc;
@@ -328,15 +340,19 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& bufferInfo, const void
 	VmaAllocation allocation = nullptr;
 	VmaAllocationInfo allocationInfo;
 
-	const VkResult res = vmaCreateBuffer(_allocator,
-	                                     reinterpret_cast<const VkBufferCreateInfo*>(&bufferCI),
-	                                     &bufferAI,
-	                                     &buffer,
-	                                     &allocation,
-	                                     &allocationInfo);
-	if (res != VK_SUCCESS) {
-		Log::Error("Vulkan", "Failed to create buffer: {}", vk::to_string(vk::Result(res)));
-		return {};
+	{
+		DeviceMemoryLock();
+
+		const VkResult res = vmaCreateBuffer(_allocator,
+		                                     reinterpret_cast<const VkBufferCreateInfo*>(&bufferCI),
+		                                     &bufferAI,
+		                                     &buffer,
+		                                     &allocation,
+		                                     &allocationInfo);
+		if (res != VK_SUCCESS) {
+			Log::Error("Vulkan", "Failed to create buffer: {}", vk::to_string(vk::Result(res)));
+			return {};
+		}
 	}
 	Log::Trace("Vulkan", "Buffer created.");
 
@@ -1049,6 +1065,8 @@ void Device::CreateFrameContexts(uint32_t count) {
 	DeviceFlush();
 	WaitIdleNoLock();
 
+	_framebufferAllocator->Clear();
+	_transientAttachmentAllocator->Clear();
 	_frameContexts.clear();
 	for (uint32_t i = 0; i < count; ++i) { _frameContexts.push_back(std::make_unique<FrameContext>(*this, i)); }
 }
@@ -1300,6 +1318,21 @@ void Device::FlushPipelineCache() {
 
 Device::FrameContext& Device::Frame() {
 	return *_frameContexts[_currentFrameContext];
+}
+
+void Device::PromoteReadWriteCachesToReadOnly() {
+	if (_lock.ReadOnlyCache.TryLockWrite()) {
+		_descriptorSetAllocators.MoveToReadOnly();
+		_immutableSamplers.MoveToReadOnly();
+		_pipelineLayouts.MoveToReadOnly();
+		_programs.MoveToReadOnly();
+		_renderPasses.MoveToReadOnly();
+		_shaders.MoveToReadOnly();
+
+		for (auto& program : _programs.GetReadOnly()) {}
+
+		_lock.ReadOnlyCache.UnlockWrite();
+	}
 }
 
 void Device::ReleaseFence(vk::Fence fence) {
@@ -1673,6 +1706,7 @@ void Device::SubmitStaging(CommandBufferHandle& cmd, bool flush) {
 	SubmitNoLock(cmd, nullptr, &semaphores);
 	semaphores[0]->SetInternalSync();
 	semaphores[1]->SetInternalSync();
+	// TODO: Can we do better than "AllCommands"?
 	AddWaitSemaphoreNoLock(QueueType::Graphics, semaphores[0], vk::PipelineStageFlagBits2::eAllCommands, flush);
 	AddWaitSemaphoreNoLock(QueueType::Compute, semaphores[1], vk::PipelineStageFlagBits2::eAllCommands, flush);
 }

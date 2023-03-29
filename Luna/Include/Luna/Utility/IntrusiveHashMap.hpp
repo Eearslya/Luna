@@ -70,7 +70,7 @@ class IntrusiveHashMapHolder {
 	}
 
 	T* Erase(T* value) {
-		Erase(GetHash(value));
+		return Erase(GetHash(value));
 	}
 
 	T* Find(Hash hash) const {
