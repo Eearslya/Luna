@@ -9,6 +9,11 @@
 
 namespace Luna {
 struct MaterialData {
+	bool operator==(const MaterialData& other) const {
+		return AlbedoIndex == other.AlbedoIndex && NormalIndex == other.NormalIndex && PBRIndex == other.PBRIndex &&
+		       OcclusionIndex == other.OcclusionIndex && EmissiveIndex == other.EmissiveIndex;
+	}
+
 	uint32_t AlbedoIndex    = 0;
 	uint32_t NormalIndex    = 0;
 	uint32_t PBRIndex       = 0;
@@ -25,10 +30,20 @@ class Material : public IntrusivePtrEnabled<Material> {
  public:
 	void BindMaterial(Vulkan::CommandBuffer& cmd, RenderContext& context, uint32_t set, uint32_t binding) const {
 		auto* data          = cmd.AllocateTypedUniformData<MaterialData>(set, binding, 1);
-		data->AlbedoIndex   = BindTexture(cmd, context, Albedo, true, context.GetDefaultImages().Black2D);
-		data->NormalIndex   = BindTexture(cmd, context, Normal, false, context.GetDefaultImages().Normal2D);
-		data->PBRIndex      = BindTexture(cmd, context, PBR, false, context.GetDefaultImages().White2D);
-		data->EmissiveIndex = BindTexture(cmd, context, Emissive, true, context.GetDefaultImages().Black2D);
+		data->AlbedoIndex   = BindTexture(context, Albedo, true, context.GetDefaultImages().Black2D);
+		data->NormalIndex   = BindTexture(context, Normal, false, context.GetDefaultImages().Normal2D);
+		data->PBRIndex      = BindTexture(context, PBR, false, context.GetDefaultImages().White2D);
+		data->EmissiveIndex = BindTexture(context, Emissive, true, context.GetDefaultImages().Black2D);
+	}
+
+	MaterialData Data(RenderContext& context) const {
+		MaterialData data  = {};
+		data.AlbedoIndex   = BindTexture(context, Albedo, true, context.GetDefaultImages().Black2D);
+		data.NormalIndex   = BindTexture(context, Normal, false, context.GetDefaultImages().Normal2D);
+		data.PBRIndex      = BindTexture(context, PBR, false, context.GetDefaultImages().White2D);
+		data.EmissiveIndex = BindTexture(context, Emissive, true, context.GetDefaultImages().Black2D);
+
+		return data;
 	}
 
 	Texture Albedo;
@@ -39,14 +54,13 @@ class Material : public IntrusivePtrEnabled<Material> {
 	bool DualSided = false;
 
  private:
-	uint32_t BindTexture(Vulkan::CommandBuffer& cmd,
-	                     RenderContext& context,
+	uint32_t BindTexture(RenderContext& context,
 	                     const Texture& texture,
 	                     bool srgb,
 	                     const Vulkan::ImageHandle& fallback) const {
 		const Vulkan::Sampler& sampler =
 			texture.Sampler ? *texture.Sampler
-											: cmd.GetDevice().GetStockSampler(Vulkan::StockSampler::DefaultGeometryFilterWrap);
+											: context.GetDevice().GetStockSampler(Vulkan::StockSampler::DefaultGeometryFilterWrap);
 		if (texture.Image) {
 			if (srgb) {
 				return context.SetSrgbTexture(texture.Image->GetView(), sampler);
@@ -59,3 +73,17 @@ class Material : public IntrusivePtrEnabled<Material> {
 	}
 };
 }  // namespace Luna
+
+template <>
+struct std::hash<Luna::MaterialData> {
+	size_t operator()(const Luna::MaterialData& data) const {
+		Luna::Hasher h;
+		h(data.AlbedoIndex);
+		h(data.NormalIndex);
+		h(data.PBRIndex);
+		h(data.OcclusionIndex);
+		h(data.EmissiveIndex);
+
+		return static_cast<size_t>(h.Get());
+	}
+};

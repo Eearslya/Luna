@@ -47,6 +47,10 @@ RenderContext::RenderContext(Vulkan::Device& device) : _device(device), _bindles
 	ReloadShaders();
 }
 
+const uint32_t RenderContext::GetFrameContextCount() const {
+	return _device.GetFramesInFlight();
+}
+
 void RenderContext::BeginFrame(uint32_t frameIndex) {
 	_frameIndex = frameIndex;
 	_bindless.BeginFrame();

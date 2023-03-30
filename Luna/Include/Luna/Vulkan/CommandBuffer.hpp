@@ -243,6 +243,10 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	                 uint32_t firstIndex    = 0,
 	                 int32_t vertexOffset   = 0,
 	                 uint32_t firstInstance = 0);
+	void DrawIndexedIndirect(const Vulkan::Buffer& buffer,
+	                         vk::DeviceSize offset,
+	                         uint32_t drawCount,
+	                         vk::DeviceSize stride);
 	void PushConstants(const void* data, vk::DeviceSize offset, vk::DeviceSize range);
 	void SetBindless(uint32_t set, vk::DescriptorSet descSet);
 	void SetIndexBuffer(const Buffer& buffer, vk::DeviceSize offset, vk::IndexType indexType);
@@ -263,6 +267,9 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler);
 	void SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler);
 
+	void SetStorageBuffer(uint32_t set, uint32_t binding, const Buffer& buffer);
+	void SetStorageBuffer(
+		uint32_t set, uint32_t binding, const Buffer& buffer, vk::DeviceSize offset, vk::DeviceSize range);
 	void SetUniformBuffer(
 		uint32_t set, uint32_t binding, const Buffer& buffer, vk::DeviceSize offset = 0, vk::DeviceSize range = 0);
 	void SetVertexAttribute(uint32_t attribute, uint32_t binding, vk::Format format, vk::DeviceSize offset);
@@ -277,6 +284,19 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void NextSubpass(vk::SubpassContents contents = vk::SubpassContents::eInline);
 	void EndRenderPass();
 
+	void* AllocateIndexData(vk::DeviceSize size, vk::IndexType indexType);
+	template <typename T>
+	T* AllocateTypedIndexData(uint32_t count) {
+		if constexpr (std::is_same_v<T, uint32_t>) {
+			return static_cast<uint32_t*>(AllocateIndexData(count * sizeof(uint32_t), vk::IndexType::eUint32));
+		} else if constexpr (std::is_same_v<T, uint16_t>) {
+			return static_cast<uint16_t*>(AllocateIndexData(count * sizeof(uint16_t), vk::IndexType::eUint16));
+		} else if constexpr (std::is_same_v<T, uint8_t>) {
+			return static_cast<uint8_t*>(AllocateIndexData(count * sizeof(uint16_t), vk::IndexType::eUint8EXT));
+		} else {
+			return nullptr;
+		}
+	}
 	void* AllocateUniformData(uint32_t set, uint32_t binding, vk::DeviceSize size);
 	template <typename T>
 	T* AllocateTypedUniformData(uint32_t set, uint32_t binding, uint32_t count) {

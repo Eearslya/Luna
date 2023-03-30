@@ -102,6 +102,8 @@ class StaticMesh : public IntrusivePtrEnabled<StaticMesh> {
 
 	std::vector<IntrusivePtr<Material>> Materials;
 
+	std::vector<uint32_t> Indices;
+
  private:
 };
 }  // namespace Luna

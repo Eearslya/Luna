@@ -48,6 +48,16 @@ class RenderContext {
 	const DefaultImages& GetDefaultImages() const {
 		return _defaultImages;
 	}
+	Vulkan::Device& GetDevice() {
+		return _device;
+	}
+	const Vulkan::Device& GetDevice() const {
+		return _device;
+	}
+	const uint32_t GetFrameContextCount() const;
+	const uint32_t GetFrameIndex() const {
+		return _frameIndex;
+	}
 	const RenderParameters& GetRenderParameters() const {
 		return _camera;
 	}

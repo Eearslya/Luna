@@ -421,6 +421,13 @@ void CommandBuffer::DrawIndexed(
 	}
 }
 
+void CommandBuffer::DrawIndexedIndirect(const Vulkan::Buffer& buffer,
+                                        vk::DeviceSize offset,
+                                        uint32_t drawCount,
+                                        vk::DeviceSize stride) {
+	if (FlushRenderState(true)) { _commandBuffer.drawIndexedIndirect(buffer.GetBuffer(), offset, drawCount, stride); }
+}
+
 void CommandBuffer::PushConstants(const void* data, vk::DeviceSize offset, vk::DeviceSize range) {
 	assert(offset + range <= MaxPushConstantSize);
 	memcpy(_bindings.PushConstantData + offset, data, range);
@@ -577,6 +584,24 @@ void CommandBuffer::SetUnormTexture(uint32_t set, uint32_t binding, const ImageV
 	SetSampler(set, binding, sampler);
 }
 
+void CommandBuffer::SetStorageBuffer(uint32_t set, uint32_t binding, const Buffer& buffer) {
+	SetStorageBuffer(set, binding, buffer, 0, buffer.GetCreateInfo().Size);
+}
+
+void CommandBuffer::SetStorageBuffer(
+	uint32_t set, uint32_t binding, const Buffer& buffer, vk::DeviceSize offset, vk::DeviceSize range) {
+	auto& bind = _bindings.Bindings[set][binding];
+
+	if (buffer.GetCookie() == bind.Cookie && offset == bind.Buffer.offset && bind.Buffer.range == range) { return; }
+
+	bind.Buffer.buffer   = buffer.GetBuffer();
+	bind.Buffer.offset   = offset;
+	bind.Buffer.range    = range;
+	bind.Cookie          = buffer.GetCookie();
+	bind.SecondaryCookie = 0;
+	_dirtySets |= 1u << set;
+}
+
 void CommandBuffer::SetUniformBuffer(
 	uint32_t set, uint32_t binding, const Buffer& buffer, vk::DeviceSize offset, vk::DeviceSize range) {
 	if (range == 0) { range = buffer.GetCreateInfo().Size; }
@@ -684,6 +709,17 @@ void CommandBuffer::EndRenderPass() {
 	_pipelineState.CompatibleRenderPass = nullptr;
 
 	BeginCompute();
+}
+
+void* CommandBuffer::AllocateIndexData(vk::DeviceSize size, vk::IndexType indexType) {
+	auto data = _indexBlock.Allocate(size);
+	if (!data.Host) {
+		_device.RequestIndexBlock(_indexBlock, size);
+		data = _indexBlock.Allocate(size);
+	}
+	SetIndexBuffer(*_indexBlock.Gpu, data.Offset, indexType);
+
+	return data.Host;
 }
 
 void* CommandBuffer::AllocateUniformData(uint32_t set, uint32_t binding, vk::DeviceSize size) {
