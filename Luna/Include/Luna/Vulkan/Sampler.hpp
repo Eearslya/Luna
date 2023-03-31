@@ -6,6 +6,10 @@
 
 namespace Luna {
 namespace Vulkan {
+struct ImmutableSamplerBank {
+	const ImmutableSampler* Samplers[MaxDescriptorSets][MaxDescriptorBindings];
+};
+
 struct SamplerCreateInfo {
 	vk::Filter MagFilter                = vk::Filter::eNearest;
 	vk::Filter MinFilter                = vk::Filter::eNearest;
@@ -69,6 +73,25 @@ class ImmutableSampler : public HashedObject<ImmutableSampler> {
 };
 }  // namespace Vulkan
 }  // namespace Luna
+
+template <>
+struct std::hash<Luna::Vulkan::ImmutableSamplerBank> {
+	size_t operator()(const Luna::Vulkan::ImmutableSamplerBank& bank) const {
+		Luna::Hasher h;
+
+		uint32_t index = 0;
+		for (const auto& set : bank.Samplers) {
+			for (const auto& bind : set) {
+				if (bind) {
+					h(index++);
+					h(bind->GetHash());
+				}
+			}
+		}
+
+		return static_cast<size_t>(h.Get());
+	}
+};
 
 template <>
 struct std::hash<Luna::Vulkan::SamplerCreateInfo> {

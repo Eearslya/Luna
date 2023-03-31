@@ -1,11 +1,13 @@
 #include <imgui.h>
 
 #include <Luna/Luna.hpp>
+#include <Luna/Renderer/Environment.hpp>
 #include <Luna/Renderer/GlslCompiler.hpp>
 #include <Luna/Renderer/RenderContext.hpp>
 #include <Luna/Renderer/RenderGraph.hpp>
 #include <Luna/Renderer/RenderPass.hpp>
 #include <Luna/Scene/MeshRendererComponent.hpp>
+#include <Luna/Scene/SkyLightComponent.hpp>
 #include <Luna/Vulkan/ImGuiRenderer.hpp>
 #include <algorithm>
 #include <cmath>
@@ -18,6 +20,17 @@
 #include "IconsFontAwesome6.h"
 #include "SceneLoader.hpp"
 
+struct LightingData {
+	alignas(16) glm::mat4 InverseViewProjection;
+	alignas(16) glm::vec3 CameraPosition;
+	float IBLStrength;
+	glm::vec2 InverseResolution;
+	float PrefilteredMipLevels;
+	uint32_t Irradiance;
+	uint32_t Prefiltered;
+	uint32_t Brdf;
+};
+
 class ViewerApplication : public Luna::Application {
  public:
 	virtual void OnStart() override {
@@ -28,6 +41,10 @@ class ViewerApplication : public Luna::Application {
 
 		SceneLoader::LoadGltf(device, _scene, "assets://Models/DamagedHelmet/DamagedHelmet.gltf");
 		SceneLoader::LoadGltf(device, _scene, "assets://Models/Sponza/Sponza.gltf");
+
+		auto environment = Luna::MakeHandle<Luna::Environment>(device, "assets://Environments/TokyoBigSight.hdr");
+		auto skyLight    = _scene.CreateEntity("Sky Light");
+		skyLight.AddComponent<Luna::SkyLightComponent>(environment);
 
 		_swapchainConfig = GetSwapchainConfig();
 		OnSwapchainChanged += [&](const Luna::Vulkan::SwapchainConfiguration& config) {
@@ -84,7 +101,7 @@ class ViewerApplication : public Luna::Application {
 			Luna::AttachmentInfo albedo, normal, pbr, depth;
 			albedo.Format = vk::Format::eR8G8B8A8Srgb;
 			normal.Format = vk::Format::eR16G16Snorm;
-			pbr.Format    = vk::Format::eR8G8Unorm;
+			pbr.Format    = vk::Format::eR8G8B8A8Unorm;
 			depth.Format  = GetDevice().GetDefaultDepthFormat();
 
 			auto& gBuffer = _renderGraph->AddPass("GBuffer", Luna::RenderGraphQueueFlagBits::Graphics);
@@ -106,15 +123,42 @@ class ViewerApplication : public Luna::Application {
 			lighting.AddAttachmentInput("GBuffer-Albedo");
 			lighting.AddAttachmentInput("GBuffer-Normal");
 			lighting.AddAttachmentInput("GBuffer-PBR");
-			lighting.SetDepthStencilInput("Depth");
+			lighting.AddAttachmentInput("Depth");
 			lighting.AddColorOutput("Lighting", emissive, "GBuffer-Emissive");
 
 			lighting.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
+				const auto& dims = _renderGraph->GetResourceDimensions(_renderGraph->GetTextureResource("Lighting"));
+
+				LightingData light          = {};
+				const auto renderParams     = _renderContext->GetRenderParameters();
+				light.CameraPosition        = renderParams.CameraPosition;
+				light.InverseViewProjection = renderParams.InvViewProjection;
+				light.InverseResolution     = glm::vec2(1.0f / float(dims.Width), 1.0f / float(dims.Height));
+
+				const auto& registry = _scene.GetRegistry();
+				auto environments    = registry.view<Luna::SkyLightComponent>();
+				if (environments.size() > 0) {
+					const auto envId = environments[0];
+					const Luna::Entity env(envId, _scene);
+					const auto& skyLight = env.GetComponent<Luna::SkyLightComponent>();
+
+					light.IBLStrength          = 1.0f;
+					light.Irradiance           = _renderContext->SetTexture(skyLight.Environment->Irradiance->GetView(),
+                                                        Luna::Vulkan::StockSampler::TrilinearClamp);
+					light.Prefiltered          = _renderContext->SetTexture(skyLight.Environment->Prefiltered->GetView(),
+                                                         Luna::Vulkan::StockSampler::TrilinearClamp);
+					light.PrefilteredMipLevels = skyLight.Environment->Prefiltered->GetCreateInfo().MipLevels;
+					light.Brdf                 = _renderContext->SetTexture(skyLight.Environment->BrdfLut->GetView(),
+                                                  Luna::Vulkan::StockSampler::LinearClamp);
+				}
+
 				cmd.SetBlendEnable(true);
 				cmd.SetColorBlend(vk::BlendFactor::eOne, vk::BlendOp::eAdd, vk::BlendFactor::eOne);
 				cmd.SetDepthWrite(false);
 				cmd.SetInputAttachments(0, 0);
-				cmd.SetProgram(_renderContext->GetShaders().PBRDeferred);
+				cmd.SetBindless(1, _renderContext->GetBindlessSet());
+				cmd.SetProgram(_renderContext->GetShaders().PBRDeferred->GetProgram());
+				cmd.PushConstants(&light, 0, sizeof(light));
 				cmd.Draw(3);
 			});
 		}

@@ -1,10 +1,12 @@
 #include "GBufferRenderer.hpp"
 
+#include <Luna/Renderer/Environment.hpp>
 #include <Luna/Renderer/RenderContext.hpp>
 #include <Luna/Renderer/StaticMesh.hpp>
 #include <Luna/Scene/Entity.hpp>
 #include <Luna/Scene/MeshRendererComponent.hpp>
 #include <Luna/Scene/Scene.hpp>
+#include <Luna/Scene/SkyLightComponent.hpp>
 #include <Luna/Scene/TransformComponent.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
@@ -36,8 +38,15 @@ bool GBufferRenderer::GetClearColor(uint32_t attachment, vk::ClearColorValue* va
 void GBufferRenderer::BuildRenderPass(Luna::Vulkan::CommandBuffer& cmd) {
 	Luna::RenderParameters* params = cmd.AllocateTypedUniformData<Luna::RenderParameters>(0, 0, 1);
 	*params                        = _context.GetRenderParameters();
+
 	cmd.SetBindless(1, _context.GetBindlessSet());
 
+	RenderMeshes(cmd);
+}
+
+void GBufferRenderer::EnqueuePrepareRenderPass(Luna::RenderGraph& graph, Luna::TaskComposer& composer) {}
+
+void GBufferRenderer::RenderMeshes(Luna::Vulkan::CommandBuffer& cmd) {
 	const auto& registry = _scene.GetRegistry();
 
 	std::vector<uint32_t> indices;
@@ -45,9 +54,6 @@ void GBufferRenderer::BuildRenderPass(Luna::Vulkan::CommandBuffer& cmd) {
 	std::unordered_map<Luna::MaterialData, uint32_t> materials;
 	std::vector<ObjectData> objects;
 	std::vector<vk::DrawIndexedIndirectCommand> draws;
-
-	cmd.SetOpaqueState();
-	cmd.SetProgram(_context.GetShaders().PBRGBuffer);
 
 	auto renderables = registry.view<Luna::MeshRendererComponent>();
 	for (auto entityId : renderables) {
@@ -121,17 +127,11 @@ void GBufferRenderer::BuildRenderPass(Luna::Vulkan::CommandBuffer& cmd) {
 	void* indirectData = indirectBuffer->Map();
 	memcpy(indirectData, draws.data(), indirectBufferSize);
 
+	cmd.SetOpaqueState();
+
 	cmd.SetStorageBuffer(2, 0, *materialBuffer);
 	cmd.SetStorageBuffer(2, 1, *objectBuffer);
 
-	cmd.SetProgram(_context.GetShaders().PBRGBuffer);
-#if 0
+	cmd.SetProgram(_context.GetShaders().PBRGBuffer->GetProgram());
 	cmd.DrawIndexedIndirect(*indirectBuffer, 0, draws.size(), sizeof(vk::DrawIndexedIndirectCommand));
-#else
-	for (const auto& draw : draws) {
-		cmd.DrawIndexed(draw.indexCount, draw.instanceCount, draw.firstIndex, draw.vertexOffset, draw.firstInstance);
-	}
-#endif
 }
-
-void GBufferRenderer::EnqueuePrepareRenderPass(Luna::RenderGraph& graph, Luna::TaskComposer& composer) {}

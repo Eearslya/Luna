@@ -42,7 +42,7 @@ void ForwardRenderer::BuildRenderPass(Luna::Vulkan::CommandBuffer& cmd) {
 		const auto transform = entity.GetGlobalTransform();
 		ForwardPushConstant pc{transform};
 
-		cmd.SetProgram(_context.GetShaders().PBRForward);
+		cmd.SetProgram(_context.GetShaders().PBRForward->GetProgram());
 		cmd.SetVertexBinding(0, *mesh.PositionBuffer, 0, mesh.PositionStride, vk::VertexInputRate::eVertex);
 		if (mesh.IndexOffset > 0) { cmd.SetIndexBuffer(*mesh.PositionBuffer, mesh.IndexOffset, mesh.IndexType); }
 		if (mesh.AttributeBuffer) {

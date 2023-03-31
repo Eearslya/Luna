@@ -1,6 +1,7 @@
 #include <Luna/Platform/Filesystem.hpp>
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Vulkan/Device.hpp>
+#include <Luna/Vulkan/Sampler.hpp>
 #include <Luna/Vulkan/Shader.hpp>
 #include <Luna/Vulkan/ShaderManager.hpp>
 
@@ -20,7 +21,7 @@ ShaderTemplate::ShaderTemplate(Device& device,
                                MetaCache& cache,
                                Hash pathHash,
                                const std::vector<Path>& includeDirs)
-		: _device(device), _path(shaderPath), _stage(stage), _cache(cache), _pathHash(pathHash), _includeDirs(includeDirs) {
+		: _device(device), _path(shaderPath), _pathHash(pathHash), _stage(stage), _cache(cache), _includeDirs(includeDirs) {
 	auto filesystem = Filesystem::Get();
 
 	const auto ext = _path.Extension();
@@ -39,6 +40,30 @@ ShaderTemplate::ShaderTemplate(Device& device,
 			throw std::runtime_error("[ShaderManager] Failed to preprocess shader source.");
 		}
 		_sourceHash = _compiler->GetSourceHash();
+	}
+}
+
+ShaderTemplate::~ShaderTemplate() noexcept {}
+
+void ShaderTemplate::Recompile() {
+	auto newCompiler = std::make_unique<GlslCompiler>();
+	newCompiler->SetSourceFromFile(_path, _stage);
+	newCompiler->SetIncludeDirectories(_includeDirs);
+	if (!newCompiler->Preprocess()) {
+		Log::Error("ShaderManager", "Failed to preprocess {} shader!", VulkanEnumToString(_stage));
+		return;
+	}
+
+	_compiler   = std::move(newCompiler);
+	_sourceHash = _compiler->GetSourceHash();
+
+	for (auto& variant : _variants.GetReadOnly()) { RecompileVariant(variant); }
+	for (auto& variant : _variants.GetReadWrite()) { RecompileVariant(variant); }
+}
+
+void ShaderTemplate::RegisterDependencies(ShaderManager& manager) {
+	if (_compiler) {
+		for (auto& dep : _compiler->GetDependencies()) { manager.RegisterDependencyNoLock(this, dep); }
 	}
 }
 
@@ -99,6 +124,19 @@ const ShaderTemplateVariant* ShaderTemplate::RegisterVariant(const std::vector<s
 	return ret;
 }
 
+void ShaderTemplate::RecompileVariant(ShaderTemplateVariant& variant) {
+	std::string error;
+	auto newSpv = _compiler->Compile(error, variant.Defines);
+	if (newSpv.empty()) {
+		Log::Error("ShaderManager", "Failed to recompile {} shader: {}", VulkanEnumToString(_stage), error);
+		return;
+	}
+
+	variant.Spirv = std::move(newSpv);
+	variant.Instance++;
+	UpdateVariantCache(variant);
+}
+
 void ShaderTemplate::UpdateVariantCache(const ShaderTemplateVariant& variant) {
 	if (variant.Spirv.empty()) { return; }
 
@@ -119,9 +157,9 @@ void ShaderTemplate::UpdateVariantCache(const ShaderTemplateVariant& variant) {
 	_cache.ShaderToLayout.EmplaceYield(shaderHash, layout);
 }
 
-ShaderTemplate::~ShaderTemplate() noexcept {}
-
 ShaderProgramVariant::ShaderProgramVariant(Device& device) : _device(device) {
+	for (auto& inst : _shaderInstance) { inst.store(0, std::memory_order_relaxed); }
+	_program.store(nullptr, std::memory_order_relaxed);
 	std::fill(_stages.begin(), _stages.end(), nullptr);
 }
 
@@ -140,7 +178,26 @@ Vulkan::Program* ShaderProgramVariant::GetProgram() {
 }
 
 Vulkan::Program* ShaderProgramVariant::GetCompute() {
-	return nullptr;
+	Vulkan::Program* ret = nullptr;
+	auto* comp           = _stages[int(ShaderStage::Compute)];
+
+	ret = _device.RequestProgram(comp->Resolve(_device));
+
+	auto& compInstance      = _shaderInstance[int(ShaderStage::Compute)];
+	uint32_t loadedInstance = compInstance.load(std::memory_order_acquire);
+	if (loadedInstance == comp->Instance) { return _program.load(std::memory_order_relaxed); }
+
+	_instanceLock.LockWrite();
+	if (compInstance.load(std::memory_order_relaxed) != comp->Instance) {
+		ret = _device.RequestProgram(comp->Resolve(_device));
+		_program.store(ret, std::memory_order_relaxed);
+		compInstance.store(comp->Instance, std::memory_order_release);
+	} else {
+		ret = _program.load(std::memory_order_relaxed);
+	}
+	_instanceLock.UnlockWrite();
+
+	return ret;
 }
 
 Vulkan::Program* ShaderProgramVariant::GetGraphics() {
@@ -149,6 +206,26 @@ Vulkan::Program* ShaderProgramVariant::GetGraphics() {
 	auto* frag           = _stages[int(ShaderStage::Fragment)];
 
 	ret = _device.RequestProgram(vert->Resolve(_device), frag->Resolve(_device));
+
+	auto& vertInstance          = _shaderInstance[int(ShaderStage::Vertex)];
+	auto& fragInstance          = _shaderInstance[int(ShaderStage::Fragment)];
+	uint32_t loadedVertInstance = vertInstance.load(std::memory_order_acquire);
+	uint32_t loadedFragInstance = fragInstance.load(std::memory_order_acquire);
+	if (loadedVertInstance == vert->Instance && loadedFragInstance == frag->Instance) {
+		return _program.load(std::memory_order_relaxed);
+	}
+
+	_instanceLock.LockWrite();
+	if (vertInstance.load(std::memory_order_relaxed) != vert->Instance ||
+	    fragInstance.load(std::memory_order_relaxed) != frag->Instance) {
+		ret = _device.RequestProgram(vert->Resolve(_device), frag->Resolve(_device));
+		_program.store(ret, std::memory_order_relaxed);
+		vertInstance.store(vert->Instance, std::memory_order_release);
+		fragInstance.store(frag->Instance, std::memory_order_release);
+	} else {
+		ret = _program.load(std::memory_order_relaxed);
+	}
+	_instanceLock.UnlockWrite();
 
 	return ret;
 }
@@ -193,10 +270,90 @@ void ShaderProgram::SetStage(ShaderStage stage, ShaderTemplate* shader) {
 
 ShaderManager::ShaderManager(Device& device) : _device(device) {}
 
-ShaderManager::~ShaderManager() noexcept {};
+ShaderManager::~ShaderManager() noexcept {
+	for (auto& dir : _directoryWatches) {
+		if (dir.second.Backend) { dir.second.Backend->UnwatchFile(dir.second.Handle); }
+	}
+}
+
+bool ShaderManager::GetShaderHashByVariantHash(Hash variantHash, Hash& shaderHash) const {
+	auto* shader = _metaCache.VariantToShader.Find(variantHash);
+	if (shader) {
+		shaderHash = shader->ShaderHash;
+		return true;
+	}
+
+	return false;
+}
+
+bool ShaderManager::GetResourceLayoutByShaderHash(Hash shaderHash, ShaderResourceLayout& layout) const {
+	auto* shader = _metaCache.ShaderToLayout.Find(shaderHash);
+	if (shader) {
+		layout = shader->Value;
+		return true;
+	}
+
+	return false;
+}
+
+void ShaderManager::AddIncludeDirectory(const Path& path) {
+	if (std::find(_includeDirs.begin(), _includeDirs.end(), path) != _includeDirs.end()) { return; }
+
+	_includeDirs.push_back(path);
+}
+
+Program* ShaderManager::GetGraphics(const Path& vertex,
+                                    const Path& fragment,
+                                    const std::vector<std::pair<std::string, int>>& defines) {
+	auto* program = RegisterGraphics(vertex, fragment);
+	if (!program) { return nullptr; }
+
+	auto* variant = program->RegisterVariant(defines);
+	if (!variant) { return nullptr; }
+
+	return variant->GetProgram();
+}
+
+void ShaderManager::PromoteReadWriteCachesToReadOnly() {
+	_metaCache.ShaderToLayout.MoveToReadOnly();
+	_metaCache.VariantToShader.MoveToReadOnly();
+	_programs.MoveToReadOnly();
+	_shaders.MoveToReadOnly();
+}
 
 ShaderProgram* ShaderManager::RegisterCompute(const Path& compute) {
-	return nullptr;
+	auto* computeTemplate = GetTemplate(compute, ShaderStage::Compute);
+	if (!computeTemplate) { return nullptr; }
+
+	Hasher h;
+	h(computeTemplate->GetPathHash());
+	const auto hash = h.Get();
+
+	auto* ret = _programs.Find(hash);
+	if (!ret) { ret = _programs.EmplaceYield(hash, _device, *computeTemplate); }
+
+	return ret;
+}
+
+void ShaderManager::RegisterDependency(ShaderTemplate* shader, const Path& dependency) {
+	std::lock_guard lock(_dependencyLock);
+	RegisterDependencyNoLock(shader, dependency);
+}
+
+void ShaderManager::RegisterDependencyNoLock(ShaderTemplate* shader, const Path& dependency) {
+	auto* filesystem = Filesystem::Get();
+
+	_dependees[dependency].insert(shader);
+
+	const auto baseDir = dependency.BaseDirectory();
+	if (_directoryWatches.find(baseDir) != _directoryWatches.end()) { return; }
+
+	auto [protocol, path] = baseDir.ProtocolSplit();
+	auto* backend         = filesystem->GetBackend(protocol);
+	if (!backend) { return; }
+
+	FileNotifyHandle handle = backend->WatchFile(path, [this](const FileNotifyInfo& info) { Recompile(info); });
+	if (handle >= 0) { _directoryWatches[baseDir] = {backend, handle}; }
 }
 
 ShaderProgram* ShaderManager::RegisterGraphics(const Path& vertex, const Path& fragment) {
@@ -222,10 +379,28 @@ ShaderTemplate* ShaderManager::GetTemplate(const Path& path, ShaderStage stage) 
 	auto* ret = _shaders.Find(hash);
 	if (!ret) {
 		auto* shader = _shaders.Allocate(_device, path, stage, _metaCache, hash, _includeDirs);
-		ret          = _shaders.InsertYield(hash, shader);
+
+		{
+			std::lock_guard lock(_dependencyLock);
+			RegisterDependencyNoLock(shader, path);
+			shader->RegisterDependencies(*this);
+		}
+
+		ret = _shaders.InsertYield(hash, shader);
 	}
 
 	return ret;
+}
+
+void ShaderManager::Recompile(const FileNotifyInfo& info) {
+	if (info.Type == FileNotifyType::FileDeleted) { return; }
+
+	std::lock_guard lock(_dependencyLock);
+	for (auto& dep : _dependees[info.Path]) {
+		Log::Debug("ShaderManager", "Recompiling shader '{}'...", info.Path.String());
+		dep->Recompile();
+		dep->RegisterDependencies(*this);
+	}
 }
 }  // namespace Vulkan
 }  // namespace Luna

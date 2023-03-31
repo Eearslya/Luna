@@ -1,4 +1,5 @@
 target_sources(Luna PRIVATE
+	Environment.cpp
 	GlslCompiler.cpp
 	Material.cpp
 	Renderable.cpp

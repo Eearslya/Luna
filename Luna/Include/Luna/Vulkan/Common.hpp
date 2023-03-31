@@ -41,6 +41,7 @@ struct ImageCreateInfo;
 class ImageView;
 struct ImageViewCreateInfo;
 class ImmutableSampler;
+struct ImmutableSamplerBank;
 class PipelineLayout;
 class Program;
 struct ProgramResourceLayout;

@@ -227,9 +227,113 @@ void OSFilesystem::UnwatchFile(FileNotifyHandle handle) {
 	}
 }
 
-void OSFilesystem::Update() {}
+void OSFilesystem::Update() {
+	for (auto& handler : _handlers) {
+		if (WaitForSingleObject(handler.second.Event, 0) != WAIT_OBJECT_0) { continue; }
+
+		DWORD bytesReturned;
+		if (!GetOverlappedResult(handler.second.Handle, &handler.second.Overlapped, &bytesReturned, TRUE)) { continue; }
+
+		size_t offset                       = 0;
+		const FILE_NOTIFY_INFORMATION* info = nullptr;
+		do {
+			info = reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(
+				reinterpret_cast<const uint8_t*>(handler.second.AsyncBuffer) + offset);
+
+			const std::filesystem::path filePath(&info->FileName[0]);
+
+			FileNotifyInfo notify;
+			notify.Handle = handler.first;
+			notify.Path   = handler.second.Path / filePath.string();
+
+			switch (info->Action) {
+				case FILE_ACTION_ADDED:
+				case FILE_ACTION_RENAMED_NEW_NAME:
+					notify.Type = FileNotifyType::FileCreated;
+					if (handler.second.Function) { handler.second.Function(notify); }
+					break;
+
+				case FILE_ACTION_REMOVED:
+				case FILE_ACTION_RENAMED_OLD_NAME:
+					notify.Type = FileNotifyType::FileDeleted;
+					if (handler.second.Function) { handler.second.Function(notify); }
+					break;
+
+				case FILE_ACTION_MODIFIED:
+					notify.Type = FileNotifyType::FileChanged;
+					if (handler.second.Function) { handler.second.Function(notify); }
+					break;
+
+				default:
+					Log::Error("Filesystem", "Unknown file notify type.");
+					break;
+			}
+		} while (info->NextEntryOffset != 0);
+
+		UpdateWatch(handler.second);
+	}
+}
 
 FileNotifyHandle OSFilesystem::WatchFile(const Path& path, std::function<void(const FileNotifyInfo&)> func) {
-	return -1;
+	FileStat stat = {};
+	if (!Stat(path, stat)) {
+		Log::Error("Filesystem", "Cannot watch path '{}': File or folder does not exist.", path.String());
+		return -1;
+	}
+
+	if (stat.Type != PathType::Directory) {
+		Log::Error(
+			"Filesystem", "Cannot watch path '{}': Windows filesystem only supports directory watching.", path.String());
+		return -1;
+	}
+
+	const auto fsPath = GetFilesystemPath(path);
+	HANDLE handle     = CreateFileW(fsPath.c_str(),
+                              FILE_LIST_DIRECTORY,
+                              FILE_SHARE_WRITE | FILE_SHARE_READ | FILE_SHARE_DELETE,
+                              nullptr,
+                              OPEN_EXISTING,
+                              FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
+                              nullptr);
+	if (handle == INVALID_HANDLE_VALUE) {
+		Log::Error("Filesystem", "Cannot watch path '{}': Failed to open directory.", path.String());
+		return -1;
+	}
+
+	HANDLE event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+	if (event == nullptr) {
+		CloseHandle(handle);
+		return -1;
+	}
+
+	_handleId++;
+
+	Handler handler;
+	handler.Path     = _protocol + "://" + path.String();
+	handler.Function = std::move(func);
+	handler.Handle   = handle;
+	handler.Event    = event;
+
+	auto& h = _handlers[_handleId];
+	h       = std::move(handler);
+	UpdateWatch(h);
+
+	return _handleId;
+}
+
+void OSFilesystem::UpdateWatch(Handler& handler) {
+	handler.Overlapped        = {};
+	handler.Overlapped.hEvent = handler.Event;
+
+	auto ret =
+		ReadDirectoryChangesW(handler.Handle,
+	                        handler.AsyncBuffer,
+	                        sizeof(handler.AsyncBuffer),
+	                        FALSE,
+	                        FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_CREATION | FILE_NOTIFY_CHANGE_FILE_NAME,
+	                        nullptr,
+	                        &handler.Overlapped,
+	                        nullptr);
+	if (!ret && GetLastError() != ERROR_IO_PENDING) { Log::Error("Filesystem", "Failed to read directory changes."); }
 }
 }  // namespace Luna

@@ -6,6 +6,9 @@
 namespace Luna {
 class GlslCompiler {
  public:
+	const std::vector<Path>& GetDependencies() const {
+		return _dependencies;
+	}
 	Hash GetSourceHash() const {
 		return _sourceHash;
 	}

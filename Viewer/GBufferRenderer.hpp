@@ -19,6 +19,8 @@ class GBufferRenderer : public Luna::RenderPassInterface {
 	virtual void EnqueuePrepareRenderPass(Luna::RenderGraph& graph, Luna::TaskComposer& composer) override;
 
  private:
+	void RenderMeshes(Luna::Vulkan::CommandBuffer& cmd);
+
 	Luna::RenderContext& _context;
 	Luna::Scene& _scene;
 	Luna::RenderScene _renderScene;

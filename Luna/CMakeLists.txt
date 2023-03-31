@@ -68,7 +68,7 @@ target_compile_definitions(Luna
 	PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC)
 target_include_directories(Luna PUBLIC "Include")
 target_link_libraries(Luna
-	PUBLIC EnTT::EnTT glm imgui spdlog TracyClient Vulkan::Headers VulkanMemoryAllocator
+	PUBLIC EnTT::EnTT glm imgui spdlog stb TracyClient Vulkan::Headers VulkanMemoryAllocator
 	PRIVATE glfw glslang shaderc SPIRV SPIRV-Tools spirv-cross-cpp)
 
 add_subdirectory(Source)

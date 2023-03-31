@@ -1328,6 +1328,7 @@ void Device::PromoteReadWriteCachesToReadOnly() {
 		_programs.MoveToReadOnly();
 		_renderPasses.MoveToReadOnly();
 		_shaders.MoveToReadOnly();
+		_shaderManager->PromoteReadWriteCachesToReadOnly();
 
 		for (auto& program : _programs.GetReadOnly()) {}
 

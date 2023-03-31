@@ -7,9 +7,6 @@
 #include <Luna/Renderer/RenderScene.hpp>
 #include <Luna/Scene/Scene.hpp>
 
-#include "Environment.hpp"
-#include "Model.hpp"
-
 enum class SceneRendererFlagBits { ForwardOpaque = 1 << 0, ForwardTransparent = 1 << 1, ForwardZPrePass = 1 << 2 };
 using SceneRendererFlags = Luna::Bitmask<SceneRendererFlagBits>;
 template <>

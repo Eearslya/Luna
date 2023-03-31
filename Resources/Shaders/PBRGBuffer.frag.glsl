@@ -40,7 +40,7 @@ void main() {
 	outNormal = vec4(EncodeNormal(N), 0, 0);
 
 	vec3 orm = texture(Textures[nonuniformEXT(mat.PBR)], inUV0).xyz;
-	outPBR = vec4(orm.g, orm.b, 0, 0);
+	outPBR = vec4(0, orm.g, orm.b, 0);
 
 	vec3 emissive = texture(Textures[nonuniformEXT(mat.Emissive)], inUV0).rgb;
 	outEmissive = vec4(emissive, 0);

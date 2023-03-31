@@ -3,6 +3,7 @@
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Common.hpp>
 #include <Luna/Vulkan/DescriptorSet.hpp>
+#include <Luna/Vulkan/ShaderManager.hpp>
 #include <glm/glm.hpp>
 
 namespace Luna {
@@ -35,9 +36,10 @@ class RenderContext {
 	};
 
 	struct Shaders {
-		Vulkan::Program* PBRForward  = nullptr;
-		Vulkan::Program* PBRGBuffer  = nullptr;
-		Vulkan::Program* PBRDeferred = nullptr;
+		Vulkan::ShaderProgramVariant* PBRForward  = nullptr;
+		Vulkan::ShaderProgramVariant* PBRGBuffer  = nullptr;
+		Vulkan::ShaderProgramVariant* PBRDeferred = nullptr;
+		Vulkan::ShaderProgramVariant* Skybox      = nullptr;
 	};
 
 	RenderContext(Vulkan::Device& device);

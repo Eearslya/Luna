@@ -7,6 +7,7 @@
 
 namespace Luna {
 // Forward Declarations.
+class Environment;
 class Renderable;
 class RenderContext;
 class Renderer;
@@ -19,8 +20,9 @@ class RenderScene;
 class ShaderSuite;
 
 // Handle Declarations.
-using RenderableHandle = IntrusivePtr<Renderable>;
-using RendererHandle   = IntrusivePtr<Renderer>;
+using EnvironmentHandle = IntrusivePtr<Environment>;
+using RenderableHandle  = IntrusivePtr<Renderable>;
+using RendererHandle    = IntrusivePtr<Renderer>;
 
 /**
  * Describes an image attachment for a Render Pass.

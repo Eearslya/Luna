@@ -11,35 +11,15 @@ namespace Luna {
 static bool LoadGraphicsShader(Vulkan::Device& device,
                                const Path& vertex,
                                const Path& fragment,
-                               Vulkan::Program*& program) {
-	GlslCompiler vertexCompiler, fragmentCompiler;
+                               Vulkan::ShaderProgramVariant*& program) {
+	auto& shaderManager = device.GetShaderManager();
 
-	vertexCompiler.SetSourceFromFile(vertex, Vulkan::ShaderStage::Vertex);
-	fragmentCompiler.SetSourceFromFile(fragment, Vulkan::ShaderStage::Fragment);
+	auto* shaderProgram = shaderManager.RegisterGraphics(vertex, fragment);
+	auto* shaderVariant = shaderProgram->RegisterVariant();
 
-	if (!vertexCompiler.Preprocess()) { return false; }
-	if (!fragmentCompiler.Preprocess()) { return false; }
+	program = shaderVariant;
 
-	std::vector<uint32_t> vertexSpv, fragmentSpv;
-	std::string vertexError, fragmentError;
-	vertexSpv = vertexCompiler.Compile(vertexError);
-	if (vertexSpv.empty()) {
-		Log::Error("Viewer", "Failed to compile Vertex shader: {}", vertexError);
-		return false;
-	}
-	fragmentSpv = fragmentCompiler.Compile(fragmentError);
-	if (fragmentSpv.empty()) {
-		Log::Error("Viewer", "Failed to compile Fragment shader: {}", fragmentError);
-		return false;
-	}
-
-	auto* newProgram = device.RequestProgram(
-		vertexSpv.size() * sizeof(uint32_t), vertexSpv.data(), fragmentSpv.size() * sizeof(uint32_t), fragmentSpv.data());
-	if (newProgram) {
-		program = newProgram;
-		return true;
-	}
-	return false;
+	return program->GetProgram() != nullptr;
 };
 
 RenderContext::RenderContext(Vulkan::Device& device) : _device(device), _bindless(_device) {

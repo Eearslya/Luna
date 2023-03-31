@@ -54,6 +54,8 @@ class OSFilesystem : public FilesystemBackend {
 		OVERLAPPED Overlapped;
 	};
 
+	void UpdateWatch(Handler& handler);
+
 	std::filesystem::path _basePath;
 	std::unordered_map<FileNotifyHandle, Handler> _handlers;
 	FileNotifyHandle _handleId = 0;
