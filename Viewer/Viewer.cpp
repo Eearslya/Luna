@@ -89,6 +89,9 @@ class ViewerApplication : public Luna::Application {
 		                                              .Height = _swapchainConfig.Extent.height};
 		_renderGraph->SetBackbufferDimensions(backbufferDims);
 
+		Luna::AttachmentInfo vis;
+		vis.Format = vk::Format::eR32Uint;
+
 		Luna::AttachmentInfo emissive;
 		emissive.Format = vk::Format::eR16G16B16A16Sfloat;
 		if (GetDevice().IsFormatSupported(
@@ -96,8 +99,69 @@ class ViewerApplication : public Luna::Application {
 			emissive.Format = vk::Format::eB10G11R11UfloatPack32;
 		}
 
+		// Add Visibility Buffer Render Pass.
+		if (false) {
+			Luna::AttachmentInfo depth;
+			depth.Format = GetDevice().GetDefaultDepthFormat();
+
+			auto& visibility = _renderGraph->AddPass("Visibility", Luna::RenderGraphQueueFlagBits::Graphics);
+
+			visibility.AddColorOutput("Visibility-Data", vis);
+			visibility.SetDepthStencilOutput("Visibility-Depth", depth);
+
+			visibility.SetGetClearColor([](uint32_t, vk::ClearColorValue* value) {
+				if (value) { *value = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f); }
+				return true;
+			});
+			visibility.SetGetClearDepthStencil([](vk::ClearDepthStencilValue* value) {
+				if (value) { *value = vk::ClearDepthStencilValue(1.0f, 0); }
+				return true;
+			});
+			visibility.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
+				uint32_t nextObject = 0;
+
+				Luna::RenderParameters* params = cmd.AllocateTypedUniformData<Luna::RenderParameters>(0, 0, 1);
+				*params                        = _renderContext->GetRenderParameters();
+
+				cmd.SetProgram(_renderContext->GetShaders().Visibility->GetProgram());
+				const auto& registry = _scene.GetRegistry();
+				auto renderables     = registry.view<Luna::MeshRendererComponent>();
+				for (auto entityId : renderables) {
+					struct VisibilityPC {
+						glm::mat4 Transform;
+						uint32_t ObjectID;
+						uint32_t Masked;
+					};
+
+					auto [cMeshRenderer] = renderables.get(entityId);
+					if (!cMeshRenderer.StaticMesh) { continue; }
+
+					const auto& mesh = *cMeshRenderer.StaticMesh;
+					const Luna::Entity entity(entityId, _scene);
+					const auto transform = entity.GetGlobalTransform();
+
+					cmd.SetVertexBinding(0, *mesh.PositionBuffer, 0, mesh.PositionStride, vk::VertexInputRate::eVertex);
+					cmd.SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
+					uint32_t* indexBuffer = cmd.AllocateTypedIndexData<uint32_t>(mesh.Indices.size());
+					memcpy(indexBuffer, mesh.Indices.data(), mesh.Indices.size() * sizeof(uint32_t));
+
+					VisibilityPC pc{transform};
+
+					const auto submeshes = mesh.GatherOpaque();
+					for (const auto& submesh : submeshes) {
+						const auto& material = mesh.Materials[submesh->MaterialIndex];
+
+						pc.ObjectID = nextObject++;
+						pc.Masked   = material->AlphaMode == Luna::AlphaMode::Mask ? 1 : 0;
+						cmd.PushConstants(&pc, 0, sizeof(pc));
+						cmd.DrawIndexed(submesh->IndexCount, 1, submesh->FirstIndex, submesh->FirstVertex, 0);
+					}
+				}
+			});
+		}
+
 		// Add GBuffer Render Pass.
-		{
+		if (true) {
 			Luna::AttachmentInfo albedo, normal, pbr, depth;
 			albedo.Format = vk::Format::eR8G8B8A8Srgb;
 			normal.Format = vk::Format::eR16G16Snorm;
@@ -117,7 +181,7 @@ class ViewerApplication : public Luna::Application {
 		}
 
 		// Add Lighting Render Pass.
-		{
+		if (true) {
 			auto& lighting = _renderGraph->AddPass("Lighting", Luna::RenderGraphQueueFlagBits::Graphics);
 
 			lighting.AddAttachmentInput("GBuffer-Albedo");
@@ -159,6 +223,22 @@ class ViewerApplication : public Luna::Application {
 				cmd.SetBindless(1, _renderContext->GetBindlessSet());
 				cmd.SetProgram(_renderContext->GetShaders().PBRDeferred->GetProgram());
 				cmd.PushConstants(&light, 0, sizeof(light));
+				cmd.Draw(3);
+			});
+		}
+
+		// Add Visibility Buffer Debug Render Pass.
+		if (false) {
+			Luna::AttachmentInfo visColor;
+
+			auto& visDebug = _renderGraph->AddPass("VisibilityDebug", Luna::RenderGraphQueueFlagBits::Graphics);
+
+			visDebug.AddAttachmentInput("Visibility-Data");
+			visDebug.AddColorOutput("Visibility-Debug", visColor);
+
+			visDebug.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
+				cmd.SetProgram(_renderContext->GetShaders().VisibilityDebug->GetProgram());
+				cmd.SetInputAttachments(0, 0);
 				cmd.Draw(3);
 			});
 		}

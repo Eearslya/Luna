@@ -36,10 +36,12 @@ class RenderContext {
 	};
 
 	struct Shaders {
-		Vulkan::ShaderProgramVariant* PBRForward  = nullptr;
-		Vulkan::ShaderProgramVariant* PBRGBuffer  = nullptr;
-		Vulkan::ShaderProgramVariant* PBRDeferred = nullptr;
-		Vulkan::ShaderProgramVariant* Skybox      = nullptr;
+		Vulkan::ShaderProgramVariant* PBRForward      = nullptr;
+		Vulkan::ShaderProgramVariant* PBRGBuffer      = nullptr;
+		Vulkan::ShaderProgramVariant* PBRDeferred     = nullptr;
+		Vulkan::ShaderProgramVariant* Skybox          = nullptr;
+		Vulkan::ShaderProgramVariant* Visibility      = nullptr;
+		Vulkan::ShaderProgramVariant* VisibilityDebug = nullptr;
 	};
 
 	RenderContext(Vulkan::Device& device);

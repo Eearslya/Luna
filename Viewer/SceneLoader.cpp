@@ -704,6 +704,20 @@ static void LoadMaterials(Luna::TaskComposer& composer, GltfContext& context) {
 			Assign(gltfMaterial.normalTexture, material->Normal);
 			Assign(gltfMaterial.occlusionTexture, material->Occlusion);
 			Assign(gltfMaterial.emissiveTexture, material->Emissive);
+
+			switch (gltfMaterial.alphaMode) {
+				case fastgltf::AlphaMode::Opaque:
+					material->AlphaMode = Luna::AlphaMode::Opaque;
+					break;
+
+				case fastgltf::AlphaMode::Mask:
+					material->AlphaMode = Luna::AlphaMode::Mask;
+					break;
+
+				case fastgltf::AlphaMode::Blend:
+					material->AlphaMode = Luna::AlphaMode::Blend;
+					break;
+			}
 		});
 	}
 }
@@ -928,7 +942,9 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 			memcpy(attrBufferData.data(), meshVertices.data(), vertexSize);
 
 			const Luna::Vulkan::BufferCreateInfo posBufferCI(
-				Luna::Vulkan::BufferDomain::Device, positionSize, vk::BufferUsageFlagBits::eShaderDeviceAddress);
+				Luna::Vulkan::BufferDomain::Device,
+				positionSize,
+				vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress);
 			mesh->PositionBuffer = context.Device.CreateBuffer(posBufferCI, posBufferData.data());
 
 			mesh->PositionStride = sizeof(glm::vec3);
@@ -938,7 +954,9 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 			// mesh->Attributes[int(Luna::MeshAttributeType::Position)].Offset = 0;
 
 			const Luna::Vulkan::BufferCreateInfo attrBufferCI(
-				Luna::Vulkan::BufferDomain::Device, vertexSize, vk::BufferUsageFlagBits::eShaderDeviceAddress);
+				Luna::Vulkan::BufferDomain::Device,
+				vertexSize,
+				vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress);
 			mesh->AttributeBuffer = context.Device.CreateBuffer(attrBufferCI, attrBufferData.data());
 			// mesh->AttributeStride = sizeof(Vertex);
 			// mesh->Attributes[int(Luna::MeshAttributeType::Normal)].Format    = vk::Format::eR32G32B32Sfloat;

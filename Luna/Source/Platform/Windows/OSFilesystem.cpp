@@ -231,6 +231,13 @@ void OSFilesystem::Update() {
 	for (auto& handler : _handlers) {
 		if (WaitForSingleObject(handler.second.Event, 0) != WAIT_OBJECT_0) { continue; }
 
+		// Windows is sending two events for every file write. To prevent executing the callback twice, we ensure that at
+		// least one second has passed since our last change event.
+		if (handler.second.SinceLastEvent.End() < 1.0) {
+			UpdateWatch(handler.second);
+			continue;
+		}
+
 		DWORD bytesReturned;
 		if (!GetOverlappedResult(handler.second.Handle, &handler.second.Overlapped, &bytesReturned, TRUE)) { continue; }
 
@@ -240,7 +247,8 @@ void OSFilesystem::Update() {
 			info = reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(
 				reinterpret_cast<const uint8_t*>(handler.second.AsyncBuffer) + offset);
 
-			const std::filesystem::path filePath(&info->FileName[0]);
+			const std::wstring filePathStr(&info->FileName[0], info->FileNameLength / sizeof(WCHAR));
+			const std::filesystem::path filePath(filePathStr);
 
 			FileNotifyInfo notify;
 			notify.Handle = handler.first;
@@ -335,5 +343,7 @@ void OSFilesystem::UpdateWatch(Handler& handler) {
 	                        &handler.Overlapped,
 	                        nullptr);
 	if (!ret && GetLastError() != ERROR_IO_PENDING) { Log::Error("Filesystem", "Failed to read directory changes."); }
+
+	handler.SinceLastEvent.Start();
 }
 }  // namespace Luna

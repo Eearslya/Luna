@@ -284,7 +284,7 @@ ShaderResourceLayout Shader::ReflectShaderResourceLayout(size_t codeSize, const 
 					Log::Error("Vulkan::Shader", "Reflection error: Array dimension must be a literal.");
 				} else {
 					if (type.array.front() == 0) {
-						if (layout.BindlessSetMask & 1u << set) {
+						if (layout.BindlessSetMask & 1u << set && size != DescriptorSetLayout::UnsizedArray) {
 							Log::Error("Vulkan::Shader",
 							           "Reflection error: Bindless descriptor must be the last descriptor in a set.");
 						}

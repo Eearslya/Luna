@@ -8,6 +8,8 @@
 #include <Luna/Vulkan/Sampler.hpp>
 
 namespace Luna {
+enum class AlphaMode { Opaque, Mask, Blend };
+
 struct MaterialData {
 	bool operator==(const MaterialData& other) const {
 		return AlbedoIndex == other.AlbedoIndex && NormalIndex == other.NormalIndex && PBRIndex == other.PBRIndex &&
@@ -51,7 +53,8 @@ class Material : public IntrusivePtrEnabled<Material> {
 	Texture PBR;
 	Texture Occlusion;
 	Texture Emissive;
-	bool DualSided = false;
+	AlphaMode AlphaMode = AlphaMode::Opaque;
+	bool DualSided      = false;
 
  private:
 	uint32_t BindTexture(RenderContext& context,

@@ -397,7 +397,7 @@ void ShaderManager::Recompile(const FileNotifyInfo& info) {
 
 	std::lock_guard lock(_dependencyLock);
 	for (auto& dep : _dependees[info.Path]) {
-		Log::Debug("ShaderManager", "Recompiling shader '{}'...", info.Path.String());
+		Log::Debug("ShaderManager", "Recompiling shader '{}'...", dep->GetPath().String());
 		dep->Recompile();
 		dep->RegisterDependencies(*this);
 	}

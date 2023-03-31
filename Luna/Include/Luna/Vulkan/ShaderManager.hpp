@@ -44,6 +44,9 @@ class ShaderTemplate : public IntrusiveHashMapEnabled<ShaderTemplate> {
 	               const std::vector<Path>& includeDirs);
 	~ShaderTemplate() noexcept;
 
+	const Path& GetPath() const {
+		return _path;
+	}
 	Hash GetPathHash() const {
 		return _pathHash;
 	}

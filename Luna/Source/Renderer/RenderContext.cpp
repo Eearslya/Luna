@@ -83,6 +83,14 @@ void RenderContext::ReloadShaders() {
 				_device, "res://Shaders/PBRDeferred.vert.glsl", "res://Shaders/PBRDeferred.frag.glsl", _shaders.PBRDeferred)) {
 		return;
 	}
+	if (!LoadGraphicsShader(
+				_device, "res://Shaders/Visibility.vert.glsl", "res://Shaders/Visibility.frag.glsl", _shaders.Visibility)) {
+		return;
+	}
+	if (!LoadGraphicsShader(
+				_device, "res://Shaders/Fullscreen.vert.glsl", "res://Shaders/VisDebug.frag.glsl", _shaders.VisibilityDebug)) {
+		return;
+	}
 
 	Log::Info("RenderContext", "Shaders reloaded.");
 }

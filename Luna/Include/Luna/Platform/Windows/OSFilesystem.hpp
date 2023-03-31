@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Luna/Platform/Filesystem.hpp>
+#include <Luna/Utility/Timer.hpp>
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -52,6 +53,7 @@ class OSFilesystem : public FilesystemBackend {
 		HANDLE Event  = nullptr;
 		DWORD AsyncBuffer[1024];
 		OVERLAPPED Overlapped;
+		Timer SinceLastEvent;
 	};
 
 	void UpdateWatch(Handler& handler);

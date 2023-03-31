@@ -464,6 +464,10 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 	const auto& avail = _deviceInfo.AvailableFeatures;
 	auto& enable      = _deviceInfo.EnabledFeatures;
 
+	if (avail.Core.geometryShader) {
+		Log::Trace("Vulkan::Context", "Enabling Geometry Shaders.");
+		enable.Core.geometryShader = VK_TRUE;
+	}
 	if (avail.Core.multiDrawIndirect) {
 		Log::Trace("Vulkan::Context", "Enabling Multi-Draw Indirect.");
 		enable.Core.multiDrawIndirect = VK_TRUE;
