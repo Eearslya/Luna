@@ -72,6 +72,9 @@ class RenderGraph {
 	RenderPass* FindPass(const std::string& name);
 	std::vector<Vulkan::BufferHandle> ConsumePhysicalBuffers() const;
 	RenderBufferResource& GetBufferResource(const std::string& name);
+	Vulkan::Buffer& GetPhysicalBufferResource(const RenderBufferResource& resource);
+	Vulkan::Buffer& GetPhysicalBufferResource(uint32_t index);
+	Vulkan::ImageView& GetPhysicalTextureResource(const RenderTextureResource& resource);
 	Vulkan::ImageView& GetPhysicalTextureResource(uint32_t index);
 	RenderResource& GetProxyResource(const std::string& name);
 	ResourceDimensions GetResourceDimensions(const RenderBufferResource& resource) const;

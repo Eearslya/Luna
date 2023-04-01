@@ -36,10 +36,14 @@ class RenderContext {
 	};
 
 	struct Shaders {
+		Vulkan::ShaderProgramVariant* BloomDownsample = nullptr;
+		Vulkan::ShaderProgramVariant* BloomThreshold  = nullptr;
+		Vulkan::ShaderProgramVariant* BloomUpsample   = nullptr;
 		Vulkan::ShaderProgramVariant* PBRForward      = nullptr;
 		Vulkan::ShaderProgramVariant* PBRGBuffer      = nullptr;
 		Vulkan::ShaderProgramVariant* PBRDeferred     = nullptr;
 		Vulkan::ShaderProgramVariant* Skybox          = nullptr;
+		Vulkan::ShaderProgramVariant* Tonemap         = nullptr;
 		Vulkan::ShaderProgramVariant* Visibility      = nullptr;
 		Vulkan::ShaderProgramVariant* VisibilityDebug = nullptr;
 	};

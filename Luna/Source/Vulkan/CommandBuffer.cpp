@@ -1182,8 +1182,14 @@ void CommandBuffer::SetViewportScissor(const RenderPassInfo& info, const Framebu
 	rect.extent.width  = std::min(extent.width - rect.offset.x, rect.extent.width);
 	rect.extent.height = std::min(extent.height - rect.offset.y, rect.extent.height);
 
+#if 0
+	// Flips viewport up-side-down.
 	_viewport = vk::Viewport(
 		float(rect.offset.x), float(rect.extent.height), float(rect.extent.width), -float(rect.extent.height), 0.0f, 1.0f);
+#else
+	_viewport = vk::Viewport(
+		float(rect.offset.x), float(rect.offset.y), float(rect.extent.width), float(rect.extent.height), 0.0f, 1.0f);
+#endif
 	_scissor = rect;
 }
 }  // namespace Vulkan

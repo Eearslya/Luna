@@ -33,12 +33,15 @@ class Entity {
 		_scene->_registry.remove<T>(_handle);
 	}
 
+	std::vector<Entity> GetChildren() const;
 	glm::mat4 GetGlobalTransform() const;
 	glm::mat4 GetLocalTransform() const;
+	Entity GetParent() const;
 
 	void Rotate(const glm::vec3& rDelta);
 	void Scale(const glm::vec3& sDelta);
 	void Scale(float sDelta);
+	void SetParent(Entity newParent);
 	void Translate(const glm::vec3& tDelta);
 
 	TransformComponent& Transform();

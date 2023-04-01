@@ -7,12 +7,14 @@
 #include <Luna/Renderer/RenderGraph.hpp>
 #include <Luna/Renderer/RenderPass.hpp>
 #include <Luna/Scene/MeshRendererComponent.hpp>
+#include <Luna/Scene/PointLightComponent.hpp>
 #include <Luna/Scene/SkyLightComponent.hpp>
 #include <Luna/Vulkan/ImGuiRenderer.hpp>
 #include <algorithm>
 #include <cmath>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <utility>
 
 #include "ForwardRenderer.hpp"
@@ -24,11 +26,15 @@ struct LightingData {
 	alignas(16) glm::mat4 InverseViewProjection;
 	alignas(16) glm::vec3 CameraPosition;
 	float IBLStrength;
-	glm::vec2 InverseResolution;
 	float PrefilteredMipLevels;
 	uint32_t Irradiance;
 	uint32_t Prefiltered;
 	uint32_t Brdf;
+};
+
+struct PointLightData {
+	uint32_t PointLightCount = 0;
+	Luna::PointLightData PointLights[1024];
 };
 
 class ViewerApplication : public Luna::Application {
@@ -39,12 +45,32 @@ class ViewerApplication : public Luna::Application {
 
 		StyleImGui();
 
-		SceneLoader::LoadGltf(device, _scene, "assets://Models/DamagedHelmet/DamagedHelmet.gltf");
-		SceneLoader::LoadGltf(device, _scene, "assets://Models/Sponza/Sponza.gltf");
+		device.CreateBuffer(Luna::Vulkan::BufferCreateInfo(Luna::Vulkan::BufferDomain::Host, 1, {}));
+
+		auto helmet = SceneLoader::LoadGltf(device, _scene, "assets://Models/DamagedHelmet/DamagedHelmet.gltf");
+		auto sponza = SceneLoader::LoadGltf(device, _scene, "assets://Models/Sponza/Sponza.gltf");
+
+		helmet.Translate(glm::vec3(0, 0.5, 0));
+		helmet.Rotate(glm::vec3(0, 15, 0));
+		helmet.Scale(0.6);
 
 		auto environment = Luna::MakeHandle<Luna::Environment>(device, "assets://Environments/TokyoBigSight.hdr");
 		auto skyLight    = _scene.CreateEntity("Sky Light");
 		skyLight.AddComponent<Luna::SkyLightComponent>(environment);
+
+		{
+			auto pointLight = _scene.CreateEntity("Point Light");
+			pointLight.Translate(glm::vec3(-2, 1, -1));
+			auto& pl = pointLight.AddComponent<Luna::PointLightComponent>();
+		}
+		{
+			auto pointLight = _scene.CreateEntity("Point Light");
+			pointLight.Translate(glm::vec3(0, 0.2f, 1));
+			auto& pl      = pointLight.AddComponent<Luna::PointLightComponent>();
+			pl.Multiplier = 50.0f;
+			pl.Radiance   = glm::vec3(0.36f, 0.0f, 0.63f);
+			pl.Radius     = 3.0f;
+		}
 
 		_swapchainConfig = GetSwapchainConfig();
 		OnSwapchainChanged += [&](const Luna::Vulkan::SwapchainConfiguration& config) {
@@ -98,6 +124,17 @@ class ViewerApplication : public Luna::Application {
 					vk::Format::eB10G11R11UfloatPack32, vk::FormatFeatureFlagBits::eColorAttachment, vk::ImageTiling::eOptimal)) {
 			emissive.Format = vk::Format::eB10G11R11UfloatPack32;
 		}
+
+		Luna::AttachmentInfo blur;
+		blur.Width            = 0.5f;
+		blur.Height           = 0.5f;
+		blur.Format           = vk::Format::eR16G16B16A16Sfloat;
+		blur.SizeClass        = Luna::SizeClass::InputRelative;
+		blur.SizeRelativeName = "Lighting";
+
+		Luna::BufferInfo luminanceBuffer;
+		luminanceBuffer.Size  = 3 * sizeof(float);
+		luminanceBuffer.Usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eStorageBuffer;
 
 		// Add Visibility Buffer Render Pass.
 		if (false) {
@@ -197,7 +234,6 @@ class ViewerApplication : public Luna::Application {
 				const auto renderParams     = _renderContext->GetRenderParameters();
 				light.CameraPosition        = renderParams.CameraPosition;
 				light.InverseViewProjection = renderParams.InvViewProjection;
-				light.InverseResolution     = glm::vec2(1.0f / float(dims.Width), 1.0f / float(dims.Height));
 
 				const auto& registry = _scene.GetRegistry();
 				auto environments    = registry.view<Luna::SkyLightComponent>();
@@ -216,15 +252,141 @@ class ViewerApplication : public Luna::Application {
                                                   Luna::Vulkan::StockSampler::LinearClamp);
 				}
 
+				auto* point            = cmd.AllocateTypedUniformData<PointLightData>(0, 0, 1);
+				point->PointLightCount = 0;
+				auto pointLights       = registry.view<Luna::PointLightComponent>();
+				for (const auto entityId : pointLights) {
+					const Luna::Entity entity(entityId, _scene);
+					const auto& pointLight                       = pointLights.get<Luna::PointLightComponent>(entityId);
+					point->PointLights[point->PointLightCount++] = pointLight.Data(entity);
+				}
+
 				cmd.SetBlendEnable(true);
+				cmd.SetCullMode(vk::CullModeFlagBits::eNone);
 				cmd.SetColorBlend(vk::BlendFactor::eOne, vk::BlendOp::eAdd, vk::BlendFactor::eOne);
-				cmd.SetDepthWrite(false);
-				cmd.SetInputAttachments(0, 0);
+				cmd.SetInputAttachments(0, 1);
 				cmd.SetBindless(1, _renderContext->GetBindlessSet());
 				cmd.SetProgram(_renderContext->GetShaders().PBRDeferred->GetProgram());
 				cmd.PushConstants(&light, 0, sizeof(light));
 				cmd.Draw(3);
 			});
+		}
+
+		// Add Bloom Threshold Pass.
+		if (true) {
+			Luna::AttachmentInfo threshold;
+			threshold.Format           = vk::Format::eR16G16B16A16Sfloat;
+			threshold.SizeClass        = Luna::SizeClass::InputRelative;
+			threshold.Width            = 0.5f;
+			threshold.Height           = 0.5f;
+			threshold.SizeRelativeName = "Lighting";
+
+			auto& bloomThreshold = _renderGraph->AddPass("BloomThreshold", Luna::RenderGraphQueueFlagBits::Graphics);
+
+			auto& inputRes = bloomThreshold.AddTextureInput("Lighting");
+			bloomThreshold.AddColorOutput("BloomThreshold", threshold);
+
+			bloomThreshold.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
+				auto& input = _renderGraph->GetPhysicalTextureResource(inputRes);
+				cmd.SetTexture(0, 0, input, Luna::Vulkan::StockSampler::LinearClamp);
+
+				cmd.SetProgram(_renderContext->GetShaders().BloomThreshold->GetProgram());
+				cmd.SetCullMode(vk::CullModeFlagBits::eNone);
+				cmd.Draw(3);
+			});
+		}
+
+		// Add Bloom Downsample Passes.
+		if (true) {
+			for (int i = 0; i < 4; ++i) {
+				blur.Width /= 2;
+				blur.Height /= 2;
+
+				const std::string inputName  = i == 0 ? "BloomThreshold" : fmt::format("BloomDownsample{}", i - 1);
+				const std::string outputName = fmt::format("BloomDownsample{}", i);
+
+				auto& bloomDown = _renderGraph->AddPass(outputName, Luna::RenderGraphQueueFlagBits::Graphics);
+
+				auto& inputRes = bloomDown.AddTextureInput(inputName);
+				bloomDown.AddColorOutput(outputName, blur);
+
+				bloomDown.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
+					auto& input = _renderGraph->GetPhysicalTextureResource(inputRes);
+					cmd.SetTexture(0, 0, input, Luna::Vulkan::StockSampler::LinearClamp);
+
+					const glm::vec2 invTexelSize(1.0f / input.GetImage()->GetCreateInfo().Width,
+					                             1.0f / input.GetImage()->GetCreateInfo().Height);
+					cmd.PushConstants(glm::value_ptr(invTexelSize), 0, sizeof(invTexelSize));
+
+					cmd.SetProgram(_renderContext->GetShaders().BloomDownsample->GetProgram());
+					cmd.SetCullMode(vk::CullModeFlagBits::eNone);
+					cmd.Draw(3);
+				});
+			}
+		}
+
+		// Add Bloom Upsample Passes.
+		if (true) {
+			for (int i = 0; i < 3; ++i) {
+				blur.Width *= 2;
+				blur.Height *= 2;
+
+				const std::string inputName  = i == 0 ? "BloomDownsample3" : fmt::format("BloomUpsample{}", i - 1);
+				const std::string outputName = fmt::format("BloomUpsample{}", i);
+
+				auto& bloomUp = _renderGraph->AddPass(outputName, Luna::RenderGraphQueueFlagBits::Graphics);
+
+				auto& inputRes = bloomUp.AddTextureInput(inputName);
+				bloomUp.AddColorOutput(outputName, blur);
+
+				bloomUp.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
+					auto& input = _renderGraph->GetPhysicalTextureResource(inputRes);
+					cmd.SetTexture(0, 0, input, Luna::Vulkan::StockSampler::LinearClamp);
+
+					const glm::vec2 invTexelSize(1.0f / input.GetImage()->GetCreateInfo().Width,
+					                             1.0f / input.GetImage()->GetCreateInfo().Height);
+					cmd.PushConstants(glm::value_ptr(invTexelSize), 0, sizeof(invTexelSize));
+
+					cmd.SetProgram(_renderContext->GetShaders().BloomUpsample->GetProgram());
+					cmd.SetCullMode(vk::CullModeFlagBits::eNone);
+					cmd.Draw(3);
+				});
+			}
+		}
+
+		// Add Tonemap Render Pass.
+		if (true) {
+			Luna::AttachmentInfo tonemapped;
+			tonemapped.SizeClass        = Luna::SizeClass::InputRelative;
+			tonemapped.SizeRelativeName = "Lighting";
+
+			auto& tonemap = _renderGraph->AddPass("Tonemap", Luna::RenderGraphQueueFlagBits::Graphics);
+
+			auto& inputHdr   = tonemap.AddTextureInput("Lighting");
+			auto& inputBloom = tonemap.AddTextureInput("BloomUpsample2");
+			tonemap.AddColorOutput("Tonemapped", tonemapped);
+
+			tonemap.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
+				auto& hdr   = _renderGraph->GetPhysicalTextureResource(inputHdr);
+				auto& bloom = _renderGraph->GetPhysicalTextureResource(inputBloom);
+				cmd.SetTexture(0, 0, hdr, Luna::Vulkan::StockSampler::LinearClamp);
+				cmd.SetTexture(0, 1, bloom, Luna::Vulkan::StockSampler::LinearClamp);
+
+				const float exposure = 4.0;
+				cmd.PushConstants(&exposure, 0, sizeof(exposure));
+
+				cmd.SetProgram(_renderContext->GetShaders().Tonemap->GetProgram());
+				cmd.SetCullMode(vk::CullModeFlagBits::eNone);
+				cmd.Draw(3);
+			});
+		}
+
+		// Add Average Luminance Pass.
+		if (false) {
+			auto& luminance = _renderGraph->AddPass("Luminance", Luna::RenderGraphQueueFlagBits::Graphics);
+
+			luminance.AddTextureInput("Lighting", vk::PipelineStageFlagBits2::eComputeShader);
+			luminance.AddStorageOutput("Luminance-AverageUpdated", luminanceBuffer, "Luminance-Average");
 		}
 
 		// Add Visibility Buffer Debug Render Pass.
@@ -243,7 +405,7 @@ class ViewerApplication : public Luna::Application {
 			});
 		}
 
-		_renderGraph->SetBackbufferSource("Lighting");
+		_renderGraph->SetBackbufferSource("Tonemapped");
 
 		_renderGraph->Bake();
 		_renderGraph->InstallPhysicalBuffers(physicalBuffers);
@@ -301,10 +463,14 @@ class ViewerApplication : public Luna::Application {
 	void UpdateScene(Luna::TaskComposer& composer) {
 		auto& updates = composer.BeginPipelineStage();
 		updates.Enqueue([this]() {
-			const auto fbSize          = GetFramebufferSize();
-			const float aspectRatio    = float(fbSize.x) / float(fbSize.y);
-			const glm::mat4 projection = glm::perspective(glm::radians(60.0f), aspectRatio, 0.01f, 1000.0f);
-			const glm::mat4 view       = glm::lookAt(glm::vec3(2, 1.0f, 1), glm::vec3(0, 0.8f, 0), glm::vec3(0, 1, 0));
+			const auto fbSize       = GetFramebufferSize();
+			const float aspectRatio = float(fbSize.x) / float(fbSize.y);
+			glm::mat4 projection    = glm::perspective(glm::radians(60.0f), aspectRatio, 0.01f, 1000.0f);
+			projection[0].y *= -1.0f;
+			projection[1].y *= -1.0f;
+			projection[2].y *= -1.0f;
+			projection[3].y *= -1.0f;
+			const glm::mat4 view = glm::lookAt(glm::vec3(2, 1.0f, 1), glm::vec3(0, 0.8f, 0), glm::vec3(0, 1, 0));
 			_renderContext->BeginFrame(GetDevice().GetFrameIndex());
 			_renderContext->SetCamera(projection, view);
 		});

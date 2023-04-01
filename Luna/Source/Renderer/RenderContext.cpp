@@ -71,6 +71,24 @@ void RenderContext::CreateDefaultImages() {
 }
 
 void RenderContext::ReloadShaders() {
+	if (!LoadGraphicsShader(_device,
+	                        "res://Shaders/Fullscreen.vert.glsl",
+	                        "res://Shaders/BloomDownsample.frag.glsl",
+	                        _shaders.BloomDownsample)) {
+		return;
+	}
+	if (!LoadGraphicsShader(_device,
+	                        "res://Shaders/Fullscreen.vert.glsl",
+	                        "res://Shaders/BloomThreshold.frag.glsl",
+	                        _shaders.BloomThreshold)) {
+		return;
+	}
+	if (!LoadGraphicsShader(_device,
+	                        "res://Shaders/Fullscreen.vert.glsl",
+	                        "res://Shaders/BloomUpsample.frag.glsl",
+	                        _shaders.BloomUpsample)) {
+		return;
+	}
 	if (!LoadGraphicsShader(
 				_device, "res://Shaders/PBRForward.vert.glsl", "res://Shaders/PBRForward.frag.glsl", _shaders.PBRForward)) {
 		return;
@@ -80,7 +98,11 @@ void RenderContext::ReloadShaders() {
 		return;
 	}
 	if (!LoadGraphicsShader(
-				_device, "res://Shaders/PBRDeferred.vert.glsl", "res://Shaders/PBRDeferred.frag.glsl", _shaders.PBRDeferred)) {
+				_device, "res://Shaders/Fullscreen.vert.glsl", "res://Shaders/PBRDeferred.frag.glsl", _shaders.PBRDeferred)) {
+		return;
+	}
+	if (!LoadGraphicsShader(
+				_device, "res://Shaders/Fullscreen.vert.glsl", "res://Shaders/Tonemap.frag.glsl", _shaders.Tonemap)) {
 		return;
 	}
 	if (!LoadGraphicsShader(

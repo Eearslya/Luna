@@ -977,7 +977,7 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 	}
 }
 
-static void PopulateScene(GltfContext& context) {
+static void PopulateScene(GltfContext& context, Luna::Entity& entity) {
 	const std::function<void(Node*, Luna::Entity)> AddNode = [&](Node* node, Luna::Entity parent) {
 		auto entity = context.Scene.CreateChildEntity(parent);
 
@@ -993,10 +993,10 @@ static void PopulateScene(GltfContext& context) {
 		for (auto* childNode : node->Children) { AddNode(childNode, entity); }
 	};
 
-	for (auto* node : context.RootNodes) { AddNode(node, Luna::Entity{}); }
+	for (auto* node : context.RootNodes) { AddNode(node, entity); }
 }
 
-void SceneLoader::LoadGltf(Luna::Vulkan::Device& device, Luna::Scene& scene, const Luna::Path& gltfPath) {
+Luna::Entity SceneLoader::LoadGltf(Luna::Vulkan::Device& device, Luna::Scene& scene, const Luna::Path& gltfPath) {
 	auto* filesystem = Luna::Filesystem::Get();
 
 	GltfContext context = {.Device       = device,
@@ -1007,7 +1007,9 @@ void SceneLoader::LoadGltf(Luna::Vulkan::Device& device, Luna::Scene& scene, con
 	Luna::TaskComposer composer;
 
 	Parse(context);
-	if (!context.Asset) { return; }
+	if (!context.Asset) { return {}; }
+
+	auto root = scene.CreateEntity("Gltf");
 
 	Preallocate(context);
 	ImportSamplers(context);
@@ -1019,10 +1021,12 @@ void SceneLoader::LoadGltf(Luna::Vulkan::Device& device, Luna::Scene& scene, con
 	LoadMeshes(composer, context);
 
 	auto& addToScene = composer.BeginPipelineStage();
-	addToScene.Enqueue([&context]() { PopulateScene(context); });
+	addToScene.Enqueue([&context, &root]() { PopulateScene(context, root); });
 
 	auto final = composer.GetOutgoingTask();
 	final->Wait();
 
 	if (!context.Asset) { Luna::Log::Error("SceneLoader", "Failed to load glTF file to scene!"); }
+
+	return root;
 }

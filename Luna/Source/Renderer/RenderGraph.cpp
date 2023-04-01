@@ -7,6 +7,7 @@
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
+#include <Luna/Vulkan/ShaderManager.hpp>
 #include <glm/glm.hpp>
 
 namespace Luna {
@@ -373,6 +374,18 @@ RenderBufferResource& RenderGraph::GetBufferResource(const std::string& name) {
 	_resourceToIndex[name] = index;
 
 	return static_cast<RenderBufferResource&>(*_resources.back());
+}
+
+Vulkan::Buffer& RenderGraph::GetPhysicalBufferResource(const RenderBufferResource& resource) {
+	return GetPhysicalBufferResource(resource.GetPhysicalIndex());
+}
+
+Vulkan::Buffer& RenderGraph::GetPhysicalBufferResource(uint32_t index) {
+	return *_physicalBuffers[index];
+}
+
+Vulkan::ImageView& RenderGraph::GetPhysicalTextureResource(const RenderTextureResource& resource) {
+	return GetPhysicalTextureResource(resource.GetPhysicalIndex());
 }
 
 Vulkan::ImageView& RenderGraph::GetPhysicalTextureResource(uint32_t index) {
@@ -1612,46 +1625,21 @@ bool RenderGraph::NeedsInvalidate(const Barrier& barrier, const PipelineEvent& e
 void RenderGraph::PerformScaleRequests(Vulkan::CommandBuffer& cmd, const std::vector<ScaledClearRequest>& requests) {
 	if (requests.empty()) { return; }
 
-	const char* scaleShaderVert = R"VERTEX(
-#version 460 core
-layout(location = 0) out vec2 outUV;
-void main() {
-  vec2 p = vec2((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2);
-  outUV = vec2(p.x, 1.0f - p.y);
-  gl_Position = vec4(p * 2.0f - 1.0f, 0.0f, 1.0f);
-}
-)VERTEX";
+	std::vector<std::pair<std::string, int>> defines;
 
-	constexpr const char* scaleShaderFragFmt = R"FRAGMENT(
-#version 460 core
-layout(location = 0) in vec2 inUV;
-{}
-void main() {{
-  {}
-}}
-)FRAGMENT";
-
-	constexpr const char* scaleInputFmt = R"INPUT(
-layout(set = 0, binding = {0}) uniform sampler2D input{0};
-layout(location = {0}) out vec4 output{0};
-)INPUT";
-
-	constexpr const char* scaleOutputFmt = R"OUTPUT(
-  output{0} = textureLod(input{0}, inUV, 0);
-)OUTPUT";
-
-	std::vector<std::string> fragmentInputs(requests.size());
-	std::vector<std::string> fragmentOutputs(requests.size());
+	auto& shaderManager = cmd.GetDevice().GetShaderManager();
+	auto* shaderProgram =
+		shaderManager.RegisterGraphics("res://Shaders/Fullscreen.vert.glsl", "res://Shaders/Scale.frag.glsl");
 
 	for (auto& req : requests) {
-		fragmentInputs[req.Target]  = fmt::format(scaleInputFmt, req.Target);
-		fragmentOutputs[req.Target] = fmt::format(scaleOutputFmt, req.Target);
+		const std::string def = fmt::format("ATTACHMENT_{}", req.Target);
+		defines.push_back({def, 1});
 		cmd.SetTexture(0, req.Target, *_physicalAttachments[req.PhysicalResource], Vulkan::StockSampler::LinearClamp);
 	}
 
-	const std::string scaleShaderFrag =
-		fmt::format(scaleShaderFragFmt, fmt::join(fragmentInputs, "\n"), fmt::join(fragmentOutputs, "\n"));
-	auto* program = _device.RequestProgram(scaleShaderVert, scaleShaderFrag);
+	auto* variant = shaderProgram->RegisterVariant(defines);
+	auto* program = variant->GetProgram();
+
 	cmd.SetOpaqueState();
 	cmd.SetCullMode(vk::CullModeFlagBits::eNone);
 	cmd.SetProgram(program);

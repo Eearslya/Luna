@@ -6,5 +6,5 @@
 
 class SceneLoader {
  public:
-	static void LoadGltf(Luna::Vulkan::Device& device, Luna::Scene& scene, const Luna::Path& gltfPath);
+	static Luna::Entity LoadGltf(Luna::Vulkan::Device& device, Luna::Scene& scene, const Luna::Path& gltfPath);
 };
