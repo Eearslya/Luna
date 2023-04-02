@@ -1,7 +1,9 @@
 #pragma once
 
+#include <Luna/Renderer/RenderPass.hpp>
 #include <Luna/Utility/TemporaryHashMap.hpp>
 #include <Luna/Vulkan/Common.hpp>
+#include <functional>
 
 struct ImDrawData;
 
@@ -9,7 +11,7 @@ namespace Luna {
 namespace Vulkan {
 using ImGuiTextureId = uint64_t;
 
-class ImGuiRenderer {
+class ImGuiRenderer : public RenderPassInterface {
  public:
 	ImGuiRenderer(WSI& wsi);
 	~ImGuiRenderer() noexcept;
@@ -28,6 +30,13 @@ class ImGuiRenderer {
 	void BeginDockspace(bool background = true);
 	void EndDockspace();
 	void UpdateFontAtlas();
+
+	void SetRenderFunction(std::function<void()>&& func) {
+		_renderFunc = std::move(func);
+	}
+
+	virtual void BuildRenderPass(Vulkan::CommandBuffer& cmd) override;
+	virtual void EnqueuePrepareRenderPass(RenderGraph& graph, TaskComposer& composer) override;
 
  private:
 	struct ImGuiTexture : TemporaryHashMapEnabled<ImGuiTexture>, IntrusiveListEnabled<ImGuiTexture> {
@@ -52,6 +61,8 @@ class ImGuiRenderer {
 	std::vector<BufferHandle> _vertexBuffers;
 	std::vector<BufferHandle> _indexBuffers;
 	TemporaryHashMap<ImGuiTexture, 8, false> _textures;
+
+	std::function<void()> _renderFunc;
 };
 }  // namespace Vulkan
 }  // namespace Luna

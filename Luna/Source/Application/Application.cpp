@@ -29,7 +29,7 @@ Application::Application() {
 
 Application::~Application() noexcept {
 	Log::Info("Luna", "Luna Engine shutting down...");
-	_imguiRenderer.reset();
+	// _imguiRenderer.reset();
 	_wsi.reset();
 	_filesystem.reset();
 	_threading.reset();
@@ -44,7 +44,7 @@ bool Application::InitializeWSI(Vulkan::WSIPlatform* platform) {
 
 	_wsi->OnSwapchainChanged += [&](const Luna::Vulkan::SwapchainConfiguration& config) { OnSwapchainChanged(config); };
 
-	_imguiRenderer = std::make_unique<Vulkan::ImGuiRenderer>(*_wsi);
+	// _imguiRenderer = std::make_unique<Vulkan::ImGuiRenderer>(*_wsi);
 
 	return true;
 }
@@ -89,15 +89,7 @@ glm::uvec2 Application::GetFramebufferSize() const {
 	return _wsi->GetFramebufferSize();
 }
 
-Vulkan::ImGuiRenderer& Application::GetImGui() {
-	return *_imguiRenderer;
-}
-
 const Vulkan::SwapchainConfiguration& Application::GetSwapchainConfig() const {
 	return _wsi->GetSwapchainConfig();
-}
-
-void Application::UpdateImGuiFontAtlas() {
-	_imguiRenderer->UpdateFontAtlas();
 }
 }  // namespace Luna

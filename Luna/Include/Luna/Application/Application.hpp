@@ -88,17 +88,10 @@ class Application {
 	glm::uvec2 GetFramebufferSize() const;
 
 	/**
-	 * Retrieves the current ImGui Renderer. This can be used to set up fonts, styling, and to integrate with the Vulkan
-	 * graphics backend.
-	 */
-	Vulkan::ImGuiRenderer& GetImGui();
-
-	/**
 	 * Retrieves the current Swapchain configuration. This includes information such as the current size and format of the
 	 * swapchain.
 	 */
 	const Vulkan::SwapchainConfiguration& GetSwapchainConfig() const;
-	void UpdateImGuiFontAtlas();
 
 	/**
 	 * Callback function which is called whenever the Vulkan Swapchain is changed (usually during a window resize).
@@ -111,7 +104,6 @@ class Application {
 	std::unique_ptr<Filesystem> _filesystem;
 	std::unique_ptr<Threading> _threading;
 	std::unique_ptr<Vulkan::WSI> _wsi;
-	std::unique_ptr<Vulkan::ImGuiRenderer> _imguiRenderer;
 };
 
 /**

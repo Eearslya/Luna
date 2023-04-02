@@ -1,3 +1,4 @@
+#include <dds-ktx.h>
 #include <imgui.h>
 
 #include <Luna/Luna.hpp>
@@ -43,7 +44,41 @@ class ViewerApplication : public Luna::Application {
 		auto* filesystem = Luna::Filesystem::Get();
 		auto& device     = GetDevice();
 
+		_imGuiRenderer = Luna::MakeHandle<Luna::Vulkan::ImGuiRenderer>(GetWSI());
+		_imGuiRenderer->SetRenderFunction([&]() { OnImGuiRender(); });
+
 		StyleImGui();
+
+		// Load Tony McMapFace LUT
+		{
+			auto lutFile                    = filesystem->OpenReadOnlyMapping("res://Textures/TonyMcMapface.dds");
+			const void* data                = lutFile->Data();
+			ddsktx_texture_info textureInfo = {};
+			ddsktx_error error              = {};
+			if (!ddsktx_parse(&textureInfo, data, lutFile->GetSize(), &error)) {
+				Luna::Log::Error("Viewer", "Failed to load Tonemap LUT: {}", error.msg);
+				abort();
+			}
+
+			Luna::Vulkan::ImageCreateInfo imageCI = {};
+			imageCI.Format                        = vk::Format::eR16G16B16A16Sfloat;
+			imageCI.Width                         = textureInfo.width;
+			imageCI.Height                        = textureInfo.height;
+			imageCI.Depth                         = textureInfo.depth;
+			imageCI.Type                          = vk::ImageType::e3D;
+			imageCI.Usage                         = vk::ImageUsageFlagBits::eSampled;
+			imageCI.InitialLayout                 = vk::ImageLayout::eShaderReadOnlyOptimal;
+
+			ddsktx_sub_data subData;
+			ddsktx_get_sub(&textureInfo, &subData, data, lutFile->GetSize(), 0, 0, 0);
+
+			std::vector<Luna::Vulkan::ImageInitialData> layers(textureInfo.depth);
+			for (int i = 0; i < textureInfo.depth; ++i) {
+				layers[i].Data = static_cast<const uint8_t*>(subData.buff) + ((subData.row_pitch_bytes * subData.height) * i);
+			}
+
+			_lutTexture = device.CreateImage(imageCI, layers.data());
+		}
 
 		device.CreateBuffer(Luna::Vulkan::BufferCreateInfo(Luna::Vulkan::BufferDomain::Host, 1, {}));
 
@@ -100,7 +135,29 @@ class ViewerApplication : public Luna::Application {
 		final->Wait();
 	}
 
-	virtual void OnImGuiRender() override {}
+	virtual void OnImGuiRender() override {
+		if (ImGui::Begin("Renderer")) {
+			ImGui::SliderFloat("Exposure", &_exposure, 0.01f, 10.0f);
+
+			const char* view = _renderGraphView.empty() ? "Select..." : _renderGraphView.c_str();
+			if (ImGui::BeginCombo("Render Graph View", view)) {
+				for (uint32_t i = 0; i < _renderGraphViews.size(); ++i) {
+					if (ImGui::Selectable(_renderGraphViews[i].c_str(), false)) {
+						_renderGraphView = _renderGraphViews[i];
+						_swapchainDirty  = true;
+					}
+				}
+				ImGui::EndCombo();
+			}
+			if (!_renderGraphView.empty()) {
+				if (ImGui::Button("Reset View")) {
+					_renderGraphView.clear();
+					_swapchainDirty = true;
+				}
+			}
+		}
+		ImGui::End();
+	}
 
  private:
 	void BakeRenderGraph() {
@@ -135,6 +192,8 @@ class ViewerApplication : public Luna::Application {
 		Luna::BufferInfo luminanceBuffer;
 		luminanceBuffer.Size  = 3 * sizeof(float);
 		luminanceBuffer.Usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eStorageBuffer;
+
+		_renderGraphViews.clear();
 
 		// Add Visibility Buffer Render Pass.
 		if (false) {
@@ -215,6 +274,12 @@ class ViewerApplication : public Luna::Application {
 
 			auto renderer = Luna::MakeHandle<GBufferRenderer>(*_renderContext, _scene);
 			gBuffer.SetRenderPassInterface(renderer);
+
+			_renderGraphViews.push_back("GBuffer-Albedo");
+			_renderGraphViews.push_back("GBuffer-Normal");
+			_renderGraphViews.push_back("GBuffer-PBR");
+			_renderGraphViews.push_back("GBuffer-Emissive");
+			_renderGraphViews.push_back("Depth");
 		}
 
 		// Add Lighting Render Pass.
@@ -228,6 +293,8 @@ class ViewerApplication : public Luna::Application {
 			lighting.AddColorOutput("Lighting", emissive, "GBuffer-Emissive");
 
 			lighting.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
+				LunaCmdZone(cmd, "Deferred Lighting");
+
 				const auto& dims = _renderGraph->GetResourceDimensions(_renderGraph->GetTextureResource("Lighting"));
 
 				LightingData light          = {};
@@ -270,6 +337,8 @@ class ViewerApplication : public Luna::Application {
 				cmd.PushConstants(&light, 0, sizeof(light));
 				cmd.Draw(3);
 			});
+
+			_renderGraphViews.push_back("Lighting");
 		}
 
 		// Add Bloom Threshold Pass.
@@ -287,6 +356,8 @@ class ViewerApplication : public Luna::Application {
 			bloomThreshold.AddColorOutput("BloomThreshold", threshold);
 
 			bloomThreshold.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
+				LunaCmdZone(cmd, "Bloom Threshold");
+
 				auto& input = _renderGraph->GetPhysicalTextureResource(inputRes);
 				cmd.SetTexture(0, 0, input, Luna::Vulkan::StockSampler::LinearClamp);
 
@@ -294,6 +365,8 @@ class ViewerApplication : public Luna::Application {
 				cmd.SetCullMode(vk::CullModeFlagBits::eNone);
 				cmd.Draw(3);
 			});
+
+			_renderGraphViews.push_back("BloomThreshold");
 		}
 
 		// Add Bloom Downsample Passes.
@@ -311,6 +384,8 @@ class ViewerApplication : public Luna::Application {
 				bloomDown.AddColorOutput(outputName, blur);
 
 				bloomDown.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
+					LunaCmdZone(cmd, "Bloom Downsample");
+
 					auto& input = _renderGraph->GetPhysicalTextureResource(inputRes);
 					cmd.SetTexture(0, 0, input, Luna::Vulkan::StockSampler::LinearClamp);
 
@@ -322,6 +397,8 @@ class ViewerApplication : public Luna::Application {
 					cmd.SetCullMode(vk::CullModeFlagBits::eNone);
 					cmd.Draw(3);
 				});
+
+				_renderGraphViews.push_back(outputName);
 			}
 		}
 
@@ -340,6 +417,8 @@ class ViewerApplication : public Luna::Application {
 				bloomUp.AddColorOutput(outputName, blur);
 
 				bloomUp.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
+					LunaCmdZone(cmd, "Bloom Upsample");
+
 					auto& input = _renderGraph->GetPhysicalTextureResource(inputRes);
 					cmd.SetTexture(0, 0, input, Luna::Vulkan::StockSampler::LinearClamp);
 
@@ -351,15 +430,17 @@ class ViewerApplication : public Luna::Application {
 					cmd.SetCullMode(vk::CullModeFlagBits::eNone);
 					cmd.Draw(3);
 				});
+
+				_renderGraphViews.push_back(outputName);
 			}
 		}
 
+		Luna::AttachmentInfo tonemapped;
+		tonemapped.SizeClass        = Luna::SizeClass::InputRelative;
+		tonemapped.SizeRelativeName = "Lighting";
+
 		// Add Tonemap Render Pass.
 		if (true) {
-			Luna::AttachmentInfo tonemapped;
-			tonemapped.SizeClass        = Luna::SizeClass::InputRelative;
-			tonemapped.SizeRelativeName = "Lighting";
-
 			auto& tonemap = _renderGraph->AddPass("Tonemap", Luna::RenderGraphQueueFlagBits::Graphics);
 
 			auto& inputHdr   = tonemap.AddTextureInput("Lighting");
@@ -367,18 +448,22 @@ class ViewerApplication : public Luna::Application {
 			tonemap.AddColorOutput("Tonemapped", tonemapped);
 
 			tonemap.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
+				LunaCmdZone(cmd, "Tonemapping");
+
 				auto& hdr   = _renderGraph->GetPhysicalTextureResource(inputHdr);
 				auto& bloom = _renderGraph->GetPhysicalTextureResource(inputBloom);
 				cmd.SetTexture(0, 0, hdr, Luna::Vulkan::StockSampler::LinearClamp);
 				cmd.SetTexture(0, 1, bloom, Luna::Vulkan::StockSampler::LinearClamp);
+				cmd.SetTexture(0, 2, _lutTexture->GetView(), Luna::Vulkan::StockSampler::TrilinearClamp);
 
-				const float exposure = 4.0;
-				cmd.PushConstants(&exposure, 0, sizeof(exposure));
+				cmd.PushConstants(&_exposure, 0, sizeof(_exposure));
 
 				cmd.SetProgram(_renderContext->GetShaders().Tonemap->GetProgram());
 				cmd.SetCullMode(vk::CullModeFlagBits::eNone);
 				cmd.Draw(3);
 			});
+
+			_renderGraphViews.push_back("Tonemapped");
 		}
 
 		// Add Average Luminance Pass.
@@ -405,7 +490,22 @@ class ViewerApplication : public Luna::Application {
 			});
 		}
 
-		_renderGraph->SetBackbufferSource("Tonemapped");
+		// Add ImGui Render Pass.
+		if (true) {
+			Luna::AttachmentInfo ui;
+
+			auto& imgui = _renderGraph->AddPass("ImGUI", Luna::RenderGraphQueueFlagBits::Graphics);
+
+			if (!_renderGraphView.empty() && _renderGraph->TryGetTextureResource(_renderGraphView) != nullptr) {
+				imgui.AddColorOutput("UI", ui, _renderGraphView);
+			} else {
+				imgui.AddColorOutput("UI", ui, "Tonemapped");
+			}
+
+			imgui.SetRenderPassInterface(_imGuiRenderer);
+		}
+
+		_renderGraph->SetBackbufferSource("UI");
 
 		_renderGraph->Bake();
 		_renderGraph->InstallPhysicalBuffers(physicalBuffers);
@@ -457,7 +557,7 @@ class ViewerApplication : public Luna::Application {
 			io.Fonts->AddFontFromFileTTF("Resources/Fonts/FontAwesome6Free-Solid-900.otf", 16.0f, &faConfig, fontAwesome);
 		}
 
-		UpdateImGuiFontAtlas();
+		_imGuiRenderer->UpdateFontAtlas();
 	}
 
 	void UpdateScene(Luna::TaskComposer& composer) {
@@ -484,8 +584,16 @@ class ViewerApplication : public Luna::Application {
 	std::unique_ptr<Luna::RenderGraph> _renderGraph;
 	Luna::Vulkan::SwapchainConfiguration _swapchainConfig;
 	bool _swapchainDirty = true;
+	Luna::IntrusivePtr<Luna::Vulkan::ImGuiRenderer> _imGuiRenderer;
 
 	Luna::Scene _scene;
+
+	Luna::Vulkan::ImageHandle _lutTexture;
+
+	float _exposure = 4.0f;
+
+	std::string _renderGraphView = "";
+	std::vector<std::string> _renderGraphViews;
 };
 
 Luna::Application* Luna::CreateApplication(int argc, const char** argv) {

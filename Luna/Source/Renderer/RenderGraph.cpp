@@ -491,6 +491,13 @@ void RenderGraph::SetBackbufferDimensions(const ResourceDimensions& dim) {
 	_swapchainDimensions = dim;
 }
 
+RenderTextureResource* RenderGraph::TryGetTextureResource(const std::string& name) {
+	auto it = _resourceToIndex.find(name);
+	if (it != _resourceToIndex.end()) { return static_cast<RenderTextureResource*>(_resources[it->second].get()); }
+
+	return nullptr;
+}
+
 void RenderGraph::SetBackbufferSource(const std::string& name) {
 	_backbufferSource = name;
 }

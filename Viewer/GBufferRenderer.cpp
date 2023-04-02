@@ -11,6 +11,7 @@
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Image.hpp>
+#include <Luna/Vulkan/Tracing.hpp>
 
 struct ObjectData {
 	ObjectData() = default;
@@ -36,6 +37,8 @@ bool GBufferRenderer::GetClearColor(uint32_t attachment, vk::ClearColorValue* va
 }
 
 void GBufferRenderer::BuildRenderPass(Luna::Vulkan::CommandBuffer& cmd) {
+	LunaCmdZone(cmd, "GBuffer");
+
 	Luna::RenderParameters* params = cmd.AllocateTypedUniformData<Luna::RenderParameters>(0, 0, 1);
 	*params                        = _context.GetRenderParameters();
 

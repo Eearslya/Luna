@@ -103,7 +103,7 @@ Device::Device(Context& context)
 	CreateTimelineSemaphores();
 	CreateFrameContexts(2);
 
-	CreateTracingContexts();
+	// CreateTracingContexts();
 
 	_indexBlocks = std::make_unique<BufferPool>(*this, 4 * 1024, 16, vk::BufferUsageFlagBits::eIndexBuffer, false);
 	_indexBlocks->SetMaxRetainedBlocks(256);

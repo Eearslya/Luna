@@ -350,9 +350,9 @@ void ImGuiRenderer::Render(CommandBuffer& cmd, bool clear) {
 					const float scaleX    = 2.0f / drawData->DisplaySize.x;
 					const float scaleY    = 2.0f / drawData->DisplaySize.y;
 					const PushConstant pc = {.ScaleX     = scaleX,
-					                         .ScaleY     = -scaleY,
+					                         .ScaleY     = scaleY,
 					                         .TranslateX = -1.0f - drawData->DisplayPos.x * scaleX,
-					                         .TranslateY = 1.0f - drawData->DisplayPos.y * scaleY,
+					                         .TranslateY = -1.0f - drawData->DisplayPos.y * scaleY,
 					                         .SampleMode = sampleMode};
 					cmd.PushConstants(&pc, 0, sizeof(pc));
 
@@ -445,6 +445,16 @@ void ImGuiRenderer::UpdateFontAtlas() {
 	const auto imageCI = ImageCreateInfo::Immutable2D(
 		vk::Format::eR8Unorm, static_cast<uint32_t>(width), static_cast<uint32_t>(height), false);
 	_fontTexture = _wsi.GetDevice().CreateImage(imageCI, &data);
+}
+
+void ImGuiRenderer::BuildRenderPass(Vulkan::CommandBuffer& cmd) {
+	Render(cmd, false);
+}
+
+void ImGuiRenderer::EnqueuePrepareRenderPass(RenderGraph& graph, TaskComposer& composer) {
+	const auto& fbSize = _wsi.GetFramebufferSize();
+	BeginFrame(vk::Extent2D(fbSize.x, fbSize.y));
+	if (_renderFunc) { _renderFunc(); }
 }
 }  // namespace Vulkan
 }  // namespace Luna

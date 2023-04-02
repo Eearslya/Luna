@@ -83,6 +83,7 @@ class RenderGraph {
 	void InstallPhysicalBuffers(std::vector<Vulkan::BufferHandle>& buffers);
 	void SetBackbufferSource(const std::string& name);
 	void SetBackbufferDimensions(const ResourceDimensions& dim);
+	RenderTextureResource* TryGetTextureResource(const std::string& name);
 
  private:
 	struct Barrier {
