@@ -5,6 +5,11 @@ layout(location = 0) in vec2 inUV;
 layout(set = 0, binding = 0) uniform sampler2D HDR;
 layout(set = 0, binding = 1) uniform sampler2D Bloom;
 layout(set = 0, binding = 2) uniform sampler3D LUT;
+layout(set = 0, binding = 3) uniform LuminanceData {
+	float AverageLogLuminance;
+	float AverageLinearLuminance;
+	float AverageInvLinearLuminance;
+};
 
 layout(push_constant) uniform PushConstant {
 	float Exposure;
@@ -48,5 +53,5 @@ void main() {
 	vec3 bloom = textureLod(Bloom, inUV, 0).rgb;
 	color += bloom;
 
-	outColor = vec4(TonyMcMapface(color) * Exposure, 1.0);
+	outColor = vec4(TonyMcMapface(color * (AverageInvLinearLuminance * Exposure)), 1.0);
 }

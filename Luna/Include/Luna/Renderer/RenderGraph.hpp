@@ -194,6 +194,7 @@ class RenderGraph {
 	void GetQueueType(Vulkan::CommandBufferType& queueType, bool& graphics, RenderGraphQueueFlagBits flag) const;
 	bool NeedsInvalidate(const Barrier& barrier, const PipelineEvent& evnet) const;
 	void PerformScaleRequests(Vulkan::CommandBuffer& cmd, const std::vector<ScaledClearRequest>& requests);
+	void PhysicalPassEnqueueComputeCommands(const PhysicalPass& physicalPass, PassSubmissionState& state);
 	void PhysicalPassEnqueueGraphicsCommands(const PhysicalPass& physicalPass, PassSubmissionState& state);
 	void PhysicalPassHandleCPU(Vulkan::Device& device,
 	                           const PhysicalPass& pass,
@@ -207,6 +208,7 @@ class RenderGraph {
 	bool PhysicalPassRequiresWork(const PhysicalPass& physicalPass) const;
 	void PhysicalPassTransferOwnership(const PhysicalPass& physicalPass);
 	void ReorderPasses();
+	void SetupPhysicalBuffer(uint32_t attachment);
 	void SetupPhysicalImage(uint32_t attachment);
 	void SwapchainScalePass();
 	void TraverseDependencies(const RenderPass& pass, uint32_t depth);

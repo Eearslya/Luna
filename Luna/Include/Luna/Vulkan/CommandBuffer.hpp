@@ -120,6 +120,7 @@ struct DeferredPipelineCompile {
 	Hash Hash;
 	uint32_t SubgroupSizeTag = 0;
 
+	::Luna::Hash GetComputeHash() const;
 	::Luna::Hash GetHash(uint32_t& activeVBOs) const;
 };
 
@@ -237,6 +238,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void SetDepthCompareOp(vk::CompareOp op);
 	void SetDepthWrite(bool write);
 
+	void Dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ);
 	void Draw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);
 	void DrawIndexed(uint32_t indexCount,
 	                 uint32_t instanceCount = 1,
@@ -311,7 +313,10 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void BeginContext();
 	void BeginGraphics();
 	void BindPipeline(vk::PipelineBindPoint bindPoint, vk::Pipeline pipeline, uint32_t activeDynamicState);
+	Pipeline BuildComputePipeline(bool synchronous);
 	Pipeline BuildGraphicsPipeline(bool synchronous);
+	bool FlushComputePipeline(bool synchronous);
+	bool FlushComputeState(bool synchronous);
 	void FlushDescriptorSet(uint32_t set);
 	void FlushDescriptorSets();
 	bool FlushGraphicsPipeline(bool synchronous);

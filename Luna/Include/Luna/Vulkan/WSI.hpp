@@ -47,6 +47,12 @@ class WSI {
 	Vulkan::Device& GetDevice() {
 		return *_device;
 	}
+	double GetSmoothElapsedTime() const {
+		return _smoothElapsedTime;
+	}
+	double GetSmoothFrameTime() const {
+		return _smoothFrameTime;
+	}
 	const SwapchainConfiguration& GetSwapchainConfig() const {
 		return _swapchainConfig;
 	}
@@ -80,6 +86,9 @@ class WSI {
 	std::vector<vk::Image> _swapchainImages;
 	std::vector<SemaphoreHandle> _swapchainRelease;
 	bool _swapchainSuboptimal = false;
+
+	double _smoothElapsedTime = 0.0;
+	double _smoothFrameTime   = 0.0;
 };
 }  // namespace Vulkan
 }  // namespace Luna

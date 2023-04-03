@@ -11,6 +11,25 @@
 
 namespace Luna {
 namespace Vulkan {
+Hash DeferredPipelineCompile::GetComputeHash() const {
+	Hasher h;
+
+	h(Program->GetHash());
+	auto& layout = Program->GetPipelineLayout()->GetResourceLayout();
+
+	if (StaticState.SubgroupControlSize) {
+		h(1);
+		h(StaticState.SubgroupMinimumSizeLog2);
+		h(StaticState.SubgroupMaximumSizeLog2);
+		h(StaticState.SubgroupFullGroup);
+		h(SubgroupSizeTag);
+	} else {
+		h(0);
+	}
+
+	return h.Get();
+}
+
 Hash DeferredPipelineCompile::GetHash(uint32_t& activeVBOs) const {
 	Hasher h;
 
@@ -410,6 +429,10 @@ void CommandBuffer::SetDepthWrite(bool write) {
 	SetStaticState(DepthWrite, write);
 }
 
+void CommandBuffer::Dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) {
+	if (FlushComputeState(true)) { _commandBuffer.dispatch(groupsX, groupsY, groupsZ); }
+}
+
 void CommandBuffer::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
 	if (FlushRenderState(true)) { _commandBuffer.draw(vertexCount, instanceCount, firstVertex, firstInstance); }
 }
@@ -772,6 +795,24 @@ void CommandBuffer::BindPipeline(vk::PipelineBindPoint bindPoint, vk::Pipeline p
 	_dirty |= staticStateClobber;
 }
 
+Pipeline CommandBuffer::BuildComputePipeline(bool synchronous) {
+	const vk::PipelineShaderStageCreateInfo shaderStage(
+		{},
+		vk::ShaderStageFlagBits::eCompute,
+		_pipelineState.Program->GetShader(ShaderStage::Compute)->GetShaderModule(),
+		"main",
+		nullptr);
+
+	const vk::ComputePipelineCreateInfo pipelineCI({}, shaderStage, _pipelineLayout, {}, 0);
+
+	const auto pipelineResult   = _device.GetDevice().createComputePipeline(_device.GetPipelineCache(), pipelineCI);
+	const auto returnedPipeline = _pipelineState.Program->AddPipeline(_pipelineState.Hash, pipelineResult.value);
+	if (returnedPipeline != pipelineResult.value) { _device.GetDevice().destroyPipeline(pipelineResult.value); }
+	Log::Trace("Vulkan", "Pipeline created.");
+
+	return {returnedPipeline, 0};
+}
+
 Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 	ZoneScopedN("Vulkan::CommandBuffer::BuildGraphicsPipeline()");
 
@@ -946,6 +987,44 @@ Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 	Log::Trace("Vulkan", "Pipeline created.");
 
 	return {returnedPipeline, 0};
+}
+
+bool CommandBuffer::FlushComputePipeline(bool synchronous) {
+	_pipelineState.Hash       = _pipelineState.GetComputeHash();
+	_currentPipeline.Pipeline = _pipelineState.Program->GetPipeline(_pipelineState.Hash);
+	if (!_currentPipeline.Pipeline) { _currentPipeline = BuildComputePipeline(synchronous); }
+
+	return bool(_currentPipeline.Pipeline);
+}
+
+bool CommandBuffer::FlushComputeState(bool synchronous) {
+	if (!_pipelineState.Program) { return false; }
+	if (!_currentPipeline.Pipeline) { _dirty |= CommandBufferDirtyFlagBits::Pipeline; }
+
+	if (_dirty & (CommandBufferDirtyFlagBits::StaticState | CommandBufferDirtyFlagBits::Pipeline)) {
+		vk::Pipeline oldPipeline = _currentPipeline.Pipeline;
+		if (!FlushComputePipeline(synchronous)) { return false; }
+
+		if (oldPipeline != _currentPipeline.Pipeline) {
+			BindPipeline(vk::PipelineBindPoint::eCompute, _currentPipeline.Pipeline, _currentPipeline.DynamicMask);
+		}
+	}
+	_dirty &= ~(CommandBufferDirtyFlagBits::StaticState | CommandBufferDirtyFlagBits::Pipeline);
+
+	if (!_currentPipeline.Pipeline) { return false; }
+
+	// Flush descriptor sets.
+	FlushDescriptorSets();
+
+	if (_dirty & CommandBufferDirtyFlagBits::PushConstants) {
+		const auto& range = _programLayout->GetResourceLayout().PushConstantRange;
+		if (range.stageFlags) {
+			_commandBuffer.pushConstants(_pipelineLayout, range.stageFlags, 0, range.size, _bindings.PushConstantData);
+		}
+	}
+	_dirty &= ~CommandBufferDirtyFlagBits::PushConstants;
+
+	return true;
 }
 
 void CommandBuffer::FlushDescriptorSet(uint32_t set) {

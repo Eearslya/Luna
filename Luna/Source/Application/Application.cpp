@@ -57,9 +57,11 @@ int Application::Run() {
 		_wsi->Update();
 
 		_wsi->BeginFrame();
+		const double smoothElapsedTime = _wsi->GetSmoothElapsedTime();
+		const double smoothFrameTime   = _wsi->GetSmoothFrameTime();
 		try {
 			ZoneScopedN("Application::OnUpdate");
-			OnUpdate();
+			OnUpdate(smoothFrameTime, smoothElapsedTime);
 		} catch (const std::exception& e) {
 			Log::Fatal("Luna", "Fatal exception occurred while updating application!");
 			Log::Fatal("Luna", "{}", e.what());

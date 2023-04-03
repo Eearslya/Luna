@@ -98,24 +98,36 @@ bool GlslCompiler::Parse(const Path& sourcePath, const std::string& source) {
 	size_t offset      = 0;
 
 	for (auto& line : lines) {
+		// Strip comments from the code. (TODO: Handle block comments.)
 		if ((offset = line.find("//")) != std::string::npos) { line = line.substr(0, offset); }
 
+		// Handle include directives.
 		if ((offset = line.find("#include \"")) != std::string::npos) {
+			// Find the path of our included file.
 			auto includePath = line.substr(offset + 10);
 			if (!includePath.empty() && includePath.back() == '"') { includePath.pop_back(); }
 
+			// Load the actual path and source code for the included file.
 			const auto [includedPath, includedSource] = ResolveInclude(sourcePath, includePath);
-			_processedSource += fmt::format("#line 1 \"{}\"\n", includedPath.String());
-			if (!Parse(includedPath, includedSource)) { return false; }
-			_processedSource += fmt::format("#line {} \"{}\"\n", lineIndex + 1, sourcePath.String());
 
-			_dependencies.push_back(includedPath);
+			// Prevent including the same file twice.
+			const auto it = std::find(_dependencies.begin(), _dependencies.end(), includedPath);
+			if (it == _dependencies.end()) {
+				// Use a #line directive to tell the compiler we're starting at line 1 of this included file.
+				_processedSource += fmt::format("#line 1 \"{}\"\n", includedPath.String());
+
+				// Append the included file's source.
+				if (!Parse(includedPath, includedSource)) { return false; }
+
+				// Use another #line directive to tell the compiler to go back to where we were in this file.
+				_processedSource += fmt::format("#line {} \"{}\"\n", lineIndex + 1, sourcePath.String());
+
+				// Add the included file to our list of dependencies.
+				_dependencies.push_back(includedPath);
+			}
 		} else {
 			_processedSource += line;
 			_processedSource += '\n';
-
-			const auto firstNonSpace = line.find_first_not_of(' ');
-			if (firstNonSpace != std::string::npos && line[firstNonSpace] == '#') {}
 		}
 
 		++lineIndex;
@@ -127,10 +139,12 @@ bool GlslCompiler::Parse(const Path& sourcePath, const std::string& source) {
 std::pair<Path, std::string> GlslCompiler::ResolveInclude(const Path& sourcePath, const std::string& includePath) {
 	auto* filesystem = Filesystem::Get();
 
+	// First try and load the include path as if it were relative to the source file.
 	auto includedPath = sourcePath.Relative(includePath);
 	std::string includedSource;
 	if (filesystem->ReadFileToString(includedPath, includedSource)) { return {includedPath, includedSource}; }
 
+	// If that doesn't work, try loading it relative to each include directory.
 	for (const auto& dir : _includeDirs) {
 		includedPath = dir / includePath;
 		if (filesystem->ReadFileToString(includedPath, includedSource)) { return {includedPath, includedSource}; }

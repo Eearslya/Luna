@@ -3,6 +3,11 @@
 layout(location = 0) in vec2 inUV;
 
 layout(set = 0, binding = 0) uniform sampler2D HDR;
+layout(set = 0, binding = 1) uniform LuminanceData {
+	float AverageLogLuminance;
+	float AverageLinearLuminance;
+	float AverageInvLinearLuminance;
+};
 
 layout(location = 0) out vec4 outColor;
 
@@ -13,7 +18,7 @@ void main() {
 	float logLum = log2(luminance);
 	color /= luminance;
 
-	luminance -= 8.0;
+	luminance -= 8.0 * AverageLinearLuminance;
 
 	vec3 threshold = max(color * luminance, vec3(0));
 

@@ -93,6 +93,9 @@ void WSI::BeginFrame() {
 
 				if (acquireResult.result == vk::Result::eSuboptimalKHR) { _swapchainSuboptimal = true; }
 
+				_smoothFrameTime   = _platform->GetFrameTimer().Frame();
+				_smoothElapsedTime = _platform->GetFrameTimer().GetElapsed();
+
 				acquire->SignalExternal();
 				// acquire->SetForeignQueue();
 				_swapchainAcquired = acquireResult.value;

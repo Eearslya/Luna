@@ -20,7 +20,18 @@ static bool LoadGraphicsShader(Vulkan::Device& device,
 	program = shaderVariant;
 
 	return program->GetProgram() != nullptr;
-};
+}
+
+static bool LoadComputeShader(Vulkan::Device& device, const Path& compute, Vulkan::ShaderProgramVariant*& program) {
+	auto& shaderManager = device.GetShaderManager();
+
+	auto* shaderProgram = shaderManager.RegisterCompute(compute);
+	auto* shaderVariant = shaderProgram->RegisterVariant();
+
+	program = shaderVariant;
+
+	return program->GetProgram() != nullptr;
+}
 
 RenderContext::RenderContext(Vulkan::Device& device) : _device(device), _bindless(_device) {
 	CreateDefaultImages();
@@ -89,6 +100,7 @@ void RenderContext::ReloadShaders() {
 	                        _shaders.BloomUpsample)) {
 		return;
 	}
+	if (!LoadComputeShader(_device, "res://Shaders/Luminance.comp.glsl", _shaders.Luminance)) { return; }
 	if (!LoadGraphicsShader(
 				_device, "res://Shaders/PBRForward.vert.glsl", "res://Shaders/PBRForward.frag.glsl", _shaders.PBRForward)) {
 		return;

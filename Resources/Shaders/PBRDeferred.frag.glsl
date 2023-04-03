@@ -112,6 +112,8 @@ vec3 CalculatePointLights(vec3 worldPos) {
 }
 
 vec3 CalculateImageBasedLighting() {
+	if (Lighting.IBLStrength == 0.0) { return vec3(0); }
+
 	vec3 irradiance = textureLod(CubeTextures[nonuniformEXT(Lighting.Irradiance)], PBRInfo.N, 0).rgb;
 	vec3 diffuseIBL = PBRInfo.DiffuseColor * irradiance;
 
@@ -152,7 +154,7 @@ void main() {
 	PBRInfo.AlphaRoughness = roughness * roughness;
 
 	vec3 lightContribution = CalculatePointLights(position);
-	vec3 iblContribution = CalculateImageBasedLighting() * 0.05;
+	vec3 iblContribution = CalculateImageBasedLighting() * Lighting.IBLStrength;
 
 	vec3 color = lightContribution + iblContribution;
 

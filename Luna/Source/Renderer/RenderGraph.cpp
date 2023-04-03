@@ -294,6 +294,7 @@ void RenderGraph::SetupAttachments(Vulkan::ImageView* swapchain) {
 		if (att.Flags & AttachmentInfoFlagBits::InternalProxy) { continue; }
 
 		if (att.BufferInfo.Size != 0) {
+			SetupPhysicalBuffer(i);
 		} else {
 			if (att.IsStorageImage()) {
 				SetupPhysicalImage(i);
@@ -1653,6 +1654,13 @@ void RenderGraph::PerformScaleRequests(Vulkan::CommandBuffer& cmd, const std::ve
 	cmd.Draw(3);
 }
 
+void RenderGraph::PhysicalPassEnqueueComputeCommands(const PhysicalPass& physicalPass, PassSubmissionState& state) {
+	auto& cmd = *state.Cmd;
+
+	auto& pass = *_passes[physicalPass.Passes.front()];
+	pass.BuildRenderPass(cmd, 0);
+}
+
 void RenderGraph::PhysicalPassEnqueueGraphicsCommands(const PhysicalPass& physicalPass, PassSubmissionState& state) {
 	auto& cmd = *state.Cmd;
 
@@ -1751,6 +1759,7 @@ void RenderGraph::PhysicalPassHandleGPU(Vulkan::Device& device, const PhysicalPa
 		if (state.Graphics) {
 			PhysicalPassEnqueueGraphicsCommands(pass, state);
 		} else {
+			PhysicalPassEnqueueComputeCommands(pass, state);
 		}
 	});
 
@@ -1869,6 +1878,24 @@ void RenderGraph::PhysicalPassTransferOwnership(const PhysicalPass& physicalPass
 }
 
 void RenderGraph::ReorderPasses() {}
+
+void RenderGraph::SetupPhysicalBuffer(uint32_t attachment) {
+	auto& att = _physicalDimensions[attachment];
+
+	Vulkan::BufferCreateInfo bufferCI(Vulkan::BufferDomain::Device, att.BufferInfo.Size, att.BufferInfo.Usage);
+	bufferCI.Flags |= Vulkan::BufferCreateFlagBits::ZeroInitialize;
+
+	if (_physicalBuffers[attachment]) {
+		if (att.Flags & AttachmentInfoFlagBits::Persistent &&
+		    _physicalBuffers[attachment]->GetCreateInfo().Size == bufferCI.Size &&
+		    (_physicalBuffers[attachment]->GetCreateInfo().Usage & bufferCI.Usage) == bufferCI.Usage) {
+			return;
+		}
+	}
+
+	_physicalBuffers[attachment] = _device.CreateBuffer(bufferCI);
+	_physicalEvents[attachment]  = {};
+}
 
 void RenderGraph::SetupPhysicalImage(uint32_t attachment) {
 	auto& att = _physicalDimensions[attachment];

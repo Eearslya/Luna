@@ -39,6 +39,7 @@ class RenderContext {
 		Vulkan::ShaderProgramVariant* BloomDownsample = nullptr;
 		Vulkan::ShaderProgramVariant* BloomThreshold  = nullptr;
 		Vulkan::ShaderProgramVariant* BloomUpsample   = nullptr;
+		Vulkan::ShaderProgramVariant* Luminance       = nullptr;
 		Vulkan::ShaderProgramVariant* PBRForward      = nullptr;
 		Vulkan::ShaderProgramVariant* PBRGBuffer      = nullptr;
 		Vulkan::ShaderProgramVariant* PBRDeferred     = nullptr;

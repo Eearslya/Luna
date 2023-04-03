@@ -121,11 +121,13 @@ class ViewerApplication : public Luna::Application {
 		};
 	}
 
-	virtual void OnUpdate() override {
+	virtual void OnUpdate(double frameTime, double elapsedTime) override {
 		if (_swapchainDirty) {
 			BakeRenderGraph();
 			_swapchainDirty = false;
 		}
+
+		_lastFrameTime = frameTime;
 
 		Luna::TaskComposer composer;
 		_renderGraph->SetupAttachments(&GetDevice().GetSwapchainView());
@@ -136,8 +138,13 @@ class ViewerApplication : public Luna::Application {
 	}
 
 	virtual void OnImGuiRender() override {
+		const double avgMs = GetAverageFrameTime(_lastFrameTime) * 1000.0;
+
 		if (ImGui::Begin("Renderer")) {
+			ImGui::Text("Frame Time: %.2f (%.0f FPS)", avgMs, 1000.0 / avgMs);
+
 			ImGui::SliderFloat("Exposure", &_exposure, 0.01f, 10.0f);
+			ImGui::SliderFloat("IBL Strength", &_iblStrength, 0.0f, 1.0f);
 
 			const char* view = _renderGraphView.empty() ? "Select..." : _renderGraphView.c_str();
 			if (ImGui::BeginCombo("Render Graph View", view)) {
@@ -189,9 +196,11 @@ class ViewerApplication : public Luna::Application {
 		blur.SizeClass        = Luna::SizeClass::InputRelative;
 		blur.SizeRelativeName = "Lighting";
 
-		Luna::BufferInfo luminanceBuffer;
-		luminanceBuffer.Size  = 3 * sizeof(float);
-		luminanceBuffer.Usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eStorageBuffer;
+		Luna::BufferInfo luminanceBufferInfo;
+		luminanceBufferInfo.Size  = 3 * sizeof(float);
+		luminanceBufferInfo.Usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eStorageBuffer;
+		auto& luminanceBuffer     = _renderGraph->GetBufferResource("Luminance-Average");
+		luminanceBuffer.SetBufferInfo(luminanceBufferInfo);
 
 		_renderGraphViews.clear();
 
@@ -309,7 +318,7 @@ class ViewerApplication : public Luna::Application {
 					const Luna::Entity env(envId, _scene);
 					const auto& skyLight = env.GetComponent<Luna::SkyLightComponent>();
 
-					light.IBLStrength          = 1.0f;
+					light.IBLStrength          = _iblStrength;
 					light.Irradiance           = _renderContext->SetTexture(skyLight.Environment->Irradiance->GetView(),
                                                         Luna::Vulkan::StockSampler::TrilinearClamp);
 					light.Prefiltered          = _renderContext->SetTexture(skyLight.Environment->Prefiltered->GetView(),
@@ -353,6 +362,7 @@ class ViewerApplication : public Luna::Application {
 			auto& bloomThreshold = _renderGraph->AddPass("BloomThreshold", Luna::RenderGraphQueueFlagBits::Graphics);
 
 			auto& inputRes = bloomThreshold.AddTextureInput("Lighting");
+			bloomThreshold.AddUniformBufferInput("Luminance-Average");
 			bloomThreshold.AddColorOutput("BloomThreshold", threshold);
 
 			bloomThreshold.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
@@ -360,6 +370,9 @@ class ViewerApplication : public Luna::Application {
 
 				auto& input = _renderGraph->GetPhysicalTextureResource(inputRes);
 				cmd.SetTexture(0, 0, input, Luna::Vulkan::StockSampler::LinearClamp);
+
+				auto& lum = _renderGraph->GetPhysicalBufferResource(luminanceBuffer);
+				cmd.SetUniformBuffer(0, 1, lum);
 
 				cmd.SetProgram(_renderContext->GetShaders().BloomThreshold->GetProgram());
 				cmd.SetCullMode(vk::CullModeFlagBits::eNone);
@@ -435,6 +448,41 @@ class ViewerApplication : public Luna::Application {
 			}
 		}
 
+		// Add Average Luminance Pass.
+		if (true) {
+			auto& luminance = _renderGraph->AddPass("Luminance", Luna::RenderGraphQueueFlagBits::Compute);
+
+			auto& input  = luminance.AddTextureInput("BloomDownsample3", vk::PipelineStageFlagBits2::eComputeShader);
+			auto& output = luminance.AddStorageOutput("Luminance-AverageUpdated", luminanceBufferInfo, "Luminance-Average");
+
+			luminance.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
+				LunaCmdZone(cmd, "Average Luminance");
+
+				auto& in  = _renderGraph->GetPhysicalTextureResource(input);
+				auto& out = _renderGraph->GetPhysicalBufferResource(output);
+
+				struct PushConstant {
+					glm::uvec2 Size;
+					float Lerp;
+					float Minimum;
+					float Maximum;
+				};
+				PushConstant pc = {};
+				pc.Size    = glm::uvec2(in.GetImage()->GetCreateInfo().Width / 2, in.GetImage()->GetCreateInfo().Height / 2);
+				pc.Lerp    = float(1.0 - std::pow(0.5f, _lastFrameTime));
+				pc.Minimum = -3.0f;
+				pc.Maximum = 2.0f;
+
+				cmd.SetStorageBuffer(0, 0, out);
+				cmd.SetTexture(0, 1, in, Luna::Vulkan::StockSampler::LinearClamp);
+
+				cmd.PushConstants(&pc, 0, sizeof(pc));
+
+				cmd.SetProgram(_renderContext->GetShaders().Luminance->GetProgram());
+				cmd.Dispatch(1, 1, 1);
+			});
+		}
+
 		Luna::AttachmentInfo tonemapped;
 		tonemapped.SizeClass        = Luna::SizeClass::InputRelative;
 		tonemapped.SizeRelativeName = "Lighting";
@@ -443,6 +491,7 @@ class ViewerApplication : public Luna::Application {
 		if (true) {
 			auto& tonemap = _renderGraph->AddPass("Tonemap", Luna::RenderGraphQueueFlagBits::Graphics);
 
+			auto& luminance  = tonemap.AddUniformBufferInput("Luminance-AverageUpdated");
 			auto& inputHdr   = tonemap.AddTextureInput("Lighting");
 			auto& inputBloom = tonemap.AddTextureInput("BloomUpsample2");
 			tonemap.AddColorOutput("Tonemapped", tonemapped);
@@ -452,9 +501,11 @@ class ViewerApplication : public Luna::Application {
 
 				auto& hdr   = _renderGraph->GetPhysicalTextureResource(inputHdr);
 				auto& bloom = _renderGraph->GetPhysicalTextureResource(inputBloom);
+				auto& lum   = _renderGraph->GetPhysicalBufferResource(luminance);
 				cmd.SetTexture(0, 0, hdr, Luna::Vulkan::StockSampler::LinearClamp);
 				cmd.SetTexture(0, 1, bloom, Luna::Vulkan::StockSampler::LinearClamp);
 				cmd.SetTexture(0, 2, _lutTexture->GetView(), Luna::Vulkan::StockSampler::TrilinearClamp);
+				cmd.SetUniformBuffer(0, 3, lum);
 
 				cmd.PushConstants(&_exposure, 0, sizeof(_exposure));
 
@@ -464,14 +515,6 @@ class ViewerApplication : public Luna::Application {
 			});
 
 			_renderGraphViews.push_back("Tonemapped");
-		}
-
-		// Add Average Luminance Pass.
-		if (false) {
-			auto& luminance = _renderGraph->AddPass("Luminance", Luna::RenderGraphQueueFlagBits::Graphics);
-
-			luminance.AddTextureInput("Lighting", vk::PipelineStageFlagBits2::eComputeShader);
-			luminance.AddStorageOutput("Luminance-AverageUpdated", luminanceBuffer, "Luminance-Average");
 		}
 
 		// Add Visibility Buffer Debug Render Pass.
@@ -580,17 +623,35 @@ class ViewerApplication : public Luna::Application {
 		_renderGraph->EnqueueRenderPasses(GetDevice(), composer);
 	}
 
+	double GetAverageFrameTime(double frameTime) {
+		static constexpr const int AverageCount = 30;
+		static double times[AverageCount]       = {0.0};
+		static int count                        = 0;
+		static int index                        = 0;
+
+		times[index++] = frameTime;
+		if (count < AverageCount) { ++count; }
+		if (index >= AverageCount) { index = 0; }
+
+		double total = 0.0;
+		for (int i = 0; i < count; ++i) { total += times[i]; }
+
+		return total / count;
+	}
+
 	std::unique_ptr<Luna::RenderContext> _renderContext;
 	std::unique_ptr<Luna::RenderGraph> _renderGraph;
 	Luna::Vulkan::SwapchainConfiguration _swapchainConfig;
 	bool _swapchainDirty = true;
 	Luna::IntrusivePtr<Luna::Vulkan::ImGuiRenderer> _imGuiRenderer;
+	double _lastFrameTime = 0.0;
 
 	Luna::Scene _scene;
 
 	Luna::Vulkan::ImageHandle _lutTexture;
 
-	float _exposure = 4.0f;
+	float _exposure    = 2.5f;
+	float _iblStrength = 0.1f;
 
 	std::string _renderGraphView = "";
 	std::vector<std::string> _renderGraphViews;

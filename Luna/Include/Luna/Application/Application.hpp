@@ -43,7 +43,7 @@ class Application {
 	 * Called once per update/frame. At this point the before-frame processes have been completed (e.g. swapchain acquire)
 	 * and the application is ready to render. All client applications must override this function.
 	 */
-	virtual void OnUpdate() = 0;
+	virtual void OnUpdate(double frameTime, double elaspedTime) = 0;
 
 	/**
 	 * Called once per update/frame. This is where the application should build any ImGui UI they need to render.
