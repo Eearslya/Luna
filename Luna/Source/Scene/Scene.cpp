@@ -8,6 +8,13 @@ Scene::Scene() {}
 
 Scene::~Scene() noexcept {}
 
+std::vector<Entity> Scene::GetRootEntities() {
+	std::vector<Entity> entities(_rootEntities.size());
+	for (size_t i = 0; i < _rootEntities.size(); ++i) { entities[i] = Entity(_rootEntities[i], *this); }
+
+	return entities;
+}
+
 void Scene::Clear() {
 	_registry.clear();
 }

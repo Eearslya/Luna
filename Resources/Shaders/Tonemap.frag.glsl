@@ -13,6 +13,7 @@ layout(set = 0, binding = 3) uniform LuminanceData {
 
 layout(push_constant) uniform PushConstant {
 	float Exposure;
+	bool DynamicExposure;
 };
 
 layout(location = 0) out vec4 outColor;
@@ -53,5 +54,6 @@ void main() {
 	vec3 bloom = textureLod(Bloom, inUV, 0).rgb;
 	color += bloom;
 
-	outColor = vec4(TonyMcMapface(color * (AverageInvLinearLuminance * Exposure)), 1.0);
+	float dynamicExposure = DynamicExposure ? AverageInvLinearLuminance : 1.0f;
+	outColor = vec4(TonyMcMapface(color * (dynamicExposure * Exposure)), 1.0);
 }

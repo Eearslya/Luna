@@ -28,6 +28,8 @@ class GlfwPlatform : public Vulkan::WSIPlatform {
 	virtual void Update() override;
 	virtual void Shutdown() override;
 
+	virtual void SetCursorHidden(bool hidden) override;
+
  private:
 	static void CallbackButton(GLFWwindow* window, int32_t button, int32_t action, int32_t mods);
 	static void CallbackChar(GLFWwindow* window, uint32_t codepoint);

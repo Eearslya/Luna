@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Luna/Renderer/RenderPass.hpp>
+#include <Luna/Renderer/RenderQueue.hpp>
 #include <Luna/Renderer/RenderScene.hpp>
 #include <Luna/Vulkan/Common.hpp>
 
@@ -24,6 +25,8 @@ class GBufferRenderer : public Luna::RenderPassInterface {
 	Luna::RenderContext& _context;
 	Luna::Scene& _scene;
 	Luna::RenderScene _renderScene;
+	Luna::RenderQueue _renderQueue;
+	Luna::VisibilityList _opaqueList;
 	std::vector<Luna::Vulkan::BufferHandle> _materialBuffers;
 	std::vector<Luna::Vulkan::BufferHandle> _objectBuffers;
 	std::vector<Luna::Vulkan::BufferHandle> _indirectBuffers;

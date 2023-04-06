@@ -4,11 +4,13 @@
 #include <Luna/Scene/Scene.hpp>
 
 namespace Luna {
+class RenderContext;
+
 class RenderScene {
  public:
 	RenderScene(Scene& scene);
 
-	void GatherOpaqueRenderables(VisibilityList& list);
+	void GatherOpaqueRenderables(const RenderContext& context, VisibilityList& list);
 
  private:
 	Scene& _scene;

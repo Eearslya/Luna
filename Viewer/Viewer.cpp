@@ -7,6 +7,7 @@
 #include <Luna/Renderer/RenderContext.hpp>
 #include <Luna/Renderer/RenderGraph.hpp>
 #include <Luna/Renderer/RenderPass.hpp>
+#include <Luna/Scene/Camera.hpp>
 #include <Luna/Scene/MeshRendererComponent.hpp>
 #include <Luna/Scene/PointLightComponent.hpp>
 #include <Luna/Scene/SkyLightComponent.hpp>
@@ -43,6 +44,9 @@ class ViewerApplication : public Luna::Application {
 	virtual void OnStart() override {
 		auto* filesystem = Luna::Filesystem::Get();
 		auto& device     = GetDevice();
+
+		_camera.SetPosition({2, 1, 1});
+		_camera.Rotate(-5, -60);
 
 		_imGuiRenderer = Luna::MakeHandle<Luna::Vulkan::ImGuiRenderer>(GetWSI());
 		_imGuiRenderer->SetRenderFunction([&]() { OnImGuiRender(); });
@@ -84,10 +88,16 @@ class ViewerApplication : public Luna::Application {
 
 		auto helmet = SceneLoader::LoadGltf(device, _scene, "assets://Models/DamagedHelmet/DamagedHelmet.gltf");
 		auto sponza = SceneLoader::LoadGltf(device, _scene, "assets://Models/Sponza/Sponza.gltf");
+		auto cubes =
+			SceneLoader::LoadGltf(device, _scene, "assets://Models/deccer-cubes-main/SM_Deccer_Cubes_Textured_Complex.gltf");
 
 		helmet.Translate(glm::vec3(0, 0.5, 0));
 		helmet.Rotate(glm::vec3(0, 15, 0));
 		helmet.Scale(0.6);
+
+		cubes.Translate(glm::vec3(-3, 1, 0));
+		cubes.Rotate(glm::vec3(30, 45, 0));
+		cubes.Scale(0.1);
 
 		auto environment = Luna::MakeHandle<Luna::Environment>(device, "assets://Environments/TokyoBigSight.hdr");
 		auto skyLight    = _scene.CreateEntity("Sky Light");
@@ -96,7 +106,9 @@ class ViewerApplication : public Luna::Application {
 		{
 			auto pointLight = _scene.CreateEntity("Point Light");
 			pointLight.Translate(glm::vec3(-2, 1, -1));
-			auto& pl = pointLight.AddComponent<Luna::PointLightComponent>();
+			auto& pl      = pointLight.AddComponent<Luna::PointLightComponent>();
+			pl.Multiplier = 0.0f;
+			pl.Radius     = 2.0f;
 		}
 		{
 			auto pointLight = _scene.CreateEntity("Point Light");
@@ -105,6 +117,14 @@ class ViewerApplication : public Luna::Application {
 			pl.Multiplier = 50.0f;
 			pl.Radiance   = glm::vec3(0.36f, 0.0f, 0.63f);
 			pl.Radius     = 3.0f;
+		}
+		{
+			auto pointLight = _scene.CreateEntity("Point Light");
+			pointLight.Translate(glm::vec3(-3, 1.25f, 0));
+			auto& pl      = pointLight.AddComponent<Luna::PointLightComponent>();
+			pl.Multiplier = 5.0f;
+			pl.Radiance   = glm::vec3(0.63, 0.36, 0.0);
+			pl.Radius     = 2.0f;
 		}
 
 		_swapchainConfig = GetSwapchainConfig();
@@ -118,6 +138,25 @@ class ViewerApplication : public Luna::Application {
 
 		Luna::Input::OnKey += [this](Luna::Key key, Luna::InputAction action, Luna::InputMods mods) {
 			if (action == Luna::InputAction::Press && key == Luna::Key::F5) { _renderContext->ReloadShaders(); }
+		};
+
+		Luna::Input::OnMouseButton += [this](Luna::MouseButton button, Luna::InputAction action, Luna::InputMods mods) {
+			if (button == Luna::MouseButton::Right) {
+				if (_sceneActive && action == Luna::InputAction::Press) {
+					_cameraControl = true;
+					Luna::Input::SetCursorHidden(true);
+				} else if (action == Luna::InputAction::Release) {
+					_cameraControl = false;
+					Luna::Input::SetCursorHidden(false);
+				}
+			}
+		};
+
+		Luna::Input::OnMouseMoved += [this](const glm::dvec2& pos) {
+			if (_cameraControl) {
+				const float sensitivity = 0.5f;
+				_camera.Rotate(pos.y * sensitivity, -(pos.x * sensitivity));
+			}
 		};
 	}
 
@@ -140,10 +179,27 @@ class ViewerApplication : public Luna::Application {
 	virtual void OnImGuiRender() override {
 		const double avgMs = GetAverageFrameTime(_lastFrameTime) * 1000.0;
 
+		_imGuiRenderer->BeginDockspace();
+
+		if (ImGui::Begin("Heirarchy")) {
+			auto rootEntities = _scene.GetRootEntities();
+
+			const std::function<void(Luna::Entity&)> RenderNode = [&](Luna::Entity& entity) {
+				auto children   = entity.GetChildren();
+				const bool leaf = children.empty();
+
+				for (auto& child : children) { RenderNode(child); }
+			};
+
+			for (auto& entity : rootEntities) { RenderNode(entity); }
+		}
+		ImGui::End();
+
 		if (ImGui::Begin("Renderer")) {
 			ImGui::Text("Frame Time: %.2f (%.0f FPS)", avgMs, 1000.0 / avgMs);
 
 			ImGui::SliderFloat("Exposure", &_exposure, 0.01f, 10.0f);
+			ImGui::Checkbox("Dynamic Exposure", &_dynamicExposure);
 			ImGui::SliderFloat("IBL Strength", &_iblStrength, 0.0f, 1.0f);
 
 			const char* view = _renderGraphView.empty() ? "Select..." : _renderGraphView.c_str();
@@ -164,6 +220,28 @@ class ViewerApplication : public Luna::Application {
 			}
 		}
 		ImGui::End();
+
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+		if (ImGui::Begin("Scene")) {
+			const auto windowSize = ImGui::GetContentRegionAvail();
+			const glm::uvec2 winSize(windowSize.x, windowSize.y);
+			if (winSize != _sceneSize) {
+				_sceneSize      = glm::uvec2(glm::max(windowSize.x, 1.0f), glm::max(windowSize.y, 1.0f));
+				_swapchainDirty = true;
+			}
+
+			if (_sceneImage) {
+				auto& scene        = _renderGraph->GetPhysicalTextureResource(*_sceneImage);
+				const auto sceneId = _imGuiRenderer->Texture(scene);
+				ImGui::Image(ImTextureID(sceneId), windowSize);
+			}
+
+			_sceneActive = ImGui::IsWindowFocused() && ImGui::IsWindowHovered();
+		}
+		ImGui::End();
+		ImGui::PopStyleVar();
+
+		_imGuiRenderer->EndDockspace();
 	}
 
  private:
@@ -179,22 +257,25 @@ class ViewerApplication : public Luna::Application {
 		                                              .Height = _swapchainConfig.Extent.height};
 		_renderGraph->SetBackbufferDimensions(backbufferDims);
 
-		Luna::AttachmentInfo vis;
-		vis.Format = vk::Format::eR32Uint;
+		const Luna::AttachmentInfo sceneBase = {
+			.SizeClass = Luna::SizeClass::Absolute, .Width = float(_sceneSize.x), .Height = float(_sceneSize.y)};
 
-		Luna::AttachmentInfo emissive;
-		emissive.Format = vk::Format::eR16G16B16A16Sfloat;
+		Luna::AttachmentInfo vis = sceneBase;
+		vis.Format               = vk::Format::eR32Uint;
+
+		Luna::AttachmentInfo emissive = sceneBase;
+		emissive.Format               = vk::Format::eR16G16B16A16Sfloat;
 		if (GetDevice().IsFormatSupported(
 					vk::Format::eB10G11R11UfloatPack32, vk::FormatFeatureFlagBits::eColorAttachment, vk::ImageTiling::eOptimal)) {
 			emissive.Format = vk::Format::eB10G11R11UfloatPack32;
 		}
 
-		Luna::AttachmentInfo blur;
-		blur.Width            = 0.5f;
-		blur.Height           = 0.5f;
-		blur.Format           = vk::Format::eR16G16B16A16Sfloat;
-		blur.SizeClass        = Luna::SizeClass::InputRelative;
-		blur.SizeRelativeName = "Lighting";
+		Luna::AttachmentInfo blur = sceneBase;
+		blur.Width                = 0.5f;
+		blur.Height               = 0.5f;
+		blur.Format               = vk::Format::eR16G16B16A16Sfloat;
+		blur.SizeClass            = Luna::SizeClass::InputRelative;
+		blur.SizeRelativeName     = "Lighting";
 
 		Luna::BufferInfo luminanceBufferInfo;
 		luminanceBufferInfo.Size  = 3 * sizeof(float);
@@ -267,11 +348,10 @@ class ViewerApplication : public Luna::Application {
 
 		// Add GBuffer Render Pass.
 		if (true) {
-			Luna::AttachmentInfo albedo, normal, pbr, depth;
-			albedo.Format = vk::Format::eR8G8B8A8Srgb;
-			normal.Format = vk::Format::eR16G16Snorm;
-			pbr.Format    = vk::Format::eR8G8B8A8Unorm;
-			depth.Format  = GetDevice().GetDefaultDepthFormat();
+			Luna::AttachmentInfo albedo = sceneBase.Copy().SetFormat(vk::Format::eR8G8B8A8Srgb);
+			Luna::AttachmentInfo normal = sceneBase.Copy().SetFormat(vk::Format::eR16G16Snorm);
+			Luna::AttachmentInfo pbr    = sceneBase.Copy().SetFormat(vk::Format::eR8G8B8A8Unorm);
+			Luna::AttachmentInfo depth  = sceneBase.Copy().SetFormat(GetDevice().GetDefaultDepthFormat());
 
 			auto& gBuffer = _renderGraph->AddPass("GBuffer", Luna::RenderGraphQueueFlagBits::Graphics);
 
@@ -449,7 +529,7 @@ class ViewerApplication : public Luna::Application {
 		}
 
 		// Add Average Luminance Pass.
-		if (true) {
+		if (_dynamicExposure) {
 			auto& luminance = _renderGraph->AddPass("Luminance", Luna::RenderGraphQueueFlagBits::Compute);
 
 			auto& input  = luminance.AddTextureInput("BloomDownsample3", vk::PipelineStageFlagBits2::eComputeShader);
@@ -491,12 +571,17 @@ class ViewerApplication : public Luna::Application {
 		if (true) {
 			auto& tonemap = _renderGraph->AddPass("Tonemap", Luna::RenderGraphQueueFlagBits::Graphics);
 
-			auto& luminance  = tonemap.AddUniformBufferInput("Luminance-AverageUpdated");
 			auto& inputHdr   = tonemap.AddTextureInput("Lighting");
 			auto& inputBloom = tonemap.AddTextureInput("BloomUpsample2");
+			auto& luminance  = tonemap.AddUniformBufferInput("Luminance-AverageUpdated");
 			tonemap.AddColorOutput("Tonemapped", tonemapped);
 
 			tonemap.SetBuildRenderPass([&](Luna::Vulkan::CommandBuffer& cmd) {
+				struct PushConstant {
+					float Exposure;
+					uint32_t DynamicExposure;
+				};
+
 				LunaCmdZone(cmd, "Tonemapping");
 
 				auto& hdr   = _renderGraph->GetPhysicalTextureResource(inputHdr);
@@ -507,7 +592,11 @@ class ViewerApplication : public Luna::Application {
 				cmd.SetTexture(0, 2, _lutTexture->GetView(), Luna::Vulkan::StockSampler::TrilinearClamp);
 				cmd.SetUniformBuffer(0, 3, lum);
 
-				cmd.PushConstants(&_exposure, 0, sizeof(_exposure));
+				PushConstant pc    = {};
+				pc.Exposure        = _exposure;
+				pc.DynamicExposure = _dynamicExposure ? 1 : 0;
+
+				cmd.PushConstants(&pc, 0, sizeof(pc));
 
 				cmd.SetProgram(_renderContext->GetShaders().Tonemap->GetProgram());
 				cmd.SetCullMode(vk::CullModeFlagBits::eNone);
@@ -539,11 +628,14 @@ class ViewerApplication : public Luna::Application {
 
 			auto& imgui = _renderGraph->AddPass("ImGUI", Luna::RenderGraphQueueFlagBits::Graphics);
 
+			Luna::RenderTextureResource* input = nullptr;
 			if (!_renderGraphView.empty() && _renderGraph->TryGetTextureResource(_renderGraphView) != nullptr) {
-				imgui.AddColorOutput("UI", ui, _renderGraphView);
+				input = &imgui.AddTextureInput(_renderGraphView);
 			} else {
-				imgui.AddColorOutput("UI", ui, "Tonemapped");
+				input = &imgui.AddTextureInput("Tonemapped");
 			}
+			_sceneImage = input;
+			imgui.AddColorOutput("UI", ui);
 
 			imgui.SetRenderPassInterface(_imGuiRenderer);
 		}
@@ -606,16 +698,21 @@ class ViewerApplication : public Luna::Application {
 	void UpdateScene(Luna::TaskComposer& composer) {
 		auto& updates = composer.BeginPipelineStage();
 		updates.Enqueue([this]() {
-			const auto fbSize       = GetFramebufferSize();
-			const float aspectRatio = float(fbSize.x) / float(fbSize.y);
-			glm::mat4 projection    = glm::perspective(glm::radians(60.0f), aspectRatio, 0.01f, 1000.0f);
-			projection[0].y *= -1.0f;
-			projection[1].y *= -1.0f;
-			projection[2].y *= -1.0f;
-			projection[3].y *= -1.0f;
-			const glm::mat4 view = glm::lookAt(glm::vec3(2, 1.0f, 1), glm::vec3(0, 0.8f, 0), glm::vec3(0, 1, 0));
+			_camera.SetViewport(_sceneSize.x, _sceneSize.y);
+
+			const float camSpeed = 3.0f;
+			glm::vec3 camMove(0);
+			if (Luna::Input::GetKey(Luna::Key::W) == Luna::InputAction::Press) { camMove += glm::vec3(0, 0, 1); }
+			if (Luna::Input::GetKey(Luna::Key::S) == Luna::InputAction::Press) { camMove -= glm::vec3(0, 0, 1); }
+			if (Luna::Input::GetKey(Luna::Key::A) == Luna::InputAction::Press) { camMove -= glm::vec3(1, 0, 0); }
+			if (Luna::Input::GetKey(Luna::Key::D) == Luna::InputAction::Press) { camMove += glm::vec3(1, 0, 0); }
+			if (Luna::Input::GetKey(Luna::Key::R) == Luna::InputAction::Press) { camMove += glm::vec3(0, 1, 0); }
+			if (Luna::Input::GetKey(Luna::Key::F) == Luna::InputAction::Press) { camMove -= glm::vec3(0, 1, 0); }
+			camMove *= camSpeed * _lastFrameTime;
+			_camera.Move(camMove);
+
 			_renderContext->BeginFrame(GetDevice().GetFrameIndex());
-			_renderContext->SetCamera(projection, view);
+			_renderContext->SetCamera(_camera.GetProjection(), _camera.GetView());
 		});
 	}
 
@@ -639,6 +736,8 @@ class ViewerApplication : public Luna::Application {
 		return total / count;
 	}
 
+	Luna::Camera _camera;
+	bool _cameraControl = false;
 	std::unique_ptr<Luna::RenderContext> _renderContext;
 	std::unique_ptr<Luna::RenderGraph> _renderGraph;
 	Luna::Vulkan::SwapchainConfiguration _swapchainConfig;
@@ -647,11 +746,15 @@ class ViewerApplication : public Luna::Application {
 	double _lastFrameTime = 0.0;
 
 	Luna::Scene _scene;
+	glm::uvec2 _sceneSize;
+	Luna::RenderTextureResource* _sceneImage = nullptr;
+	bool _sceneActive                        = false;
 
 	Luna::Vulkan::ImageHandle _lutTexture;
 
-	float _exposure    = 2.5f;
-	float _iblStrength = 0.1f;
+	bool _dynamicExposure = true;
+	float _exposure       = 2.5f;
+	float _iblStrength    = 0.1f;
 
 	std::string _renderGraphView = "";
 	std::vector<std::string> _renderGraphViews;

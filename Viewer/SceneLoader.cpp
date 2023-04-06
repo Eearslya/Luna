@@ -168,6 +168,7 @@ struct Buffer {
 };
 
 struct Submesh {
+	Luna::AABB Bounds;
 	uint32_t MaterialIndex     = 0;
 	vk::DeviceSize VertexCount = 0;
 	vk::DeviceSize IndexCount  = 0;
@@ -573,7 +574,7 @@ static void ImportNodes(GltfContext& context) {
 
 	for (const auto nodeIndex : gltfScene.nodeIndices) { context.RootNodes.push_back(&context.Nodes[nodeIndex]); }
 
-	for (size_t i = 0; i < gltfScene.nodeIndices.size(); ++i) {
+	for (size_t i = 0; i < context.Asset->nodes.size(); ++i) {
 		const auto& gltfNode = context.Asset->nodes[i];
 		auto& node           = context.Nodes[i];
 
@@ -656,7 +657,13 @@ static void LoadImages(Luna::TaskComposer& composer, GltfContext& context) {
 															const uint8_t* dataStart = map->Data<uint8_t>();
 															bytes                    = {dataStart, dataStart + map->GetSize()};
 														},
-			                      [&](const fastgltf::sources::Vector& vector) { bytes = vector.bytes; }},
+			                      [&](const fastgltf::sources::Vector& vector) { bytes = vector.bytes; },
+			                      [&](const fastgltf::sources::BufferView& bufferView) {
+															const auto& gltfBufferView = context.Asset->bufferViews[bufferView.bufferViewIndex];
+															const auto& gltfBytes      = context.Buffers[gltfBufferView.bufferIndex].Data;
+															const uint8_t* bufferData  = &gltfBytes.data()[gltfBufferView.byteOffset];
+															bytes                      = {bufferData, bufferData + gltfBufferView.byteLength};
+														}},
 			           gltfImage.data);
 			if (bytes.empty()) { throw std::runtime_error("[SceneLoader] Could not load glTF image!"); }
 
@@ -700,10 +707,14 @@ static void LoadMaterials(Luna::TaskComposer& composer, GltfContext& context) {
 				const auto& pbr = *gltfMaterial.pbrData;
 				Assign(pbr.baseColorTexture, material->Albedo);
 				Assign(pbr.metallicRoughnessTexture, material->PBR);
+				material->BaseColorFactor = glm::make_vec3(pbr.baseColorFactor.data());
+				material->Roughness       = pbr.roughnessFactor;
+				material->Metallic        = pbr.metallicFactor;
 			}
 			Assign(gltfMaterial.normalTexture, material->Normal);
 			Assign(gltfMaterial.occlusionTexture, material->Occlusion);
 			Assign(gltfMaterial.emissiveTexture, material->Emissive);
+			material->EmissiveFactor = glm::make_vec3(gltfMaterial.emissiveFactor.data());
 
 			switch (gltfMaterial.alphaMode) {
 				case fastgltf::AlphaMode::Opaque:
@@ -926,6 +937,7 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 					meshIndices.reserve(meshIndices.size() + indices.size());
 					meshIndices.insert(meshIndices.end(), indices.begin(), indices.end());
 
+					submesh.Bounds = Luna::AABB(boundsMin, boundsMax);
 					submesh.VertexCount += positions.size();
 					submesh.IndexCount += indices.size();
 				}
@@ -966,13 +978,19 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 			// mesh->Attributes[int(Luna::MeshAttributeType::Texcoord0)].Format = vk::Format::eR32G32Sfloat;
 			// mesh->Attributes[int(Luna::MeshAttributeType::Texcoord0)].Offset = offsetof(Vertex, Texcoord0);
 
-			for (const auto& submesh : submeshes) {
-				mesh->AddSubmesh(
-					submesh.MaterialIndex, submesh.VertexCount, submesh.IndexCount, submesh.FirstVertex, submesh.FirstIndex);
-			}
+			mesh->Indices   = std::move(meshIndices);
 			mesh->Materials = std::move(materials);
 
-			mesh->Indices = std::move(meshIndices);
+			mesh->Bounds = Luna::AABB::Empty();
+			for (const auto& submesh : submeshes) {
+				mesh->Bounds.Expand(submesh.Bounds);
+				mesh->AddSubmesh(submesh.Bounds,
+				                 submesh.MaterialIndex,
+				                 submesh.VertexCount,
+				                 submesh.IndexCount,
+				                 submesh.FirstVertex,
+				                 submesh.FirstIndex);
+			}
 		});
 	}
 }

@@ -3,6 +3,7 @@
 #include <Luna/Renderer/Common.hpp>
 #include <Luna/Renderer/Material.hpp>
 #include <Luna/Renderer/Renderable.hpp>
+#include <Luna/Utility/AABB.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 
 namespace Luna {
@@ -55,6 +56,7 @@ struct StaticSubmeshInstanceInfo {
 class StaticSubmesh : public Renderable {
  public:
 	StaticSubmesh(StaticMesh* parent,
+	              const AABB& bounds,
 	              uint32_t materialIndex,
 	              vk::DeviceSize vertexCount,
 	              vk::DeviceSize indexCount,
@@ -68,6 +70,7 @@ class StaticSubmesh : public Renderable {
 	virtual void Enqueue(const RenderContext& context, const RenderableInfo& self, RenderQueue& queue) const override;
 	virtual void Render(Vulkan::CommandBuffer& cmd) const override;
 
+	AABB Bounds;
 	uint32_t MaterialIndex     = 0;
 	vk::DeviceSize VertexCount = 0;
 	vk::DeviceSize IndexCount  = 0;
@@ -82,7 +85,8 @@ class StaticSubmesh : public Renderable {
 
 class StaticMesh : public IntrusivePtrEnabled<StaticMesh> {
  public:
-	void AddSubmesh(uint32_t materialIndex,
+	void AddSubmesh(const AABB& bounds,
+	                uint32_t materialIndex,
 	                vk::DeviceSize vertexCount,
 	                vk::DeviceSize indexCount,
 	                vk::DeviceSize firstVertex,
@@ -90,6 +94,8 @@ class StaticMesh : public IntrusivePtrEnabled<StaticMesh> {
 	std::vector<IntrusivePtr<StaticSubmesh>> GatherOpaque() const;
 
 	std::vector<IntrusivePtr<StaticSubmesh>> Submeshes;
+
+	AABB Bounds;
 
 	Vulkan::BufferHandle PositionBuffer;
 	vk::DeviceSize PositionStride = 0;

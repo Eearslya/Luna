@@ -48,6 +48,8 @@ layout(location = 0) flat out uint outMaterialIndex;
 layout(location = 1) out vec2 outUV0;
 layout(location = 2) out mat3 outTBN;
 
+invariant gl_Position;
+
 void main() {
 	Object obj = Objects.O[gl_InstanceIndex];
 
@@ -66,7 +68,7 @@ void main() {
 
 	outUV0 = inUV0;
 
-	mat3 normalTransform = mat3(worldTransform);
+	mat3 normalTransform = inverse(transpose(mat3(worldTransform)));
 	vec3 T = normalize(normalTransform * inTangent.xyz);
 	vec3 B = normalize(normalTransform * (cross(inNormal.xyz, inTangent.xyz) * inTangent.w));
 	vec3 N = normalize(normalTransform * inNormal.xyz);

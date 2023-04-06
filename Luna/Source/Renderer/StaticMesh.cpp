@@ -48,12 +48,14 @@ static void RenderStaticSubmesh(Vulkan::CommandBuffer& cmd,
 }
 
 StaticSubmesh::StaticSubmesh(StaticMesh* parent,
+                             const AABB& bounds,
                              uint32_t materialIndex,
                              vk::DeviceSize vertexCount,
                              vk::DeviceSize indexCount,
                              vk::DeviceSize firstVertex,
                              vk::DeviceSize firstIndex)
 		: _parentMesh(parent),
+			Bounds(bounds),
 			MaterialIndex(materialIndex),
 			VertexCount(vertexCount),
 			IndexCount(indexCount),
@@ -105,17 +107,11 @@ void StaticSubmesh::Enqueue(const RenderContext& context, const RenderableInfo& 
 	auto* renderInfo =
 		queue.Push<StaticSubmeshRenderInfo>(RenderQueueType::Opaque, instanceKey, 0, RenderStaticSubmesh, instanceInfo);
 	if (renderInfo) {
-		renderInfo->Program       = queue.GetShaderSuites()[int(RenderableType::Mesh)].GetProgram({});
+		renderInfo->Program       = context.GetShaders().PBRDeferred->GetProgram();
 		renderInfo->MaterialIndex = MaterialIndex;
 
-		renderInfo->PositionBuffer = _parentMesh->PositionBuffer.Get();
-		renderInfo->PositionStride = _parentMesh->PositionStride;
-		renderInfo->IndexOffset    = _parentMesh->IndexOffset;
-		renderInfo->IndexType      = _parentMesh->IndexType;
-
+		renderInfo->PositionBuffer  = _parentMesh->PositionBuffer.Get();
 		renderInfo->AttributeBuffer = _parentMesh->AttributeBuffer.Get();
-		renderInfo->AttributeStride = _parentMesh->AttributeStride;
-		renderInfo->Attributes      = _parentMesh->Attributes;
 
 		renderInfo->VertexCount = VertexCount;
 		renderInfo->IndexCount  = IndexCount;
@@ -126,17 +122,27 @@ void StaticSubmesh::Enqueue(const RenderContext& context, const RenderableInfo& 
 
 void StaticSubmesh::Render(Vulkan::CommandBuffer& cmd) const {}
 
-void StaticMesh::AddSubmesh(uint32_t materialIndex,
+void StaticMesh::AddSubmesh(const AABB& bounds,
+                            uint32_t materialIndex,
                             vk::DeviceSize vertexCount,
                             vk::DeviceSize indexCount,
                             vk::DeviceSize firstVertex,
                             vk::DeviceSize firstIndex) {
-	auto submesh = MakeHandle<StaticSubmesh>(this, materialIndex, vertexCount, indexCount, firstVertex, firstIndex);
+	auto submesh =
+		MakeHandle<StaticSubmesh>(this, bounds, materialIndex, vertexCount, indexCount, firstVertex, firstIndex);
 	submesh->Bake();
 	Submeshes.push_back(std::move(submesh));
 }
 
 std::vector<IntrusivePtr<StaticSubmesh>> StaticMesh::GatherOpaque() const {
-	return Submeshes;
+	std::vector<IntrusivePtr<StaticSubmesh>> opaque;
+	for (const auto& submesh : Submeshes) {
+		const auto& material = Materials[submesh->MaterialIndex];
+		if (material->AlphaMode == AlphaMode::Opaque || material->AlphaMode == AlphaMode::Mask) {
+			opaque.push_back(submesh);
+		}
+	}
+
+	return opaque;
 }
 }  // namespace Luna

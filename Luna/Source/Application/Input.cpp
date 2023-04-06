@@ -15,7 +15,16 @@ InputAction Input::GetKey(Key key) {
 	return Application::Get()->GetWSI().GetKey(key);
 }
 
-void Input::SetCursorHidden(bool hidden) {}
+void Input::SetCursorHidden(bool hidden) {
+	if (_cursorHidden != hidden) {
+		_cursorHidden = hidden;
+		Application::Get()->GetWSI().SetCursorHidden(hidden);
+		if (hidden) {
+			_lastPosition = _position;
+			_position     = glm::dvec2(0);
+		}
+	}
+}
 
 void Input::SetMousePosition(const glm::dvec2& position) {}
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Luna/Utility/Frustum.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Common.hpp>
 #include <Luna/Vulkan/DescriptorSet.hpp>
@@ -67,6 +68,9 @@ class RenderContext {
 	const uint32_t GetFrameIndex() const {
 		return _frameIndex;
 	}
+	const Frustum& GetFrustum() const {
+		return _frustum;
+	}
 	const RenderParameters& GetRenderParameters() const {
 		return _camera;
 	}
@@ -91,6 +95,7 @@ class RenderContext {
 
 	Vulkan::BindlessAllocator _bindless;
 	RenderParameters _camera;
+	Frustum _frustum;
 	DefaultImages _defaultImages;
 	uint32_t _frameIndex = 0;
 	Shaders _shaders;

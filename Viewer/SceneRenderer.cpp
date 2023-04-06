@@ -50,12 +50,12 @@ void SceneRenderer::EnqueuePrepareRenderPass(Luna::RenderGraph& graph, Luna::Tas
 	if (_flags & (SceneRendererFlagBits::ForwardOpaque | SceneRendererFlagBits::ForwardZPrePass)) {
 		// Gather Opaque renderables
 		auto& gather = composer.BeginPipelineStage();
-		gather.Enqueue([&]() { _renderScene.GatherOpaqueRenderables(_visibleOpaque); });
+		// gather.Enqueue([&]() { _renderScene.GatherOpaqueRenderables(_visibleOpaque); });
 
 		if (_flags & SceneRendererFlagBits::ForwardOpaque) {
 			// Push Opaque renderables
 			auto& push = composer.BeginPipelineStage();
-			push.Enqueue([&]() { _queue.PushRenderables(_context, _visibleOpaque); });
+			// push.Enqueue([&]() { _queue.PushRenderables(_context, _visibleOpaque); });
 		}
 	}
 

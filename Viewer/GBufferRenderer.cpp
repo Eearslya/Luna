@@ -47,10 +47,23 @@ void GBufferRenderer::BuildRenderPass(Luna::Vulkan::CommandBuffer& cmd) {
 	RenderMeshes(cmd);
 }
 
-void GBufferRenderer::EnqueuePrepareRenderPass(Luna::RenderGraph& graph, Luna::TaskComposer& composer) {}
+void GBufferRenderer::EnqueuePrepareRenderPass(Luna::RenderGraph& graph, Luna::TaskComposer& composer) {
+	auto& setup = composer.BeginPipelineStage();
+	setup.Enqueue([this]() {
+		_renderQueue.Reset();
+		_opaqueList.clear();
+	});
+
+	auto& gather = composer.BeginPipelineStage();
+	gather.Enqueue([this]() { _renderScene.GatherOpaqueRenderables(_context, _opaqueList); });
+
+	auto& push = composer.BeginPipelineStage();
+	push.Enqueue([this]() { _renderQueue.PushRenderables(_context, _opaqueList); });
+}
 
 void GBufferRenderer::RenderMeshes(Luna::Vulkan::CommandBuffer& cmd) {
 	const auto& registry = _scene.GetRegistry();
+	const auto& frustum  = _context.GetFrustum();
 
 	std::vector<uint32_t> indices;
 	uint32_t nextMaterialIndex = 0;
@@ -64,6 +77,8 @@ void GBufferRenderer::RenderMeshes(Luna::Vulkan::CommandBuffer& cmd) {
 		if (!cMeshRenderer.StaticMesh) { continue; }
 
 		const auto& mesh = *cMeshRenderer.StaticMesh;
+		// if (!frustum.Intersect(mesh.Bounds)) { continue; }
+
 		const Luna::Entity entity(entityId, _scene);
 		const auto transform = entity.GetGlobalTransform();
 
@@ -74,6 +89,8 @@ void GBufferRenderer::RenderMeshes(Luna::Vulkan::CommandBuffer& cmd) {
 
 		const auto submeshes = mesh.GatherOpaque();
 		for (const auto& submesh : submeshes) {
+			// if (!frustum.Intersect(submesh->Bounds)) { continue; }
+
 			const auto& material         = mesh.Materials[submesh->MaterialIndex];
 			const auto materialData      = material->Data(_context);
 			const auto [it, newMaterial] = materials.insert({materialData, nextMaterialIndex});

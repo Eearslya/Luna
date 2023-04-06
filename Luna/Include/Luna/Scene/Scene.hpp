@@ -22,6 +22,7 @@ class Scene {
 	const entt::registry& GetRegistry() const {
 		return _registry;
 	}
+	std::vector<Entity> GetRootEntities();
 
 	void Clear();
 	Entity CreateEntity(const std::string& name = "");

@@ -29,6 +29,8 @@ class WSIPlatform {
 	virtual void Update()                                   = 0;
 	virtual void Shutdown()                                 = 0;
 
+	virtual void SetCursorHidden(bool hidden) = 0;
+
 	FrameTimer& GetFrameTimer() {
 		return _timer;
 	}
@@ -62,6 +64,8 @@ class WSI {
 	InputAction GetKey(Key) const;
 	double GetTime() const;
 	glm::uvec2 GetWindowSize() const;
+
+	void SetCursorHidden(bool hidden);
 
 	void BeginFrame();
 	void EndFrame();

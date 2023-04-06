@@ -83,6 +83,7 @@ vec3 CalculatePointLights(vec3 worldPos) {
 	vec3 result = vec3(0);
 	for (uint i = 0; i < Point.Count; ++i) {
 		PointLight point = Point.L[i];
+		if (point.Multiplier == 0.0) { continue; }
 
 		vec3 Li = normalize(point.Position - worldPos);
 		float lightDistance = length(point.Position - worldPos);
@@ -160,8 +161,8 @@ void main() {
 
 	outColor = vec4(color, albedo.a);
 
-	// outColor = SrgbToLinear(vec4(position, 1.0f));
-	// outColor = vec4(lightContribution, baseColor.a);
+	// outColor = SrgbToLinear(vec4(position + vec3(3,0,0), 1.0f));
+	// outColor = vec4(lightContribution, 1.0f);
 	// outColor = vec4(vec3(D), 1.0);
 	// outColor = SrgbToLinear(vec4(PBRInfo.N * 0.5f + 0.5f, 1.0f));
 	// outColor = vec4(position, 1);

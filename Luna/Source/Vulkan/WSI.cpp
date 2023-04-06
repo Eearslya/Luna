@@ -69,6 +69,10 @@ glm::uvec2 WSI::GetWindowSize() const {
 	return _platform->GetWindowSize();
 }
 
+void WSI::SetCursorHidden(bool hidden) {
+	_platform->SetCursorHidden(hidden);
+}
+
 void WSI::BeginFrame() {
 	ZoneScopedN("WSI::BeginFrame");
 

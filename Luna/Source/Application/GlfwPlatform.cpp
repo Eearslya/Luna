@@ -121,6 +121,10 @@ void GlfwPlatform::Shutdown() {
 	if (_window) { glfwDestroyWindow(_window); }
 }
 
+void GlfwPlatform::SetCursorHidden(bool hidden) {
+	glfwSetInputMode(_window, GLFW_CURSOR, hidden ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+}
+
 void GlfwPlatform::CallbackButton(GLFWwindow* window, int32_t button, int32_t action, int32_t mods) {
 	Input::MouseButtonEvent(static_cast<MouseButton>(button), static_cast<InputAction>(action), InputMods(mods));
 }

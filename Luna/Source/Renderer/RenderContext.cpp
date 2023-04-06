@@ -74,7 +74,7 @@ void RenderContext::CreateDefaultImages() {
 	std::fill(pixels, pixels + pixelCount, 0xff808080);
 	_defaultImages.Gray2D = _device.CreateImage(imageCI2D, initialImages);
 
-	std::fill(pixels, pixels + pixelCount, 0xff800000);
+	std::fill(pixels, pixels + pixelCount, 0xffff8080);
 	_defaultImages.Normal2D = _device.CreateImage(imageCI2D, initialImages);
 
 	std::fill(pixels, pixels + pixelCount, 0xffffffff);
@@ -136,6 +136,8 @@ void RenderContext::SetCamera(const glm::mat4& projection, const glm::mat4& view
 	_camera.InvProjection     = glm::inverse(_camera.Projection);
 	_camera.InvView           = glm::inverse(_camera.View);
 	_camera.InvViewProjection = glm::inverse(_camera.ViewProjection);
+
+	_frustum.BuildPlanes(_camera.InvViewProjection);
 
 	glm::mat4 localView            = view;
 	localView[3][0]                = 0;
