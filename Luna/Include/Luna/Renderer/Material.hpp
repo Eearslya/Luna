@@ -50,7 +50,7 @@ class Material : public IntrusivePtrEnabled<Material> {
 		data->EmissiveIndex = BindTexture(context, Emissive, true, context.GetDefaultImages().Black2D);
 	}
 
-	MaterialData Data(RenderContext& context) const {
+	MaterialData Data(const RenderContext& context) const {
 		MaterialData data    = {};
 		data.BaseColorFactor = glm::vec4(BaseColorFactor, 1);
 		data.EmissiveFactor  = glm::vec4(EmissiveFactor, 0);
@@ -78,7 +78,7 @@ class Material : public IntrusivePtrEnabled<Material> {
 	bool DualSided      = false;
 
  private:
-	uint32_t BindTexture(RenderContext& context,
+	uint32_t BindTexture(const RenderContext& context,
 	                     const Texture& texture,
 	                     bool srgb,
 	                     const Vulkan::ImageHandle& fallback) const {

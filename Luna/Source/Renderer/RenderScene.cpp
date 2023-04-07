@@ -11,28 +11,30 @@
 namespace Luna {
 RenderScene::RenderScene(Scene& scene) : _scene(scene) {}
 
-void RenderScene::GatherOpaqueRenderables(const RenderContext& context, VisibilityList& list) {
-	uint32_t totalCount = 0;
+void RenderScene::GatherOpaqueRenderables(Luna::TaskComposer& composer, const Frustum& frustum, VisibilityList& list) {
+	auto& gather = composer.BeginPipelineStage();
+	gather.Enqueue([this, &frustum, &list]() {
+		const auto& registry = _scene.GetRegistry();
+		auto renderables     = registry.view<MeshRendererComponent>();
+		for (auto entityId : renderables) {
+			auto cMeshRenderer = renderables.get<MeshRendererComponent>(entityId);
+			if (!cMeshRenderer.StaticMesh) { continue; }
 
-	const auto& registry = _scene.GetRegistry();
-	const auto& frustum  = context.GetFrustum();
+			const Entity entity(entityId, _scene);
+			const auto transform = entity.GetGlobalTransform();
 
-	auto renderables = registry.view<TransformComponent, MeshRendererComponent>();
-	for (auto entityId : renderables) {
-		auto [cTransform, cMeshRenderer] = renderables.get(entityId);
-		if (!cMeshRenderer.StaticMesh) { continue; }
+			const auto& mesh       = *cMeshRenderer.StaticMesh;
+			const auto worldBounds = mesh.Bounds.Transform(transform);
+			if (!frustum.Contains(worldBounds)) { continue; }
 
-		const auto& mesh = *cMeshRenderer.StaticMesh;
-		totalCount += mesh.Submeshes.size();
-		if (!frustum.Intersect(mesh.Bounds)) { continue; }
+			const auto submeshes = mesh.GatherOpaque();
+			for (const auto& submesh : submeshes) {
+				const auto worldBounds = submesh->Bounds.Transform(transform);
+				if (!frustum.Contains(worldBounds)) { continue; }
 
-		const auto transform = cTransform.GetTransform();
-		const auto submeshes = cMeshRenderer.StaticMesh->GatherOpaque();
-		for (const auto& submesh : submeshes) {
-			if (!frustum.Intersect(submesh->Bounds)) { continue; }
-
-			list.push_back({submesh, transform});
+				list.push_back({submesh, transform});
+			}
 		}
-	}
+	});
 }
 }  // namespace Luna

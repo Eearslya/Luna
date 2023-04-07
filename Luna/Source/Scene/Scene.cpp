@@ -1,4 +1,5 @@
 #include <Luna/Scene/Entity.hpp>
+#include <Luna/Scene/NameComponent.hpp>
 #include <Luna/Scene/RelationshipComponent.hpp>
 #include <Luna/Scene/Scene.hpp>
 #include <Luna/Scene/TransformComponent.hpp>
@@ -29,6 +30,7 @@ Entity Scene::CreateChildEntity(Entity parent, const std::string& name) {
 
 	std::string entityName = name.empty() ? "Entity" : name;
 
+	entity.AddComponent<NameComponent>(entityName);
 	entity.AddComponent<TransformComponent>();
 	entity.AddComponent<RelationshipComponent>();
 

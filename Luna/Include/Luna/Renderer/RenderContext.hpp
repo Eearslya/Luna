@@ -4,7 +4,6 @@
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Common.hpp>
 #include <Luna/Vulkan/DescriptorSet.hpp>
-#include <Luna/Vulkan/ShaderManager.hpp>
 #include <glm/glm.hpp>
 
 namespace Luna {
@@ -36,24 +35,10 @@ class RenderContext {
 		Vulkan::ImageHandle White2D;
 	};
 
-	struct Shaders {
-		Vulkan::ShaderProgramVariant* BloomDownsample = nullptr;
-		Vulkan::ShaderProgramVariant* BloomThreshold  = nullptr;
-		Vulkan::ShaderProgramVariant* BloomUpsample   = nullptr;
-		Vulkan::ShaderProgramVariant* Luminance       = nullptr;
-		Vulkan::ShaderProgramVariant* PBRForward      = nullptr;
-		Vulkan::ShaderProgramVariant* PBRGBuffer      = nullptr;
-		Vulkan::ShaderProgramVariant* PBRDeferred     = nullptr;
-		Vulkan::ShaderProgramVariant* Skybox          = nullptr;
-		Vulkan::ShaderProgramVariant* Tonemap         = nullptr;
-		Vulkan::ShaderProgramVariant* Visibility      = nullptr;
-		Vulkan::ShaderProgramVariant* VisibilityDebug = nullptr;
-	};
-
 	RenderContext(Vulkan::Device& device);
 
 	vk::DescriptorSet GetBindlessSet() const {
-		return _bindless.GetDescriptorSet();
+		return _bindless[_frameIndex]->GetDescriptorSet();
 	}
 	const DefaultImages& GetDefaultImages() const {
 		return _defaultImages;
@@ -74,31 +59,26 @@ class RenderContext {
 	const RenderParameters& GetRenderParameters() const {
 		return _camera;
 	}
-	const Shaders& GetShaders() const {
-		return _shaders;
-	}
 
 	void BeginFrame(uint32_t frameIndex);
-	void ReloadShaders();
 	void SetCamera(const glm::mat4& projection, const glm::mat4& view);
-	uint32_t SetTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler);
-	uint32_t SetTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler);
-	uint32_t SetSrgbTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler);
-	uint32_t SetSrgbTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler);
-	uint32_t SetUnormTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler);
-	uint32_t SetUnormTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler);
+	uint32_t SetTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler) const;
+	uint32_t SetTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler) const;
+	uint32_t SetSrgbTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler) const;
+	uint32_t SetSrgbTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler) const;
+	uint32_t SetUnormTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler) const;
+	uint32_t SetUnormTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler) const;
 
  private:
 	void CreateDefaultImages();
 
 	Vulkan::Device& _device;
 
-	Vulkan::BindlessAllocator _bindless;
+	mutable std::vector<std::unique_ptr<Vulkan::BindlessAllocator>> _bindless;
 	RenderParameters _camera;
 	Frustum _frustum;
 	DefaultImages _defaultImages;
 	uint32_t _frameIndex = 0;
-	Shaders _shaders;
 
 	std::vector<Vulkan::ImageHandle> _bindlessImages;
 };

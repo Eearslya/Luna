@@ -7,7 +7,14 @@
 #include <Luna/Renderer/RenderScene.hpp>
 #include <Luna/Scene/Scene.hpp>
 
-enum class SceneRendererFlagBits { ForwardOpaque = 1 << 0, ForwardTransparent = 1 << 1, ForwardZPrePass = 1 << 2 };
+enum class SceneRendererFlagBits {
+	ForwardOpaque      = 1 << 0,
+	ForwardTransparent = 1 << 1,
+	ForwardZPrePass    = 1 << 2,
+	DeferredGBuffer    = 1 << 3,
+	DeferredLighting   = 1 << 4,
+	Depth              = 1 << 5
+};
 using SceneRendererFlags = Luna::Bitmask<SceneRendererFlagBits>;
 template <>
 struct Luna::EnableBitmaskOperators<SceneRendererFlagBits> : std::true_type {};
@@ -24,12 +31,18 @@ class SceneRenderer : public Luna::RenderPassInterface {
 	virtual void EnqueuePrepareRenderPass(Luna::RenderGraph& graph, Luna::TaskComposer& composer) override;
 
  private:
+	constexpr const static int TaskCount = 4;
+
 	Luna::RenderContext& _context;
 	Luna::RendererSuite& _suite;
 	SceneRendererFlags _flags;
 	Luna::Scene& _scene;
 	Luna::RenderScene _renderScene;
 
-	Luna::RenderQueue _queue;
-	Luna::VisibilityList _visibleOpaque;
+	Luna::RenderQueue _depthQueue;
+	Luna::RenderQueue _opaqueQueue;
+	Luna::RenderQueue _transparentQueue;
+
+	Luna::VisibilityList _opaqueVisible;
+	Luna::VisibilityList _transparentVisible;
 };

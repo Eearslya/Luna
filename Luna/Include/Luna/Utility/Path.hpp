@@ -33,6 +33,7 @@ class Path {
 
 	Path BaseDirectory() const;
 	std::string Extension() const;
+	std::string Filename() const;
 	Path Join(const Path& path) const;
 	std::string Protocol() const;
 	std::pair<std::string, std::string> ProtocolSplit() const;

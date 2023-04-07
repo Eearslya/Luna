@@ -8,34 +8,11 @@
 #include <Luna/Vulkan/Sampler.hpp>
 
 namespace Luna {
-static bool LoadGraphicsShader(Vulkan::Device& device,
-                               const Path& vertex,
-                               const Path& fragment,
-                               Vulkan::ShaderProgramVariant*& program) {
-	auto& shaderManager = device.GetShaderManager();
-
-	auto* shaderProgram = shaderManager.RegisterGraphics(vertex, fragment);
-	auto* shaderVariant = shaderProgram->RegisterVariant();
-
-	program = shaderVariant;
-
-	return program->GetProgram() != nullptr;
-}
-
-static bool LoadComputeShader(Vulkan::Device& device, const Path& compute, Vulkan::ShaderProgramVariant*& program) {
-	auto& shaderManager = device.GetShaderManager();
-
-	auto* shaderProgram = shaderManager.RegisterCompute(compute);
-	auto* shaderVariant = shaderProgram->RegisterVariant();
-
-	program = shaderVariant;
-
-	return program->GetProgram() != nullptr;
-}
-
-RenderContext::RenderContext(Vulkan::Device& device) : _device(device), _bindless(_device) {
+RenderContext::RenderContext(Vulkan::Device& device) : _device(device) {
 	CreateDefaultImages();
-	ReloadShaders();
+
+	_bindless.resize(_device.GetFramesInFlight());
+	for (auto& bindless : _bindless) { bindless = std::make_unique<Luna::Vulkan::BindlessAllocator>(_device); }
 }
 
 const uint32_t RenderContext::GetFrameContextCount() const {
@@ -44,7 +21,7 @@ const uint32_t RenderContext::GetFrameContextCount() const {
 
 void RenderContext::BeginFrame(uint32_t frameIndex) {
 	_frameIndex = frameIndex;
-	_bindless.BeginFrame();
+	_bindless[_frameIndex]->BeginFrame();
 }
 
 void RenderContext::CreateDefaultImages() {
@@ -81,54 +58,6 @@ void RenderContext::CreateDefaultImages() {
 	_defaultImages.White2D = _device.CreateImage(imageCI2D, initialImages);
 }
 
-void RenderContext::ReloadShaders() {
-	if (!LoadGraphicsShader(_device,
-	                        "res://Shaders/Fullscreen.vert.glsl",
-	                        "res://Shaders/BloomDownsample.frag.glsl",
-	                        _shaders.BloomDownsample)) {
-		return;
-	}
-	if (!LoadGraphicsShader(_device,
-	                        "res://Shaders/Fullscreen.vert.glsl",
-	                        "res://Shaders/BloomThreshold.frag.glsl",
-	                        _shaders.BloomThreshold)) {
-		return;
-	}
-	if (!LoadGraphicsShader(_device,
-	                        "res://Shaders/Fullscreen.vert.glsl",
-	                        "res://Shaders/BloomUpsample.frag.glsl",
-	                        _shaders.BloomUpsample)) {
-		return;
-	}
-	if (!LoadComputeShader(_device, "res://Shaders/Luminance.comp.glsl", _shaders.Luminance)) { return; }
-	if (!LoadGraphicsShader(
-				_device, "res://Shaders/PBRForward.vert.glsl", "res://Shaders/PBRForward.frag.glsl", _shaders.PBRForward)) {
-		return;
-	}
-	if (!LoadGraphicsShader(
-				_device, "res://Shaders/PBRGBuffer.vert.glsl", "res://Shaders/PBRGBuffer.frag.glsl", _shaders.PBRGBuffer)) {
-		return;
-	}
-	if (!LoadGraphicsShader(
-				_device, "res://Shaders/Fullscreen.vert.glsl", "res://Shaders/PBRDeferred.frag.glsl", _shaders.PBRDeferred)) {
-		return;
-	}
-	if (!LoadGraphicsShader(
-				_device, "res://Shaders/Fullscreen.vert.glsl", "res://Shaders/Tonemap.frag.glsl", _shaders.Tonemap)) {
-		return;
-	}
-	if (!LoadGraphicsShader(
-				_device, "res://Shaders/Visibility.vert.glsl", "res://Shaders/Visibility.frag.glsl", _shaders.Visibility)) {
-		return;
-	}
-	if (!LoadGraphicsShader(
-				_device, "res://Shaders/Fullscreen.vert.glsl", "res://Shaders/VisDebug.frag.glsl", _shaders.VisibilityDebug)) {
-		return;
-	}
-
-	Log::Info("RenderContext", "Shaders reloaded.");
-}
-
 void RenderContext::SetCamera(const glm::mat4& projection, const glm::mat4& view) {
 	_camera.Projection        = projection;
 	_camera.View              = view;
@@ -158,27 +87,27 @@ void RenderContext::SetCamera(const glm::mat4& projection, const glm::mat4& view
 	_camera.ZFar       = Project(invZW * glm::vec2(1.0f, 1.0f));
 }
 
-uint32_t RenderContext::SetTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler) {
-	return _bindless.Texture(view, sampler);
+uint32_t RenderContext::SetTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler) const {
+	return _bindless[_frameIndex]->Texture(view, sampler);
 }
 
-uint32_t RenderContext::SetTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler) {
-	return _bindless.Texture(view, sampler);
+uint32_t RenderContext::SetTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler) const {
+	return _bindless[_frameIndex]->Texture(view, sampler);
 }
 
-uint32_t RenderContext::SetSrgbTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler) {
-	return _bindless.SrgbTexture(view, sampler);
+uint32_t RenderContext::SetSrgbTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler) const {
+	return _bindless[_frameIndex]->SrgbTexture(view, sampler);
 }
 
-uint32_t RenderContext::SetSrgbTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler) {
-	return _bindless.SrgbTexture(view, sampler);
+uint32_t RenderContext::SetSrgbTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler) const {
+	return _bindless[_frameIndex]->SrgbTexture(view, sampler);
 }
 
-uint32_t RenderContext::SetUnormTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler) {
-	return _bindless.UnormTexture(view, sampler);
+uint32_t RenderContext::SetUnormTexture(const Vulkan::ImageView& view, const Vulkan::Sampler& sampler) const {
+	return _bindless[_frameIndex]->UnormTexture(view, sampler);
 }
 
-uint32_t RenderContext::SetUnormTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler) {
-	return _bindless.UnormTexture(view, sampler);
+uint32_t RenderContext::SetUnormTexture(const Vulkan::ImageView& view, Vulkan::StockSampler sampler) const {
+	return _bindless[_frameIndex]->UnormTexture(view, sampler);
 }
 }  // namespace Luna

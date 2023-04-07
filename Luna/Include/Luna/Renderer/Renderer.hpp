@@ -10,13 +10,20 @@ class Renderer : public IntrusivePtrEnabled<Renderer> {
 	virtual ~Renderer() noexcept = default;
 
 	void Begin(RenderQueue& queue) const;
-	void Flush(Vulkan::CommandBuffer& cmd, RenderQueue& queue, const RenderContext& context) const;
-	void Flush(Vulkan::CommandBuffer& cmd, const RenderQueue& queue, const RenderContext& context) const;
+	void Flush(Vulkan::CommandBuffer& cmd,
+	           RenderQueue& queue,
+	           const RenderContext& context,
+	           RendererFlushFlags flush = {}) const;
+	void Flush(Vulkan::CommandBuffer& cmd,
+	           const RenderQueue& queue,
+	           const RenderContext& context,
+	           RendererFlushFlags flush = {}) const;
 	void FlushSubset(Vulkan::CommandBuffer& cmd,
 	                 const RenderQueue& queue,
 	                 const RenderContext& context,
 	                 uint32_t subsetIndex,
-	                 uint32_t subsetCount) const;
+	                 uint32_t subsetCount,
+	                 RendererFlushFlags flush = {}) const;
 	void SetMeshRendererOptions(RendererOptionFlags options);
 
  protected:

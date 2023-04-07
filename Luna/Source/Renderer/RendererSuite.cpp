@@ -4,6 +4,9 @@
 namespace Luna {
 RendererSuite::RendererSuite(Vulkan::Device& device) : _device(device) {
 	SetRenderer(RendererSuiteType::ForwardOpaque, MakeHandle<Renderer>(_device, RendererType::GeneralForward));
+	SetRenderer(RendererSuiteType::ForwardTransparent, MakeHandle<Renderer>(_device, RendererType::GeneralForward));
+	SetRenderer(RendererSuiteType::PrepassDepth, MakeHandle<Renderer>(_device, RendererType::DepthOnly));
+	SetRenderer(RendererSuiteType::Deferred, MakeHandle<Renderer>(_device, RendererType::GeneralDeferred));
 }
 
 RendererSuite::~RendererSuite() noexcept {}

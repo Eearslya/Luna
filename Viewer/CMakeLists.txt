@@ -15,8 +15,6 @@ target_link_libraries(Viewer PRIVATE dds-ktx fastgltf ktx Luna mikktspace)
 
 target_sources(Viewer PRIVATE
 	Files.cpp
-	ForwardRenderer.cpp
-	GBufferRenderer.cpp
 	SceneLoader.cpp
 	SceneRenderer.cpp
 	Viewer.cpp)

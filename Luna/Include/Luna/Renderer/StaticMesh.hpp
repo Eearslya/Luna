@@ -7,7 +7,7 @@
 #include <Luna/Vulkan/Buffer.hpp>
 
 namespace Luna {
-constexpr static const int MaxStaticMeshInstances = 256;
+constexpr static const int MaxStaticMeshInstances = 128;
 
 class StaticMesh;
 
@@ -31,8 +31,8 @@ struct MeshAttribute {
 };
 
 struct StaticSubmeshRenderInfo {
-	Vulkan::Program* Program = nullptr;
-	uint32_t MaterialIndex   = 0;
+	Vulkan::Program* Program  = nullptr;
+	MaterialData MaterialData = {};
 
 	Vulkan::Buffer* PositionBuffer = nullptr;
 	vk::DeviceSize PositionStride  = 0;

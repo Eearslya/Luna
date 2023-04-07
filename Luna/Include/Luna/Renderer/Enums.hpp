@@ -13,6 +13,18 @@ enum class AttachmentInfoFlagBits {
 };
 using AttachmentInfoFlags = Bitmask<AttachmentInfoFlagBits>;
 
+enum class RendererFlushFlagBits {
+	FrontFaceClockwise   = 1 << 0,
+	DepthBias            = 1 << 1,
+	DepthStencilReadOnly = 1 << 2,
+	NoColor              = 1 << 3,
+	Backface             = 1 << 4,
+	SkipSorting          = 1 << 5,
+	DepthTestInvert      = 1 << 6,
+	DepthTestEqual       = 1 << 7,
+};
+using RendererFlushFlags = Bitmask<RendererFlushFlagBits>;
+
 enum class RendererOptionFlagBits { EnableShadows = 1 << 0 };
 using RendererOptionFlags = Bitmask<RendererOptionFlagBits>;
 
@@ -30,11 +42,11 @@ constexpr static const uint32_t RenderableTypeCount = 1;
 /**
  * Identifies what responsibilities a given Renderer object is made to handle.
  */
-enum class RendererSuiteType { ForwardOpaque = 0 };
-constexpr static const uint32_t RendererSuiteTypeCount = 1;
+enum class RendererSuiteType { ForwardOpaque, ForwardTransparent, PrepassDepth, Deferred };
+constexpr static const uint32_t RendererSuiteTypeCount = 4;
 
-enum class RendererType { GeneralForward, DepthOnly, Flat };
-constexpr static const uint32_t RendererTypeCount = 3;
+enum class RendererType { GeneralForward, GeneralDeferred, DepthOnly, Flat };
+constexpr static const uint32_t RendererTypeCount = 4;
 
 enum class RenderQueueType { Opaque, OpaqueEmissive, Light, Transparent };
 constexpr static const uint32_t RenderQueueTypeCount = 4;
@@ -51,6 +63,8 @@ enum class SizeClass {
 
 template <>
 struct Luna::EnableBitmaskOperators<Luna::AttachmentInfoFlagBits> : std::true_type {};
+template <>
+struct Luna::EnableBitmaskOperators<Luna::RendererFlushFlagBits> : std::true_type {};
 template <>
 struct Luna::EnableBitmaskOperators<Luna::RendererOptionFlagBits> : std::true_type {};
 template <>

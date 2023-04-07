@@ -8,11 +8,21 @@ void ShaderSuiteResolver::Resolve(Vulkan::Device& device,
                                   ShaderSuite& suite,
                                   RendererType type,
                                   RenderableType drawable) const {
-	if (type == RendererType::GeneralForward) {
+	if (type == RendererType::GeneralForward || type == RendererType::GeneralDeferred) {
 		switch (drawable) {
 			case RenderableType::Mesh:
 				suite.InitGraphics(
 					device.GetShaderManager(), "res://Shaders/StaticMesh.vert.glsl", "res://Shaders/StaticMesh.frag.glsl");
+				break;
+
+			default:
+				break;
+		}
+	} else if (type == RendererType::DepthOnly) {
+		switch (drawable) {
+			case RenderableType::Mesh:
+				suite.InitGraphics(
+					device.GetShaderManager(), "res://Shaders/StaticMesh.vert.glsl", "res://Shaders/StaticMeshDepth.frag.glsl");
 				break;
 
 			default:
@@ -38,6 +48,7 @@ Vulkan::Program* ShaderSuite::GetProgram(VariantSignatureKey signature) {
 	}
 
 	Hasher h;
+	h(_baseDefinesHash);
 	const auto hash = h.Get();
 
 	auto* variant = _variants.Find(hash);

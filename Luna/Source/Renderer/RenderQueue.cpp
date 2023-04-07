@@ -57,6 +57,10 @@ void RenderQueue::PushRenderables(const RenderContext& context, const Visibility
 	for (const auto& renderable : renderables) { renderable.Handle->Enqueue(context, renderable, *this); }
 }
 
+void RenderQueue::PushDepthRenderables(const RenderContext& context, const VisibilityList& renderables) {
+	for (const auto& renderable : renderables) { renderable.Handle->EnqueueDepth(context, renderable, *this); }
+}
+
 void RenderQueue::Reset() {
 	RecycleBlocks();
 	for (auto& queue : _queues) { queue.Clear(); }

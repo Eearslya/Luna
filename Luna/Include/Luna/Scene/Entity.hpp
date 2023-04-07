@@ -36,6 +36,7 @@ class Entity {
 	std::vector<Entity> GetChildren() const;
 	glm::mat4 GetGlobalTransform() const;
 	glm::mat4 GetLocalTransform() const;
+	const std::string& GetName() const;
 	Entity GetParent() const;
 
 	void Rotate(const glm::vec3& rDelta);
@@ -52,6 +53,12 @@ class Entity {
 	}
 	operator const entt::entity() const {
 		return _handle;
+	}
+	explicit operator uint64_t() {
+		return uint64_t(entt::entity(*this));
+	}
+	explicit operator uint64_t() const {
+		return uint64_t(entt::entity(*this));
 	}
 
 	operator bool() const {

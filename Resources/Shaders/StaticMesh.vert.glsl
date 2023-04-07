@@ -3,17 +3,24 @@
 #include "Transform.glsli"
 
 layout(location = 0) in vec3 inPosition;
+layout(location = 3) in vec2 inTexcoord0;
+
+layout(location = 0) out vec2 outTexcoord0;
+
+#if !defined(RENDERER_DEPTH)
 layout(location = 1) in vec3 inNormal;
+layout(location = 2) in vec4 inTangent;
+
+layout(location = 1) out mat3 outTBN;
+#endif
 
 struct StaticSubmeshInstanceInfo {
 	mat4 Model;
 };
 
-layout(set = 1, binding = 0, std140) uniform InstanceData {
-	StaticSubmeshInstanceInfo Instance[256];
+layout(set = 2, binding = 1, std140) uniform InstanceData {
+	StaticSubmeshInstanceInfo Instance[128];
 };
-
-layout(location = 0) out vec3 outNormal;
 
 void main() {
 #if SKINNED_MESH
@@ -27,6 +34,13 @@ void main() {
 	vec3 worldPosition = worldTransform * vec4(inPosition, 1.0f);
 	gl_Position = Transform.ViewProjection * vec4(worldPosition, 1.0f);
 
-	mat3 normalTransform = mat3(worldTransform[0], worldTransform[1], worldTransform[2]);
-	outNormal = normalize(normalTransform * inNormal);
+	outTexcoord0 = inTexcoord0;
+
+#if !defined(RENDERER_DEPTH)
+	mat3 normalTransform = inverse(transpose(mat3(worldTransform)));
+	vec3 T = normalize(normalTransform * inTangent.xyz);
+	vec3 B = normalize(normalTransform * (cross(inNormal.xyz, inTangent.xyz) * inTangent.w));
+	vec3 N = normalize(normalTransform * inNormal.xyz);
+	outTBN = mat3(T, B, N);
+#endif
 }

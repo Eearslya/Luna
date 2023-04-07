@@ -1,4 +1,5 @@
 #include <Luna/Scene/Entity.hpp>
+#include <Luna/Scene/NameComponent.hpp>
 #include <Luna/Scene/RelationshipComponent.hpp>
 #include <Luna/Scene/TransformComponent.hpp>
 
@@ -32,6 +33,10 @@ glm::mat4 Entity::GetGlobalTransform() const {
 
 glm::mat4 Entity::GetLocalTransform() const {
 	return Transform().GetTransform();
+}
+
+const std::string& Entity::GetName() const {
+	return GetComponent<NameComponent>().Name;
 }
 
 Entity Entity::GetParent() const {

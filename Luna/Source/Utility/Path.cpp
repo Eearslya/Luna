@@ -56,6 +56,15 @@ std::string Path::Extension() const {
 	return _pathStr.substr(pos + 1);
 }
 
+std::string Path::Filename() const {
+	if (_pathStr.empty()) { return ""; }
+
+	auto pos = _pathStr.find_last_of('/');
+	if (pos == std::string::npos) { return _pathStr; }
+
+	return _pathStr.substr(pos + 1);
+}
+
 Path Path::Join(const Path& path) const {
 	if (_pathStr.empty()) { return path; }
 	if (path._pathStr.empty()) { return *this; }

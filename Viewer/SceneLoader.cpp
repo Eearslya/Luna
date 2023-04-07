@@ -178,7 +178,8 @@ struct Submesh {
 
 struct Node {
 	uint32_t Index = 0;
-	Node* Parent   = nullptr;
+	std::string Name;
+	Node* Parent = nullptr;
 	std::vector<Node*> Children;
 	int32_t MeshIndex = -1;
 
@@ -579,6 +580,7 @@ static void ImportNodes(GltfContext& context) {
 		auto& node           = context.Nodes[i];
 
 		node.Index     = i;
+		node.Name      = gltfNode.name;
 		node.MeshIndex = gltfNode.meshIndex ? int(*gltfNode.meshIndex) : -1;
 
 		std::visit(Overloaded{[&](const fastgltf::Node::TRS& trs) {
@@ -947,36 +949,35 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 			const vk::DeviceSize vertexSize   = meshVertices.size() * sizeof(Vertex);
 			const vk::DeviceSize indexSize    = meshIndices.size() * sizeof(uint32_t);
 
-			std::vector<uint8_t> posBufferData(positionSize);
+			std::vector<uint8_t> posBufferData(positionSize + indexSize);
 			memcpy(posBufferData.data(), meshPositions.data(), positionSize);
+			memcpy(posBufferData.data() + positionSize, meshIndices.data(), indexSize);
 
 			std::vector<uint8_t> attrBufferData(vertexSize);
 			memcpy(attrBufferData.data(), meshVertices.data(), vertexSize);
 
 			const Luna::Vulkan::BufferCreateInfo posBufferCI(
 				Luna::Vulkan::BufferDomain::Device,
-				positionSize,
-				vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress);
+				posBufferData.size(),
+				vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer);
 			mesh->PositionBuffer = context.Device.CreateBuffer(posBufferCI, posBufferData.data());
 
-			mesh->PositionStride = sizeof(glm::vec3);
-			// mesh->IndexOffset                                               = positionSize;
-			// mesh->IndexType                                                 = vk::IndexType::eUint32;
-			// mesh->Attributes[int(Luna::MeshAttributeType::Position)].Format = vk::Format::eR32G32B32Sfloat;
-			// mesh->Attributes[int(Luna::MeshAttributeType::Position)].Offset = 0;
+			mesh->PositionStride                                            = sizeof(glm::vec3);
+			mesh->IndexOffset                                               = positionSize;
+			mesh->IndexType                                                 = vk::IndexType::eUint32;
+			mesh->Attributes[int(Luna::MeshAttributeType::Position)].Format = vk::Format::eR32G32B32Sfloat;
+			mesh->Attributes[int(Luna::MeshAttributeType::Position)].Offset = 0;
 
 			const Luna::Vulkan::BufferCreateInfo attrBufferCI(
-				Luna::Vulkan::BufferDomain::Device,
-				vertexSize,
-				vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress);
+				Luna::Vulkan::BufferDomain::Device, vertexSize, vk::BufferUsageFlagBits::eVertexBuffer);
 			mesh->AttributeBuffer = context.Device.CreateBuffer(attrBufferCI, attrBufferData.data());
-			// mesh->AttributeStride = sizeof(Vertex);
-			// mesh->Attributes[int(Luna::MeshAttributeType::Normal)].Format    = vk::Format::eR32G32B32Sfloat;
-			// mesh->Attributes[int(Luna::MeshAttributeType::Normal)].Offset    = offsetof(Vertex, Normal);
-			// mesh->Attributes[int(Luna::MeshAttributeType::Tangent)].Format   = vk::Format::eR32G32B32A32Sfloat;
-			// mesh->Attributes[int(Luna::MeshAttributeType::Tangent)].Offset   = offsetof(Vertex, Tangent);
-			// mesh->Attributes[int(Luna::MeshAttributeType::Texcoord0)].Format = vk::Format::eR32G32Sfloat;
-			// mesh->Attributes[int(Luna::MeshAttributeType::Texcoord0)].Offset = offsetof(Vertex, Texcoord0);
+			mesh->AttributeStride = sizeof(Vertex);
+			mesh->Attributes[int(Luna::MeshAttributeType::Normal)].Format    = vk::Format::eR32G32B32Sfloat;
+			mesh->Attributes[int(Luna::MeshAttributeType::Normal)].Offset    = offsetof(Vertex, Normal);
+			mesh->Attributes[int(Luna::MeshAttributeType::Tangent)].Format   = vk::Format::eR32G32B32A32Sfloat;
+			mesh->Attributes[int(Luna::MeshAttributeType::Tangent)].Offset   = offsetof(Vertex, Tangent);
+			mesh->Attributes[int(Luna::MeshAttributeType::Texcoord0)].Format = vk::Format::eR32G32Sfloat;
+			mesh->Attributes[int(Luna::MeshAttributeType::Texcoord0)].Offset = offsetof(Vertex, Texcoord0);
 
 			mesh->Indices   = std::move(meshIndices);
 			mesh->Materials = std::move(materials);
@@ -997,7 +998,7 @@ static void LoadMeshes(Luna::TaskComposer& composer, GltfContext& context) {
 
 static void PopulateScene(GltfContext& context, Luna::Entity& entity) {
 	const std::function<void(Node*, Luna::Entity)> AddNode = [&](Node* node, Luna::Entity parent) {
-		auto entity = context.Scene.CreateChildEntity(parent);
+		auto entity = context.Scene.CreateChildEntity(parent, node->Name);
 
 		entity.Translate(node->Translation);
 		entity.Rotate(node->Rotation);
@@ -1027,7 +1028,7 @@ Luna::Entity SceneLoader::LoadGltf(Luna::Vulkan::Device& device, Luna::Scene& sc
 	Parse(context);
 	if (!context.Asset) { return {}; }
 
-	auto root = scene.CreateEntity("Gltf");
+	auto root = scene.CreateEntity(gltfPath.Filename());
 
 	Preallocate(context);
 	ImportSamplers(context);

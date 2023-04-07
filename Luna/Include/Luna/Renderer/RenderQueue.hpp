@@ -60,6 +60,7 @@ class RenderQueue {
 	                    uint32_t subsetIndex,
 	                    uint32_t subsetCount) const;
 	void PushRenderables(const RenderContext& context, const VisibilityList& renderables);
+	void PushDepthRenderables(const RenderContext& context, const VisibilityList& renderables);
 	void Reset();
 	void SetShaderSuites(ShaderSuite* suites);
 	void Sort();
