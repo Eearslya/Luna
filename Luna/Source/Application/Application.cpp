@@ -1,6 +1,7 @@
 #include <Luna/Application/Application.hpp>
 #include <Luna/Platform/Filesystem.hpp>
 #include <Luna/Platform/Windows/OSFilesystem.hpp>
+#include <Luna/Project/ProjectFilesystem.hpp>
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Utility/Threading.hpp>
 #include <Luna/Vulkan/ImGuiRenderer.hpp>
@@ -24,6 +25,7 @@ Application::Application() {
 
 	_filesystem->RegisterProtocol("assets", std::unique_ptr<FilesystemBackend>(new OSFilesystem("Assets")));
 	_filesystem->RegisterProtocol("cache", std::unique_ptr<FilesystemBackend>(new OSFilesystem("Cache")));
+	_filesystem->RegisterProtocol("project", std::unique_ptr<FilesystemBackend>(new ProjectFilesystem()));
 	_filesystem->RegisterProtocol("res", std::unique_ptr<FilesystemBackend>(new OSFilesystem("Resources")));
 }
 

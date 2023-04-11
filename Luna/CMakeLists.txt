@@ -15,6 +15,9 @@ FetchContent_Declare(glm
 FetchContent_Declare(glslang
 	GIT_REPOSITORY https://github.com/KhronosGroup/glslang.git
 	GIT_TAG 14e5a04e70057972eef8a40df422e30a3b70e4b5)
+FetchContent_Declare(json
+	GIT_REPOSITORY https://github.com/nlohmann/json.git
+	GIT_TAG 6af826d0bdb55e4b69e3ad817576745335f243ca)
 FetchContent_Declare(shaderc
 	GIT_REPOSITORY https://github.com/google/shaderc.git
 	GIT_TAG 4a8f5e537f20bbcfe4b11f1fe45314f1dcbfddf6)
@@ -60,7 +63,7 @@ set(SPIRV_SKIP_TESTS On CACHE BOOL "" FORCE)
 set(VMA_STATIC_VULKAN_FUNCTIONS Off CACHE BOOL "" FORCE)
 set(VMA_DYNAMIC_VULKAN_FUNCTIONS Off CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(entt glfw glm glslang spirv-headers spirv-tools shaderc spdlog spirv-cross tracy vma)
+FetchContent_MakeAvailable(entt glfw glm glslang json spirv-headers spirv-tools shaderc spdlog spirv-cross tracy vma)
 
 add_library(Luna STATIC)
 target_compile_definitions(Luna
@@ -68,7 +71,7 @@ target_compile_definitions(Luna
 	PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC)
 target_include_directories(Luna PUBLIC "Include")
 target_link_libraries(Luna
-	PUBLIC EnTT::EnTT glm imgui spdlog stb TracyClient Vulkan::Headers VulkanMemoryAllocator
+	PUBLIC EnTT::EnTT glm imgui nlohmann_json spdlog stb TracyClient Vulkan::Headers VulkanMemoryAllocator
 	PRIVATE glfw glslang shaderc SPIRV SPIRV-Tools spirv-cross-cpp)
 
 add_subdirectory(Source)

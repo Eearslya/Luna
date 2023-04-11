@@ -20,8 +20,6 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <utility>
 
-// #include "ForwardRenderer.hpp"
-// #include "GBufferRenderer.hpp"
 #include "IconsFontAwesome6.h"
 #include "SceneLoader.hpp"
 #include "SceneRenderer.hpp"
@@ -55,6 +53,10 @@ class ViewerApplication : public Luna::Application {
 	virtual void OnStart() override {
 		auto* filesystem = Luna::Filesystem::Get();
 		auto& device     = GetDevice();
+
+		ProjectHandle project = MakeHandle<Project>("file://Project/Project.lproject");
+		if (!project->Load()) { project->Save(); }
+		Project::SetActive(project);
 
 		_camera.SetPosition({2, 1, 1});
 		_camera.Rotate(-5, -60);
@@ -114,13 +116,6 @@ class ViewerApplication : public Luna::Application {
 
 		{
 			auto pointLight = _scene.CreateEntity("Point Light");
-			pointLight.Translate(glm::vec3(-2, 1, -1));
-			auto& pl      = pointLight.AddComponent<Luna::PointLightComponent>();
-			pl.Multiplier = 0.0f;
-			pl.Radius     = 2.0f;
-		}
-		{
-			auto pointLight = _scene.CreateEntity("Point Light");
 			pointLight.Translate(glm::vec3(0, 0.2f, 1));
 			auto& pl      = pointLight.AddComponent<Luna::PointLightComponent>();
 			pl.Multiplier = 50.0f;
@@ -138,8 +133,8 @@ class ViewerApplication : public Luna::Application {
 
 		_swapchainConfig = GetSwapchainConfig();
 		OnSwapchainChanged += [&](const Luna::Vulkan::SwapchainConfiguration& config) {
-			_swapchainConfig = config;
-			_swapchainDirty  = true;
+			_swapchainConfig     = config;
+			_recreateRenderGraph = true;
 		};
 
 		_renderContext = std::make_unique<Luna::RenderContext>(device);
@@ -166,10 +161,14 @@ class ViewerApplication : public Luna::Application {
 		};
 	}
 
+	virtual void OnStop() override {
+		Project::GetActive()->Save();
+	}
+
 	virtual void OnUpdate(double frameTime, double elapsedTime) override {
-		if (_swapchainDirty) {
+		if (_recreateRenderGraph) {
 			BakeRenderGraph();
-			_swapchainDirty = false;
+			_recreateRenderGraph = false;
 		}
 
 		_lastFrameTime = frameTime;
@@ -222,9 +221,24 @@ class ViewerApplication : public Luna::Application {
 		if (ImGui::Begin("Renderer")) {
 			ImGui::Text("Frame Time: %.2f (%.0f FPS)", avgMs, 1000.0 / avgMs);
 
-			if (_renderConfig.RendererType == RendererType::GeneralForward) {
-				if (ImGui::Checkbox("Z-Prepass", &_renderConfig.ForwardDepthPrepass)) { _swapchainDirty = true; }
+			const char* rendererTypePreview =
+				_renderConfig.RendererType == RendererType::GeneralForward ? "Forward" : "Deferred";
+			if (ImGui::BeginCombo("Renderer Type", rendererTypePreview)) {
+				if (ImGui::Selectable("Forward", _renderConfig.RendererType == RendererType::GeneralForward)) {
+					_renderConfig.RendererType = RendererType::GeneralForward;
+					_recreateRenderGraph       = true;
+				}
+				if (ImGui::Selectable("Deferred", _renderConfig.RendererType == RendererType::GeneralDeferred)) {
+					_renderConfig.RendererType = RendererType::GeneralDeferred;
+					_recreateRenderGraph       = true;
+				}
+				ImGui::EndCombo();
 			}
+
+			if (_renderConfig.RendererType == RendererType::GeneralForward) {
+				if (ImGui::Checkbox("Z-Prepass", &_renderConfig.ForwardDepthPrepass)) { _recreateRenderGraph = true; }
+			}
+			if (ImGui::Checkbox("HDR Bloom", &_renderConfig.HdrBloom)) { _recreateRenderGraph = true; }
 
 			ImGui::SliderFloat("Exposure", &_exposure, 0.01f, 10.0f);
 			ImGui::Checkbox("Dynamic Exposure", &_dynamicExposure);
@@ -234,8 +248,8 @@ class ViewerApplication : public Luna::Application {
 			if (ImGui::BeginCombo("Render Graph View", view)) {
 				for (uint32_t i = 0; i < _renderGraphViews.size(); ++i) {
 					if (ImGui::Selectable(_renderGraphViews[i].c_str(), false)) {
-						_renderGraphView = _renderGraphViews[i];
-						_swapchainDirty  = true;
+						_renderGraphView     = _renderGraphViews[i];
+						_recreateRenderGraph = true;
 					}
 				}
 				ImGui::EndCombo();
@@ -243,7 +257,7 @@ class ViewerApplication : public Luna::Application {
 			if (!_renderGraphView.empty()) {
 				if (ImGui::Button("Reset View")) {
 					_renderGraphView.clear();
-					_swapchainDirty = true;
+					_recreateRenderGraph = true;
 				}
 			}
 		}
@@ -254,8 +268,8 @@ class ViewerApplication : public Luna::Application {
 			const auto windowSize = ImGui::GetContentRegionAvail();
 			const glm::uvec2 winSize(windowSize.x, windowSize.y);
 			if (winSize != _sceneSize) {
-				_sceneSize      = glm::uvec2(glm::max(windowSize.x, 1.0f), glm::max(windowSize.y, 1.0f));
-				_swapchainDirty = true;
+				_sceneSize           = glm::uvec2(glm::max(windowSize.x, 1.0f), glm::max(windowSize.y, 1.0f));
+				_recreateRenderGraph = true;
 			}
 
 			if (_sceneImage) {
@@ -264,7 +278,8 @@ class ViewerApplication : public Luna::Application {
 				ImGui::Image(ImTextureID(sceneId), windowSize);
 			}
 
-			_sceneActive = ImGui::IsWindowFocused() && ImGui::IsWindowHovered();
+			_sceneActive  = ImGui::IsWindowFocused() && ImGui::IsWindowHovered();
+			_sceneFocused = ImGui::IsWindowFocused();
 		}
 		ImGui::End();
 		ImGui::PopStyleVar();
@@ -273,6 +288,20 @@ class ViewerApplication : public Luna::Application {
 	}
 
  private:
+	void AddMainPassDeferred(const AttachmentInfo& attachmentBase) {
+		AttachmentInfo color = attachmentBase;
+
+		auto& lighting = _renderGraph->AddPass("Lighting", RenderGraphQueueFlagBits::Graphics);
+		lighting.AddColorOutput("Lighting-Color", color);
+
+		SceneRendererFlags flags = SceneRendererFlagBits::DeferredGBuffer;
+
+		auto renderer = MakeHandle<SceneRenderer>(*_renderContext, *_renderSuite, flags, _scene);
+		lighting.SetRenderPassInterface(renderer);
+
+		_renderGraphViews.push_back("Lighting-Color");
+	}
+
 	void AddMainPassForward(const AttachmentInfo& attachmentBase) {
 		AttachmentInfo color = attachmentBase;
 		AttachmentInfo depth = attachmentBase;
@@ -321,7 +350,11 @@ class ViewerApplication : public Luna::Application {
 		const Luna::AttachmentInfo sceneBase = {
 			.SizeClass = Luna::SizeClass::Absolute, .Width = float(_sceneSize.x), .Height = float(_sceneSize.y)};
 
-		AddMainPassForward(sceneBase);
+		if (_renderConfig.RendererType == RendererType::GeneralForward) {
+			AddMainPassForward(sceneBase);
+		} else {
+			AddMainPassDeferred(sceneBase);
+		}
 
 		/*
 		{
@@ -763,16 +796,18 @@ class ViewerApplication : public Luna::Application {
 		updates.Enqueue([this]() {
 			_camera.SetViewport(_sceneSize.x, _sceneSize.y);
 
-			const float camSpeed = 3.0f;
-			glm::vec3 camMove(0);
-			if (Luna::Input::GetKey(Luna::Key::W) == Luna::InputAction::Press) { camMove += glm::vec3(0, 0, 1); }
-			if (Luna::Input::GetKey(Luna::Key::S) == Luna::InputAction::Press) { camMove -= glm::vec3(0, 0, 1); }
-			if (Luna::Input::GetKey(Luna::Key::A) == Luna::InputAction::Press) { camMove -= glm::vec3(1, 0, 0); }
-			if (Luna::Input::GetKey(Luna::Key::D) == Luna::InputAction::Press) { camMove += glm::vec3(1, 0, 0); }
-			if (Luna::Input::GetKey(Luna::Key::R) == Luna::InputAction::Press) { camMove += glm::vec3(0, 1, 0); }
-			if (Luna::Input::GetKey(Luna::Key::F) == Luna::InputAction::Press) { camMove -= glm::vec3(0, 1, 0); }
-			camMove *= camSpeed * _lastFrameTime;
-			_camera.Move(camMove);
+			if (_sceneFocused) {
+				const float camSpeed = 3.0f;
+				glm::vec3 camMove(0);
+				if (Luna::Input::GetKey(Luna::Key::W) == Luna::InputAction::Press) { camMove += glm::vec3(0, 0, 1); }
+				if (Luna::Input::GetKey(Luna::Key::S) == Luna::InputAction::Press) { camMove -= glm::vec3(0, 0, 1); }
+				if (Luna::Input::GetKey(Luna::Key::A) == Luna::InputAction::Press) { camMove -= glm::vec3(1, 0, 0); }
+				if (Luna::Input::GetKey(Luna::Key::D) == Luna::InputAction::Press) { camMove += glm::vec3(1, 0, 0); }
+				if (Luna::Input::GetKey(Luna::Key::R) == Luna::InputAction::Press) { camMove += glm::vec3(0, 1, 0); }
+				if (Luna::Input::GetKey(Luna::Key::F) == Luna::InputAction::Press) { camMove -= glm::vec3(0, 1, 0); }
+				camMove *= camSpeed * _lastFrameTime;
+				_camera.Move(camMove);
+			}
 
 			_renderContext->BeginFrame(GetDevice().GetFrameIndex());
 			_renderContext->SetCamera(_camera.GetProjection(), _camera.GetView());
@@ -807,7 +842,7 @@ class ViewerApplication : public Luna::Application {
 	std::unique_ptr<Luna::RenderGraph> _renderGraph;
 	std::unique_ptr<Luna::RendererSuite> _renderSuite;
 	Luna::Vulkan::SwapchainConfiguration _swapchainConfig;
-	bool _swapchainDirty = true;
+	bool _recreateRenderGraph = true;
 	Luna::IntrusivePtr<Luna::Vulkan::ImGuiRenderer> _imGuiRenderer;
 	double _lastFrameTime = 0.0;
 
@@ -815,6 +850,7 @@ class ViewerApplication : public Luna::Application {
 	glm::uvec2 _sceneSize;
 	Luna::RenderTextureResource* _sceneImage = nullptr;
 	bool _sceneActive                        = false;
+	bool _sceneFocused                       = false;
 	Luna::Entity _selectedEntity             = {};
 
 	Luna::Vulkan::ImageHandle _lutTexture;

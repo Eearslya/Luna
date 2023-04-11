@@ -6,6 +6,7 @@
 [Bb]uild/
 [Cc]ache/
 Examples/
+[Pp]roject/
 
 *~
 .dir-locals.el

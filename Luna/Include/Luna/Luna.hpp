@@ -3,6 +3,7 @@
 #include <Luna/Application/Application.hpp>
 #include <Luna/Application/Input.hpp>
 #include <Luna/Platform/Filesystem.hpp>
+#include <Luna/Project/Project.hpp>
 #include <Luna/Scene/Entity.hpp>
 #include <Luna/Scene/Scene.hpp>
 #include <Luna/Scene/TransformComponent.hpp>

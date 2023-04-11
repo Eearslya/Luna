@@ -124,7 +124,9 @@ void OSMappedFile::Unmap(void* mapped, size_t range) {
 	if (mapped) { UnmapViewOfFile(mapped); }
 }
 
-OSFilesystem::OSFilesystem(const Path& base) : _basePath(std::string(base)) {}
+OSFilesystem::OSFilesystem(const Path& base) : _basePath(std::string(base)) {
+	std::filesystem::create_directories(GetFilesystemPath(""));
+}
 
 OSFilesystem::~OSFilesystem() noexcept {
 	for (auto& handler : _handlers) {

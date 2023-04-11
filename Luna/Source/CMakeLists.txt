@@ -1,5 +1,6 @@
 add_subdirectory(Application)
 add_subdirectory(Platform)
+add_subdirectory(Project)
 add_subdirectory(Renderer)
 add_subdirectory(Scene)
 add_subdirectory(Utility)
