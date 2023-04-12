@@ -5,4 +5,5 @@ target_sources(Luna PRIVATE
 	Path.cpp
 	String.cpp
 	Threading.cpp
-	Timer.cpp)
+	Timer.cpp
+	UUID.cpp)

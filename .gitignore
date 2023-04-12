@@ -2,11 +2,11 @@
 .idea/
 .vs/
 .vscode/
-[Aa]ssets/
-[Bb]uild/
-[Cc]ache/
-Examples/
-[Pp]roject/
+/[Aa]ssets/
+/[Bb]uild/
+/[Cc]ache/
+/Examples/
+/[Pp]roject/
 
 *~
 .dir-locals.el

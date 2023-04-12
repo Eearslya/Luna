@@ -163,6 +163,7 @@ class ViewerApplication : public Luna::Application {
 
 	virtual void OnStop() override {
 		Project::GetActive()->Save();
+		Project::SetActive({});
 	}
 
 	virtual void OnUpdate(double frameTime, double elapsedTime) override {

@@ -38,6 +38,7 @@ class Path {
 	std::string Protocol() const;
 	std::pair<std::string, std::string> ProtocolSplit() const;
 	Path Relative(const Path& other) const;
+	std::string WithoutProtocol() const;
 
 	const std::string& String() const;
 	std::wstring WString() const;

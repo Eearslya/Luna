@@ -94,6 +94,10 @@ Path Path::Relative(const Path& other) const {
 	return BaseDirectory() / other;
 }
 
+std::string Path::WithoutProtocol() const {
+	return ProtocolSplit().second;
+}
+
 const std::string& Path::String() const {
 	return _pathStr;
 }

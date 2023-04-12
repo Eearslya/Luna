@@ -1,4 +1,5 @@
 add_subdirectory(Application)
+add_subdirectory(Assets)
 add_subdirectory(Platform)
 add_subdirectory(Project)
 add_subdirectory(Renderer)
