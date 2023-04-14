@@ -16,4 +16,3 @@
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/Sampler.hpp>
-#include <Luna/Vulkan/WSI.hpp>

@@ -85,7 +85,7 @@ static void BakeRenderGraph() {
 		ui.AddColorOutput("UI", uiColor);
 
 		ui.SetGetClearColor([](uint32_t, vk::ClearColorValue* value) -> bool {
-			if (value) { *value = vk::ClearColorValue(0.0f, 0.0f, 0.2f, 1.0f); }
+			if (value) { *value = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f); }
 			return true;
 		});
 		ui.SetBuildRenderPass([](Vulkan::CommandBuffer& cmd) { UIManager::Render(cmd); });

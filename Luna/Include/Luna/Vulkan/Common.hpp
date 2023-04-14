@@ -52,13 +52,9 @@ struct SamplerCreateInfo;
 struct SamplerDeleter;
 class Semaphore;
 class Shader;
-class ShaderCompiler;
-class ShaderManager;
-class ShaderProgram;
 class Swapchain;
 class TextureFormatLayout;
 class TransientAttachmentAllocator;
-class WSI;
 
 using HandleCounter = MultiThreadCounter;
 template <typename T>

@@ -14,9 +14,6 @@
 #include <Luna/Vulkan/Sampler.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
 #include <Luna/Vulkan/Shader.hpp>
-#include <Luna/Vulkan/ShaderCompiler.hpp>
-// #include <Luna/Vulkan/ShaderManager.hpp>
-#include <Luna/Vulkan/WSI.hpp>
 
 namespace Luna {
 namespace Vulkan {
@@ -93,9 +90,7 @@ Device::Device(Context& context)
 		}
 	}
 
-	_framebufferAllocator = std::make_unique<FramebufferAllocator>(*this);
-	_shaderCompiler       = std::make_unique<ShaderCompiler>();
-	// _shaderManager                = std::make_unique<ShaderManager>(*this);
+	_framebufferAllocator         = std::make_unique<FramebufferAllocator>(*this);
 	_transientAttachmentAllocator = std::make_unique<TransientAttachmentAllocator>(*this);
 
 	CreateStockSamplers();
@@ -136,8 +131,6 @@ Device::~Device() noexcept {
 	_indexBlocks.reset();
 
 	_transientAttachmentAllocator.reset();
-	// _shaderManager.reset();
-	_shaderCompiler.reset();
 	_framebufferAllocator.reset();
 
 	DestroyTracingContexts();
@@ -994,15 +987,6 @@ Program* Device::RequestProgram(Shader* compute) {
 	return ret;
 }
 
-Program* Device::RequestProgram(const std::string& computeGlsl) {
-	auto comp = RequestShader(vk::ShaderStageFlagBits::eCompute, computeGlsl);
-	if (comp) {
-		return RequestProgram(comp);
-	} else {
-		return nullptr;
-	}
-}
-
 Program* Device::RequestProgram(Shader* vertex, Shader* fragment) {
 	Hasher h;
 	h(vertex->GetHash());
@@ -1022,16 +1006,6 @@ Program* Device::RequestProgram(Shader* vertex, Shader* fragment) {
 	return ret;
 }
 
-Program* Device::RequestProgram(const std::string& vertexGlsl, const std::string& fragmentGlsl) {
-	auto vert = RequestShader(vk::ShaderStageFlagBits::eVertex, vertexGlsl);
-	auto frag = RequestShader(vk::ShaderStageFlagBits::eFragment, fragmentGlsl);
-	if (vert && frag) {
-		return RequestProgram(vert, frag);
-	} else {
-		return nullptr;
-	}
-}
-
 Shader* Device::RequestShader(size_t codeSize, const void* code) {
 	Hasher h;
 	h(codeSize);
@@ -1042,15 +1016,6 @@ Shader* Device::RequestShader(size_t codeSize, const void* code) {
 	if (!ret) { ret = _shaders.EmplaceYield(hash, hash, *this, codeSize, code); }
 
 	return ret;
-}
-
-Shader* Device::RequestShader(vk::ShaderStageFlagBits stage, const std::string& glsl) {
-	auto spirv = _shaderCompiler->Compile(stage, glsl);
-	if (spirv.has_value()) {
-		return RequestShader(spirv.value().size() * sizeof(uint32_t), spirv.value().data());
-	} else {
-		return nullptr;
-	}
 }
 
 Shader* Device::RequestShader(Hash hash) {
@@ -1458,46 +1423,6 @@ const RenderPass& Device::RequestRenderPass(const RenderPassInfo& rpInfo, bool c
 	if (!ret) { ret = _renderPasses.EmplaceYield(hash, hash, *this, rpInfo); }
 
 	return *ret;
-}
-
-void Device::SetupSwapchain(WSI& wsi) {
-	DeviceFlush();
-	WaitIdleNoLock();
-
-	/*
-	const auto& extent = wsi._swapchainConfig.Extent;
-	const auto& format = wsi._swapchainConfig.Format.format;
-	const auto& images = wsi._swapchainImages;
-	const auto imageCI = ImageCreateInfo::RenderTarget(format, extent.width, extent.height);
-
-	_swapchainAcquireConsumed = false;
-	_swapchainImages.clear();
-	_swapchainImages.reserve(images.size());
-	_swapchainIndex = std::numeric_limits<uint32_t>::max();
-
-	for (size_t i = 0; i < images.size(); ++i) {
-	  const auto& image = images[i];
-
-	  const vk::ImageViewCreateInfo viewCI({},
-	                                       image,
-	                                       vk::ImageViewType::e2D,
-	                                       format,
-	                                       vk::ComponentMapping(),
-	                                       vk::ImageSubresourceRange(FormatAspectFlags(format), 0, 1, 0, 1));
-	  auto imageView = _device.createImageView(viewCI);
-	  Log::Trace("Vulkan", "Image View created.");
-
-	  Image* img = _imagePool.Allocate(*this, image, imageView, VmaAllocation{}, imageCI, viewCI.viewType);
-	  ImageHandle handle(img);
-	  handle->DisownImage();
-	  handle->DisownMemory();
-	  handle->SetInternalSync();
-	  handle->GetView().SetInternalSync();
-	  handle->SetSwapchainLayout(vk::ImageLayout::ePresentSrcKHR);
-
-	  _swapchainImages.push_back(handle);
-	}
-	*/
 }
 
 void Device::EndFrameNoLock() {

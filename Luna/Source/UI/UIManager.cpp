@@ -7,6 +7,7 @@
 #include <Luna/Renderer/ShaderManager.hpp>
 #include <Luna/UI/IconsFontAwesome6.hpp>
 #include <Luna/UI/UIManager.hpp>
+#include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Image.hpp>
@@ -25,10 +26,11 @@ struct PushConstant {
 };
 
 static struct UIState {
+	std::vector<Vulkan::BufferHandle> Buffers;
 	Vulkan::ImageHandle FontImage;
 	Vulkan::SamplerHandle FontSampler;
 	bool MouseJustPressed[16] = {false};
-	ShaderProgram* Program    = nullptr;
+	Vulkan::Program* Program  = nullptr;
 } State;
 
 bool UIManager::Initialize() {
@@ -178,7 +180,9 @@ bool UIManager::Initialize() {
 	}
 
 	io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
-	State.Program = ShaderManager::RegisterGraphics("res://Shaders/ImGui.vert.glsl", "res://Shaders/ImGui.frag.glsl");
+	State.Program = ShaderManager::RegisterGraphics("res://Shaders/ImGui.vert.glsl", "res://Shaders/ImGui.frag.glsl")
+	                  ->RegisterVariant()
+	                  ->GetProgram();
 
 	const Vulkan::SamplerCreateInfo samplerCI{.MagFilter        = vk::Filter::eLinear,
 	                                          .MinFilter        = vk::Filter::eLinear,
@@ -235,6 +239,7 @@ void UIManager::Shutdown() {
 
 	State.FontSampler.Reset();
 	State.FontImage.Reset();
+	State.Buffers.clear();
 }
 
 void UIManager::BeginFrame(double deltaTime) {
@@ -269,6 +274,8 @@ void UIManager::EndFrame() {
 }
 
 void UIManager::Render(Vulkan::CommandBuffer& cmd) {
+	const uint32_t frameIndex = Renderer::GetDevice().GetFrameIndex();
+
 	ImDrawData* drawData = ImGui::GetDrawData();
 	if (drawData->CmdListsCount == 0 || drawData->TotalVtxCount == 0 || drawData->TotalIdxCount == 0) { return; }
 
@@ -279,10 +286,21 @@ void UIManager::Render(Vulkan::CommandBuffer& cmd) {
 
 	constexpr static vk::IndexType indexType = sizeof(ImDrawIdx) == 2 ? vk::IndexType::eUint16 : vk::IndexType::eUint32;
 
-	ImDrawVert* vertices = static_cast<ImDrawVert*>(
-		cmd.AllocateVertexData(0, drawData->TotalVtxCount * sizeof(ImDrawVert), sizeof(ImDrawVert)));
-	ImDrawIdx* indices =
-		static_cast<ImDrawIdx*>(cmd.AllocateIndexData(drawData->TotalIdxCount * sizeof(ImDrawIdx), indexType));
+	const vk::DeviceSize vertexSize = drawData->TotalVtxCount * sizeof(ImDrawVert);
+	const vk::DeviceSize indexSize  = drawData->TotalIdxCount * sizeof(ImDrawIdx);
+	const vk::DeviceSize bufferSize = vertexSize + indexSize;
+	if (frameIndex >= State.Buffers.size()) { State.Buffers.resize(frameIndex + 1); }
+	auto& buffer = State.Buffers[frameIndex];
+	if (!buffer || buffer->GetCreateInfo().Size < bufferSize) {
+		const Vulkan::BufferCreateInfo bufferCI(
+			Vulkan::BufferDomain::Host,
+			bufferSize,
+			vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer);
+		buffer = Renderer::GetDevice().CreateBuffer(bufferCI);
+	}
+	uint8_t* bufferData  = static_cast<uint8_t*>(buffer->Map());
+	ImDrawVert* vertices = reinterpret_cast<ImDrawVert*>(bufferData);
+	ImDrawIdx* indices   = reinterpret_cast<ImDrawIdx*>(bufferData + vertexSize);
 	for (int i = 0; i < drawData->CmdListsCount; ++i) {
 		const ImDrawList* list = drawData->CmdLists[i];
 		memcpy(vertices, list->VtxBuffer.Data, list->VtxBuffer.Size * sizeof(ImDrawVert));
@@ -301,13 +319,15 @@ void UIManager::Render(Vulkan::CommandBuffer& cmd) {
 	                           .TranslateY = -1.0f - drawData->DisplayPos.y * scaleY,
 	                           .SampleMode = ImGuiSampleMode::Standard};
 
-	const auto SetRenderState = [&cmd]() {
-		cmd.SetProgram(State.Program->RegisterVariant()->GetProgram());
+	const auto SetRenderState = [&cmd, &buffer, vertexSize]() {
+		cmd.SetProgram(State.Program);
 		cmd.SetTransparentSpriteState();
 		cmd.SetCullMode(vk::CullModeFlagBits::eNone);
+		cmd.SetVertexBinding(0, *buffer, 0, sizeof(ImDrawVert), vk::VertexInputRate::eVertex);
 		cmd.SetVertexAttribute(0, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, pos));
 		cmd.SetVertexAttribute(1, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, uv));
 		cmd.SetVertexAttribute(2, 0, vk::Format::eR8G8B8A8Unorm, offsetof(ImDrawVert, col));
+		cmd.SetIndexBuffer(*buffer, vertexSize, indexType);
 	};
 	SetRenderState();
 

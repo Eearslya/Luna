@@ -29,7 +29,6 @@ class Device : public IntrusivePtrEnabled<Device> {
 	friend class Semaphore;
 	friend struct SemaphoreDeleter;
 	friend class TransientAttachmentAllocator;
-	friend class WSI;
 
  public:
 	Device(Context& context);
@@ -57,9 +56,6 @@ class Device : public IntrusivePtrEnabled<Device> {
 	}
 	const QueueInfo& GetQueueInfo() const {
 		return _queueInfo;
-	}
-	ShaderCompiler& GetShaderCompiler() {
-		return *_shaderCompiler;
 	}
 
 	vk::Format GetDefaultDepthFormat() const;
@@ -112,11 +108,8 @@ class Device : public IntrusivePtrEnabled<Device> {
 	Program* RequestProgram(size_t compCodeSize, const void* compCode);
 	Program* RequestProgram(size_t vertCodeSize, const void* vertCode, size_t fragCodeSize, const void* fragCode);
 	Program* RequestProgram(Shader* compute);
-	Program* RequestProgram(const std::string& computeGlsl);
 	Program* RequestProgram(Shader* vertex, Shader* fragment);
-	Program* RequestProgram(const std::string& vertexGlsl, const std::string& fragmentGlsl);
 	Shader* RequestShader(size_t codeSize, const void* code);
-	Shader* RequestShader(vk::ShaderStageFlagBits stage, const std::string& glsl);
 	Shader* RequestShader(Hash hash);
 	PipelineLayout* RequestPipelineLayout(const ProgramResourceLayout& layout);
 	SemaphoreHandle RequestSemaphore();
@@ -222,7 +215,6 @@ class Device : public IntrusivePtrEnabled<Device> {
 	void ReleaseSemaphore(vk::Semaphore semaphore);
 	const Framebuffer& RequestFramebuffer(const RenderPassInfo& rpInfo);
 	const RenderPass& RequestRenderPass(const RenderPassInfo& rpInfo, bool compatible = false);
-	void SetupSwapchain(WSI& wsi);
 
 	void EndFrameNoLock();
 	void FlushFrame(QueueType queueType);
@@ -297,7 +289,6 @@ class Device : public IntrusivePtrEnabled<Device> {
 	std::vector<vk::Fence> _availableFences;
 	std::vector<vk::Semaphore> _availableSemaphores;
 	std::unique_ptr<BufferPool> _indexBlocks;
-	std::unique_ptr<ShaderCompiler> _shaderCompiler;
 	std::unique_ptr<BufferPool> _uniformBlocks;
 	std::unique_ptr<BufferPool> _vertexBlocks;
 
