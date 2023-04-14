@@ -1,11 +1,13 @@
 #pragma once
 
-#include <Luna/Application/Input.hpp>
-#include <Luna/Utility/Delegate.hpp>
-#include <Luna/Utility/Timer.hpp>
-#include <Luna/Vulkan/Common.hpp>
-#include <glm/glm.hpp>
-#include <vector>
+#if 0
+
+#	include <Luna/Application/Input.hpp>
+#	include <Luna/Utility/Delegate.hpp>
+#	include <Luna/Utility/Timer.hpp>
+#	include <Luna/Vulkan/Common.hpp>
+#	include <glm/glm.hpp>
+#	include <vector>
 
 namespace Luna {
 namespace Vulkan {
@@ -96,3 +98,5 @@ class WSI {
 };
 }  // namespace Vulkan
 }  // namespace Luna
+
+#endif

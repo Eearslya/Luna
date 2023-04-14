@@ -49,14 +49,17 @@ class Device : public IntrusivePtrEnabled<Device> {
 	uint32_t GetFramesInFlight() const {
 		return _frameContexts.size();
 	}
+	vk::Instance GetInstance() const {
+		return _instance;
+	}
 	vk::PipelineCache GetPipelineCache() const {
 		return _pipelineCache;
 	}
+	const QueueInfo& GetQueueInfo() const {
+		return _queueInfo;
+	}
 	ShaderCompiler& GetShaderCompiler() {
 		return *_shaderCompiler;
-	}
-	ShaderManager& GetShaderManager() {
-		return *_shaderManager;
 	}
 
 	vk::Format GetDefaultDepthFormat() const;
@@ -69,12 +72,18 @@ class Device : public IntrusivePtrEnabled<Device> {
 	                      SemaphoreHandle semaphore,
 	                      vk::PipelineStageFlags2 stages,
 	                      bool flush);
+	SemaphoreHandle ConsumeReleaseSemaphore();
 	void EndFrame();
 	void FlushFrame();
 	void NextFrame();
 	CommandBufferHandle RequestCommandBuffer(CommandBufferType type = CommandBufferType::Generic);
 	CommandBufferHandle RequestCommandBufferForThread(uint32_t threadIndex,
 	                                                  CommandBufferType type = CommandBufferType::Generic);
+	void SetAcquireSemaphore(uint32_t imageIndex, SemaphoreHandle& semaphore);
+	void SetupSwapchain(const vk::Extent2D& extent,
+	                    const vk::SurfaceFormatKHR& format,
+	                    const std::vector<vk::Image>& images);
+	bool SwapchainAcquired() const;
 	void Submit(CommandBufferHandle& cmd,
 	            FenceHandle* fence                       = nullptr,
 	            std::vector<SemaphoreHandle>* semaphores = nullptr);
@@ -204,7 +213,6 @@ class Device : public IntrusivePtrEnabled<Device> {
 	void CreateStockSamplers();
 	void CreateTimelineSemaphores();
 	void CreateTracingContexts();
-	SemaphoreHandle ConsumeReleaseSemaphore();
 	void DestroyTimelineSemaphores();
 	void DestroyTracingContexts();
 	void FlushPipelineCache();
@@ -214,7 +222,6 @@ class Device : public IntrusivePtrEnabled<Device> {
 	void ReleaseSemaphore(vk::Semaphore semaphore);
 	const Framebuffer& RequestFramebuffer(const RenderPassInfo& rpInfo);
 	const RenderPass& RequestRenderPass(const RenderPassInfo& rpInfo, bool compatible = false);
-	void SetAcquireSemaphore(uint32_t imageIndex, SemaphoreHandle& semaphore);
 	void SetupSwapchain(WSI& wsi);
 
 	void EndFrameNoLock();
@@ -335,7 +342,7 @@ class Device : public IntrusivePtrEnabled<Device> {
 	vk::PipelineCache _pipelineCache;
 
 	// High-level asset managers.
-	std::unique_ptr<ShaderManager> _shaderManager;
+	// std::unique_ptr<ShaderManager> _shaderManager;
 
 	std::array<const ImmutableSampler*, StockSamplerCount> _stockSamplers;
 };

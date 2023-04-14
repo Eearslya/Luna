@@ -304,6 +304,10 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	T* AllocateTypedUniformData(uint32_t set, uint32_t binding, uint32_t count) {
 		return static_cast<T*>(AllocateUniformData(set, binding, count * sizeof(T)));
 	}
+	void* AllocateVertexData(uint32_t binding,
+	                         vk::DeviceSize size,
+	                         vk::DeviceSize stride,
+	                         vk::VertexInputRate rate = vk::VertexInputRate::eVertex);
 
  private:
 	CommandBuffer(

@@ -55,6 +55,7 @@ class Shader;
 class ShaderCompiler;
 class ShaderManager;
 class ShaderProgram;
+class Swapchain;
 class TextureFormatLayout;
 class TransientAttachmentAllocator;
 class WSI;

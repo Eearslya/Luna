@@ -74,7 +74,7 @@ class RenderPassInterface : public IntrusivePtrEnabled<RenderPassInterface> {
 	 *
 	 * @param device The Vulkan Device.
 	 */
-	virtual void Setup(Vulkan::Device& device);
+	virtual void Setup();
 
 	/**
 	 * Records the Vulkan commands that should run during this Render Pass.
@@ -271,7 +271,7 @@ class RenderPass {
 
 	void BuildRenderPass(Vulkan::CommandBuffer& cmd, uint32_t layer);
 	void PrepareRenderPass(TaskComposer& composer);
-	void Setup(Vulkan::Device& device);
+	void Setup();
 	void SetupDependencies();
 
 	void SetBuildRenderPass(std::function<void(Vulkan::CommandBuffer&)>&& func);

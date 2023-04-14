@@ -1,8 +1,25 @@
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Utility/Threading.hpp>
+#include <Tracy/Tracy.hpp>
 
 namespace Luna {
-Threading* Threading::_instance       = nullptr;
+static struct ThreadingState {
+	ThreadSafeObjectPool<Task> TaskPool;
+	ThreadSafeObjectPool<TaskGroup> TaskGroupPool;
+	ThreadSafeObjectPool<TaskDependencies> TaskDependenciesPool;
+
+	std::queue<Task*> Tasks;
+	std::condition_variable TasksCondition;
+	std::mutex TasksMutex;
+	std::atomic_uint TasksCompleted;
+	std::atomic_uint TasksTotal;
+	std::condition_variable WaitCondition;
+	std::mutex WaitMutex;
+
+	std::atomic_bool Running = false;
+	std::vector<std::thread> WorkerThreads;
+} State;
+
 static thread_local uint32_t ThreadID = ~0u;
 
 void Threading::SetThreadID(uint32_t thread) {
@@ -14,7 +31,7 @@ uint32_t Threading::GetThreadID() {
 }
 
 void TaskDependenciesDeleter::operator()(TaskDependencies* deps) {
-	Threading::Get()->FreeTaskDependencies(deps);
+	Threading::FreeTaskDependencies(deps);
 }
 
 TaskDependencies::TaskDependencies() {
@@ -28,7 +45,7 @@ void TaskDependencies::DependencySatisfied() {
 		if (PendingTasks.empty()) {
 			NotifyDependees();
 		} else {
-			Threading::Get()->SubmitTasks(PendingTasks);
+			Threading::SubmitTasks(PendingTasks);
 			PendingTasks.clear();
 		}
 	}
@@ -52,7 +69,7 @@ Task::Task(TaskDependenciesHandle dependencies, std::function<void()>&& function
 		: Dependencies(dependencies), Function(std::move(function)) {}
 
 void TaskGroupDeleter::operator()(TaskGroup* group) {
-	Threading::Get()->FreeTaskGroup(group);
+	Threading::FreeTaskGroup(group);
 }
 
 TaskGroup::~TaskGroup() noexcept {
@@ -64,13 +81,13 @@ void TaskGroup::AddFlushDependency() {
 }
 
 void TaskGroup::DependOn(TaskGroup& dependency) {
-	Threading::Get()->AddDependency(*this, dependency);
+	Threading::AddDependency(*this, dependency);
 }
 
 void TaskGroup::Enqueue(std::function<void()>&& function) {
 	if (Flushed) { throw std::logic_error("Cannot add tasks to TaskGroup after being flushed!"); }
 
-	Dependencies->PendingTasks.push_back(Threading::Get()->_taskPool.Allocate(Dependencies, std::move(function)));
+	Dependencies->PendingTasks.push_back(State.TaskPool.Allocate(Dependencies, std::move(function)));
 	Dependencies->PendingCount.fetch_add(1, std::memory_order_relaxed);
 }
 
@@ -93,18 +110,16 @@ void TaskGroup::Wait() {
 }
 
 void TaskComposer::AddOutgoingDependency(TaskGroup& task) {
-	Threading::Get()->AddDependency(task, *GetOutgoingTask());
+	Threading::AddDependency(task, *GetOutgoingTask());
 }
 
 TaskGroup& TaskComposer::BeginPipelineStage() {
-	auto* threading = Threading::Get();
-
-	auto newGroup        = threading->CreateTaskGroup();
-	auto newDependencies = threading->CreateTaskGroup();
-	if (_current) { threading->AddDependency(*newDependencies, *_current); }
-	if (_nextStageDependencies) { threading->AddDependency(*newDependencies, *_nextStageDependencies); }
+	auto newGroup        = Threading::CreateTaskGroup();
+	auto newDependencies = Threading::CreateTaskGroup();
+	if (_current) { Threading::AddDependency(*newDependencies, *_current); }
+	if (_nextStageDependencies) { Threading::AddDependency(*newDependencies, *_nextStageDependencies); }
 	_nextStageDependencies.Reset();
-	threading->AddDependency(*newGroup, *newDependencies);
+	Threading::AddDependency(*newGroup, *newDependencies);
 
 	_current              = std::move(newGroup);
 	_incomingDependencies = std::move(newDependencies);
@@ -113,7 +128,7 @@ TaskGroup& TaskComposer::BeginPipelineStage() {
 }
 
 TaskGroupHandle TaskComposer::GetDeferredEnqueueHandle() {
-	if (!_nextStageDependencies) { _nextStageDependencies = Threading::Get()->CreateTaskGroup(); }
+	if (!_nextStageDependencies) { _nextStageDependencies = Threading::CreateTaskGroup(); }
 
 	return _nextStageDependencies;
 }
@@ -139,33 +154,34 @@ void TaskComposer::SetIncomingTask(TaskGroupHandle group) {
 	_current = std::move(group);
 }
 
-Threading::Threading() {
-	if (_instance) { throw std::runtime_error("Cannot initialize Threading more than once!"); }
-	_instance = this;
+bool Threading::Initialize() {
+	ZoneScopedN("Threading::Initialize");
 
 	SetThreadID(0);
 
 	const auto threadCount = std::thread::hardware_concurrency();
 	Log::Debug("Threading", "Starting {} worker threads.", threadCount);
-	_running = true;
+	State.Running = true;
 	for (int i = 0; i < threadCount; ++i) {
-		_workerThreads.emplace_back([this, i]() { WorkerThread(i + 1); });
+		State.WorkerThreads.emplace_back([i]() { WorkerThread(i + 1); });
 	}
+
+	return true;
 }
 
-Threading::~Threading() noexcept {
+void Threading::Shutdown() {
+	ZoneScopedN("Threading::Shutdown");
+
 	{
-		std::unique_lock<std::mutex> lock(_tasksMutex);
-		_running = false;
+		std::unique_lock<std::mutex> lock(State.TasksMutex);
+		State.Running = false;
 	}
-	_tasksCondition.notify_all();
-	for (auto& thread : _workerThreads) { thread.join(); }
-
-	_instance = nullptr;
+	State.TasksCondition.notify_all();
+	for (auto& thread : State.WorkerThreads) { thread.join(); }
 }
 
-uint32_t Threading::GetThreadCount() const {
-	return static_cast<uint32_t>(_workerThreads.size());
+uint32_t Threading::GetThreadCount() {
+	return static_cast<uint32_t>(State.WorkerThreads.size());
 }
 
 void Threading::AddDependency(TaskGroup& dependee, TaskGroup& dependency) {
@@ -178,8 +194,8 @@ void Threading::AddDependency(TaskGroup& dependee, TaskGroup& dependency) {
 }
 
 TaskGroupHandle Threading::CreateTaskGroup() {
-	TaskGroupHandle group(_taskGroupPool.Allocate());
-	group->Dependencies = TaskDependenciesHandle(_taskDependenciesPool.Allocate());
+	TaskGroupHandle group(State.TaskGroupPool.Allocate());
+	group->Dependencies = TaskDependenciesHandle(State.TaskDependenciesPool.Allocate());
 	group->Dependencies->PendingCount.store(0, std::memory_order_relaxed);
 
 	return group;
@@ -191,32 +207,32 @@ void Threading::Submit(TaskGroupHandle& group) {
 }
 
 void Threading::SubmitTasks(const std::vector<Task*>& tasks) {
-	std::lock_guard<std::mutex> lock(_tasksMutex);
-	_tasksTotal.fetch_add(tasks.size(), std::memory_order_relaxed);
+	std::lock_guard<std::mutex> lock(State.TasksMutex);
+	State.TasksTotal.fetch_add(tasks.size(), std::memory_order_relaxed);
 
-	for (auto& task : tasks) { _tasks.push(task); }
+	for (auto& task : tasks) { State.Tasks.push(task); }
 
 	const size_t count = tasks.size();
-	if (count >= _workerThreads.size()) {
-		_tasksCondition.notify_all();
+	if (count >= State.WorkerThreads.size()) {
+		State.TasksCondition.notify_all();
 	} else {
-		for (size_t i = 0; i < count; ++i) { _tasksCondition.notify_one(); }
+		for (size_t i = 0; i < count; ++i) { State.TasksCondition.notify_one(); }
 	}
 }
 
 void Threading::WaitIdle() {
-	std::unique_lock<std::mutex> lock(_waitMutex);
-	_waitCondition.wait(lock, [this]() {
-		return _tasksTotal.load(std::memory_order_relaxed) == _tasksCompleted.load(std::memory_order_relaxed);
+	std::unique_lock<std::mutex> lock(State.WaitMutex);
+	State.WaitCondition.wait(lock, []() {
+		return State.TasksTotal.load(std::memory_order_relaxed) == State.TasksCompleted.load(std::memory_order_relaxed);
 	});
 }
 
 void Threading::FreeTaskDependencies(TaskDependencies* deps) {
-	_taskDependenciesPool.Free(deps);
+	State.TaskDependenciesPool.Free(deps);
 }
 
 void Threading::FreeTaskGroup(TaskGroup* group) {
-	_taskGroupPool.Free(group);
+	State.TaskGroupPool.Free(group);
 }
 
 void Threading::WorkerThread(int threadID) {
@@ -224,16 +240,16 @@ void Threading::WorkerThread(int threadID) {
 
 	SetThreadID(threadID);
 
-	while (_running) {
+	while (State.Running) {
 		Task* task = nullptr;
 		{
-			std::unique_lock<std::mutex> lock(_tasksMutex);
-			_tasksCondition.wait(lock, [this]() { return !_running || !_tasks.empty(); });
+			std::unique_lock<std::mutex> lock(State.TasksMutex);
+			State.TasksCondition.wait(lock, []() { return !State.Running || !State.Tasks.empty(); });
 
-			if (!_running && _tasks.empty()) { break; }
+			if (!State.Running && State.Tasks.empty()) { break; }
 
-			task = _tasks.front();
-			_tasks.pop();
+			task = State.Tasks.front();
+			State.Tasks.pop();
 		}
 
 		if (task->Function) {
@@ -245,13 +261,13 @@ void Threading::WorkerThread(int threadID) {
 		}
 
 		task->Dependencies->TaskCompleted();
-		_taskPool.Free(task);
+		State.TaskPool.Free(task);
 
 		{
-			const auto completedCount = _tasksCompleted.fetch_add(1, std::memory_order_relaxed) + 1;
-			if (completedCount == _tasksTotal.load(std::memory_order_relaxed)) {
-				std::lock_guard<std::mutex> lock(_waitMutex);
-				_waitCondition.notify_all();
+			const auto completedCount = State.TasksCompleted.fetch_add(1, std::memory_order_relaxed) + 1;
+			if (completedCount == State.TasksTotal.load(std::memory_order_relaxed)) {
+				std::lock_guard<std::mutex> lock(State.WaitMutex);
+				State.WaitCondition.notify_all();
 			}
 		}
 	}

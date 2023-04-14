@@ -1,0 +1,368 @@
+#include <imgui.h>
+
+#include <Luna/Core/Engine.hpp>
+#include <Luna/Core/Input.hpp>
+#include <Luna/Core/Window.hpp>
+#include <Luna/Renderer/Renderer.hpp>
+#include <Luna/Renderer/ShaderManager.hpp>
+#include <Luna/UI/IconsFontAwesome6.hpp>
+#include <Luna/UI/UIManager.hpp>
+#include <Luna/Vulkan/CommandBuffer.hpp>
+#include <Luna/Vulkan/Device.hpp>
+#include <Luna/Vulkan/Image.hpp>
+#include <Luna/Vulkan/Sampler.hpp>
+#include <Tracy/Tracy.hpp>
+
+namespace Luna {
+enum class ImGuiSampleMode : uint32_t { Standard = 0, ImGuiFont = 1, Grayscale = 2 };
+
+struct PushConstant {
+	float ScaleX;
+	float ScaleY;
+	float TranslateX;
+	float TranslateY;
+	ImGuiSampleMode SampleMode;
+};
+
+static struct UIState {
+	Vulkan::ImageHandle FontImage;
+	Vulkan::SamplerHandle FontSampler;
+	bool MouseJustPressed[16] = {false};
+	ShaderProgram* Program    = nullptr;
+} State;
+
+bool UIManager::Initialize() {
+	ZoneScopedN("UIManager::Initialize");
+
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO();
+
+	// Basic config flags.
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+	// Custom theming
+	{
+		ImGuiStyle& style = ImGui::GetStyle();
+
+		// Main
+		style.WindowPadding = ImVec2(8.0f, 8.0f);
+		style.FramePadding  = ImVec2(5.0f, 3.0f);
+		style.CellPadding   = ImVec2(4.0f, 2.0f);
+
+		// Rounding
+		style.WindowRounding    = 8.0f;
+		style.ChildRounding     = 8.0f;
+		style.FrameRounding     = 8.0f;
+		style.PopupRounding     = 2.0f;
+		style.ScrollbarRounding = 12.0f;
+		style.GrabRounding      = 0.0f;
+		style.LogSliderDeadzone = 4.0f;
+		style.TabRounding       = 4.0f;
+
+		// Fonts
+		{
+			io.Fonts->Clear();
+
+			ImFontConfig jpConfig;
+			jpConfig.MergeMode = true;
+
+			ImFontConfig faConfig;
+			faConfig.MergeMode      = true;
+			faConfig.PixelSnapH     = true;
+			const ImWchar faRange[] = {ICON_MIN_FA, ICON_MAX_16_FA, 0};
+
+			auto roboto = Filesystem::OpenReadOnlyMapping("res://Fonts/Roboto-SemiMedium.ttf");
+			if (roboto) { io.Fonts->AddFontFromMemoryTTF(roboto->MutableData(), roboto->GetSize(), 16.0f); }
+
+			auto notoSans = Filesystem::OpenReadOnlyMapping("res://Fonts/NotoSansJP-Medium.otf");
+			if (notoSans) {
+				io.Fonts->AddFontFromMemoryTTF(
+					notoSans->MutableData(), notoSans->GetSize(), 18.0f, &jpConfig, io.Fonts->GetGlyphRangesJapanese());
+			}
+
+			auto faRegular = Filesystem::OpenReadOnlyMapping("res://Fonts/FontAwesome6Free-Regular-400.otf");
+			auto faSolid   = Filesystem::OpenReadOnlyMapping("res://Fonts/FontAwesome6Free-Solid-900.otf");
+			if (faRegular && faSolid) {
+				io.Fonts->AddFontFromMemoryTTF(faRegular->MutableData(), faRegular->GetSize(), 16.0f, &faConfig, faRange);
+				io.Fonts->AddFontFromMemoryTTF(faSolid->MutableData(), faSolid->GetSize(), 16.0f, &faConfig, faRange);
+			}
+
+			UpdateFontAtlas();
+		}
+
+		// Colors
+		ImVec4* colors                         = style.Colors;
+		colors[ImGuiCol_Text]                  = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+		colors[ImGuiCol_TextDisabled]          = ImVec4(0.22f, 0.22f, 0.22f, 1.00f);
+		colors[ImGuiCol_WindowBg]              = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
+		colors[ImGuiCol_ChildBg]               = ImVec4(0.06f, 0.06f, 0.06f, 0.00f);
+		colors[ImGuiCol_PopupBg]               = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
+		colors[ImGuiCol_Border]                = ImVec4(0.11f, 0.09f, 0.15f, 1.00f);
+		colors[ImGuiCol_BorderShadow]          = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+		colors[ImGuiCol_FrameBg]               = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
+		colors[ImGuiCol_FrameBgHovered]        = ImVec4(0.03f, 0.03f, 0.03f, 1.00f);
+		colors[ImGuiCol_FrameBgActive]         = ImVec4(0.06f, 0.06f, 0.06f, 1.00f);
+		colors[ImGuiCol_TitleBg]               = ImVec4(0.07f, 0.03f, 0.14f, 1.00f);
+		colors[ImGuiCol_TitleBgActive]         = ImVec4(0.08f, 0.00f, 0.20f, 1.00f);
+		colors[ImGuiCol_TitleBgCollapsed]      = ImVec4(0.07f, 0.03f, 0.14f, 1.00f);
+		colors[ImGuiCol_MenuBarBg]             = ImVec4(0.03f, 0.03f, 0.03f, 1.00f);
+		colors[ImGuiCol_ScrollbarBg]           = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
+		colors[ImGuiCol_ScrollbarGrab]         = ImVec4(0.09f, 0.06f, 0.14f, 1.00f);
+		colors[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(0.07f, 0.03f, 0.14f, 1.00f);
+		colors[ImGuiCol_ScrollbarGrabActive]   = ImVec4(0.08f, 0.00f, 0.20f, 1.00f);
+		colors[ImGuiCol_CheckMark]             = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+		colors[ImGuiCol_SliderGrab]            = ImVec4(0.09f, 0.07f, 0.12f, 1.00f);
+		colors[ImGuiCol_SliderGrabActive]      = ImVec4(0.10f, 0.05f, 0.18f, 1.00f);
+		colors[ImGuiCol_Button]                = ImVec4(1.00f, 1.00f, 1.00f, 0.00f);
+		colors[ImGuiCol_ButtonHovered]         = ImVec4(1.00f, 1.00f, 1.00f, 0.16f);
+		colors[ImGuiCol_ButtonActive]          = ImVec4(1.00f, 1.00f, 1.00f, 0.39f);
+		colors[ImGuiCol_Header]                = ImVec4(0.08f, 0.08f, 0.08f, 1.00f);
+		colors[ImGuiCol_HeaderHovered]         = ImVec4(0.19f, 0.19f, 0.19f, 1.00f);
+		colors[ImGuiCol_HeaderActive]          = ImVec4(0.19f, 0.19f, 0.19f, 1.00f);
+		colors[ImGuiCol_Separator]             = ImVec4(0.09f, 0.06f, 0.14f, 1.00f);
+		colors[ImGuiCol_SeparatorHovered]      = ImVec4(0.07f, 0.03f, 0.14f, 1.00f);
+		colors[ImGuiCol_SeparatorActive]       = ImVec4(0.08f, 0.00f, 0.20f, 1.00f);
+		colors[ImGuiCol_ResizeGrip]            = ImVec4(0.09f, 0.06f, 0.14f, 1.00f);
+		colors[ImGuiCol_ResizeGripHovered]     = ImVec4(0.07f, 0.03f, 0.14f, 1.00f);
+		colors[ImGuiCol_ResizeGripActive]      = ImVec4(0.08f, 0.00f, 0.20f, 1.00f);
+		colors[ImGuiCol_Tab]                   = ImVec4(0.01f, 0.01f, 0.01f, 1.00f);
+		colors[ImGuiCol_TabHovered]            = ImVec4(0.10f, 0.10f, 0.10f, 1.00f);
+		colors[ImGuiCol_TabActive]             = ImVec4(0.03f, 0.03f, 0.03f, 1.00f);
+		colors[ImGuiCol_TabUnfocused]          = ImVec4(0.01f, 0.01f, 0.01f, 1.00f);
+		colors[ImGuiCol_TabUnfocusedActive]    = ImVec4(0.03f, 0.03f, 0.03f, 1.00f);
+		colors[ImGuiCol_DockingPreview]        = ImVec4(0.18f, 0.00f, 0.49f, 1.00f);
+		colors[ImGuiCol_DockingEmptyBg]        = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
+		colors[ImGuiCol_PlotLines]             = ImVec4(0.19f, 0.19f, 0.19f, 1.00f);
+		colors[ImGuiCol_PlotLinesHovered]      = ImVec4(0.18f, 0.00f, 0.49f, 1.00f);
+		colors[ImGuiCol_PlotHistogram]         = ImVec4(0.31f, 0.31f, 0.31f, 1.00f);
+		colors[ImGuiCol_PlotHistogramHovered]  = ImVec4(0.18f, 0.00f, 0.49f, 1.00f);
+		colors[ImGuiCol_TableHeaderBg]         = ImVec4(0.19f, 0.19f, 0.20f, 1.00f);
+		colors[ImGuiCol_TableBorderStrong]     = ImVec4(0.31f, 0.31f, 0.35f, 1.00f);
+		colors[ImGuiCol_TableBorderLight]      = ImVec4(0.23f, 0.23f, 0.25f, 1.00f);
+		colors[ImGuiCol_TableRowBg]            = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+		colors[ImGuiCol_TableRowBgAlt]         = ImVec4(1.00f, 1.00f, 1.00f, 0.06f);
+		colors[ImGuiCol_TextSelectedBg]        = ImVec4(1.00f, 1.00f, 1.00f, 0.16f);
+		colors[ImGuiCol_DragDropTarget]        = ImVec4(0.18f, 0.00f, 0.49f, 1.00f);
+		colors[ImGuiCol_NavHighlight]          = ImVec4(0.18f, 0.00f, 0.49f, 1.00f);
+		colors[ImGuiCol_NavWindowingHighlight] = ImVec4(0.38f, 0.15f, 0.77f, 1.00f);
+		colors[ImGuiCol_NavWindowingDimBg]     = ImVec4(0.00f, 0.00f, 0.00f, 0.59f);
+		colors[ImGuiCol_ModalWindowDimBg]      = ImVec4(0.00f, 0.00f, 0.00f, 0.59f);
+	}
+
+	// Window data
+	{
+		io.KeyMap[ImGuiKey_Tab]         = int(Key::Tab);
+		io.KeyMap[ImGuiKey_LeftArrow]   = int(Key::Left);
+		io.KeyMap[ImGuiKey_RightArrow]  = int(Key::Right);
+		io.KeyMap[ImGuiKey_UpArrow]     = int(Key::Up);
+		io.KeyMap[ImGuiKey_DownArrow]   = int(Key::Down);
+		io.KeyMap[ImGuiKey_PageUp]      = int(Key::PageUp);
+		io.KeyMap[ImGuiKey_PageDown]    = int(Key::PageDown);
+		io.KeyMap[ImGuiKey_Home]        = int(Key::Home);
+		io.KeyMap[ImGuiKey_End]         = int(Key::End);
+		io.KeyMap[ImGuiKey_Insert]      = int(Key::Insert);
+		io.KeyMap[ImGuiKey_Delete]      = int(Key::Delete);
+		io.KeyMap[ImGuiKey_Backspace]   = int(Key::Backspace);
+		io.KeyMap[ImGuiKey_Space]       = int(Key::Space);
+		io.KeyMap[ImGuiKey_Enter]       = int(Key::Enter);
+		io.KeyMap[ImGuiKey_Escape]      = int(Key::Escape);
+		io.KeyMap[ImGuiKey_KeyPadEnter] = int(Key::NumpadEnter);
+		io.KeyMap[ImGuiKey_A]           = int(Key::A);
+		io.KeyMap[ImGuiKey_C]           = int(Key::C);
+		io.KeyMap[ImGuiKey_V]           = int(Key::V);
+		io.KeyMap[ImGuiKey_X]           = int(Key::X);
+		io.KeyMap[ImGuiKey_Y]           = int(Key::Y);
+		io.KeyMap[ImGuiKey_Z]           = int(Key::Z);
+	}
+
+	io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
+	State.Program = ShaderManager::RegisterGraphics("res://Shaders/ImGui.vert.glsl", "res://Shaders/ImGui.frag.glsl");
+
+	const Vulkan::SamplerCreateInfo samplerCI{.MagFilter        = vk::Filter::eLinear,
+	                                          .MinFilter        = vk::Filter::eLinear,
+	                                          .MipmapMode       = vk::SamplerMipmapMode::eLinear,
+	                                          .AddressModeU     = vk::SamplerAddressMode::eRepeat,
+	                                          .AddressModeV     = vk::SamplerAddressMode::eRepeat,
+	                                          .AddressModeW     = vk::SamplerAddressMode::eRepeat,
+	                                          .AnisotropyEnable = false,
+	                                          .MaxAnisotropy    = 1.0f,
+	                                          .MinLod           = -1000.0f,
+	                                          .MaxLod           = 1000.0f};
+	State.FontSampler = Renderer::GetDevice().CreateSampler(samplerCI);
+
+	Input::OnChar += [](int c) {
+		ImGuiIO& io = ImGui::GetIO();
+
+		io.AddInputCharacter(c);
+	};
+	Input::OnKey += [](Key key, InputAction action, InputMods mods) {
+		ImGuiIO& io = ImGui::GetIO();
+
+		if (int(key) >= 0 && int(key) < 512) {
+			if (action == InputAction::Press) { io.KeysDown[static_cast<int>(key)] = true; }
+			if (action == InputAction::Release) { io.KeysDown[static_cast<int>(key)] = false; }
+		}
+		io.KeyCtrl  = mods & InputModBits::Control;
+		io.KeyShift = mods & InputModBits::Shift;
+		io.KeyAlt   = mods & InputModBits::Alt;
+	};
+	Input::OnMouseButton += [](MouseButton button, InputAction action, InputMods mods) {
+		ImGuiIO& io = ImGui::GetIO();
+
+		if (action == InputAction::Press && int(button) < ImGuiMouseButton_COUNT) {
+			State.MouseJustPressed[int(button)] = true;
+		}
+	};
+	Input::OnMouseMoved += [](const glm::dvec2& pos) {
+		ImGuiIO& io = ImGui::GetIO();
+
+		io.MousePos = ImVec2(pos.x, pos.y);
+	};
+	Input::OnMouseScrolled += [](const glm::dvec2& scroll) {
+		ImGuiIO& io = ImGui::GetIO();
+
+		io.MouseWheelH += scroll.x;
+		io.MouseWheel += scroll.y;
+	};
+
+	return true;
+}
+
+void UIManager::Shutdown() {
+	ZoneScopedN("UIManager::Shutdown");
+
+	State.FontSampler.Reset();
+	State.FontImage.Reset();
+}
+
+void UIManager::BeginFrame(double deltaTime) {
+	ZoneScopedN("UIManager::BeginFrame");
+
+	ImGuiIO& io = ImGui::GetIO();
+
+	// Update display size and platform data.
+	{
+		const auto fbSize     = Engine::GetMainWindow()->GetFramebufferSize();
+		const auto windowSize = Engine::GetMainWindow()->GetWindowSize();
+		io.DisplaySize        = ImVec2(windowSize.x, windowSize.y);
+		if (windowSize.x > 0 && windowSize.y > 0) {
+			io.DisplayFramebufferScale = ImVec2(float(fbSize.x) / float(windowSize.x), float(fbSize.y) / float(windowSize.y));
+		}
+
+		for (int i = 0; i < ImGuiMouseButton_COUNT; ++i) {
+			io.MouseDown[i]           = State.MouseJustPressed[i] || Input::GetButton(MouseButton(i)) == InputAction::Press;
+			State.MouseJustPressed[i] = false;
+		}
+
+		io.DeltaTime = deltaTime;
+	}
+
+	ImGui::NewFrame();
+}
+
+void UIManager::EndFrame() {
+	ZoneScopedN("UIManager::EndFrame");
+
+	ImGui::Render();
+}
+
+void UIManager::Render(Vulkan::CommandBuffer& cmd) {
+	ImDrawData* drawData = ImGui::GetDrawData();
+	if (drawData->CmdListsCount == 0 || drawData->TotalVtxCount == 0 || drawData->TotalIdxCount == 0) { return; }
+
+	// Determine our window size and ensure we don't render to a minimized screen.
+	const int fbWidth  = static_cast<int>(drawData->DisplaySize.x * drawData->FramebufferScale.x);
+	const int fbHeight = static_cast<int>(drawData->DisplaySize.y * drawData->FramebufferScale.y);
+	if (fbWidth <= 0 || fbHeight <= 0) { return; }
+
+	constexpr static vk::IndexType indexType = sizeof(ImDrawIdx) == 2 ? vk::IndexType::eUint16 : vk::IndexType::eUint32;
+
+	ImDrawVert* vertices = static_cast<ImDrawVert*>(
+		cmd.AllocateVertexData(0, drawData->TotalVtxCount * sizeof(ImDrawVert), sizeof(ImDrawVert)));
+	ImDrawIdx* indices =
+		static_cast<ImDrawIdx*>(cmd.AllocateIndexData(drawData->TotalIdxCount * sizeof(ImDrawIdx), indexType));
+	for (int i = 0; i < drawData->CmdListsCount; ++i) {
+		const ImDrawList* list = drawData->CmdLists[i];
+		memcpy(vertices, list->VtxBuffer.Data, list->VtxBuffer.Size * sizeof(ImDrawVert));
+		memcpy(indices, list->IdxBuffer.Data, list->IdxBuffer.Size * sizeof(ImDrawIdx));
+		vertices += list->VtxBuffer.Size;
+		indices += list->IdxBuffer.Size;
+	}
+
+	const ImVec2 clipOffset = drawData->DisplayPos;
+	const ImVec2 clipScale  = drawData->FramebufferScale;
+	const float scaleX      = 2.0f / drawData->DisplaySize.x;
+	const float scaleY      = 2.0f / drawData->DisplaySize.y;
+	PushConstant pc         = {.ScaleX     = scaleX,
+	                           .ScaleY     = scaleY,
+	                           .TranslateX = -1.0f - drawData->DisplayPos.x * scaleX,
+	                           .TranslateY = -1.0f - drawData->DisplayPos.y * scaleY,
+	                           .SampleMode = ImGuiSampleMode::Standard};
+
+	const auto SetRenderState = [&cmd]() {
+		cmd.SetProgram(State.Program->RegisterVariant()->GetProgram());
+		cmd.SetTransparentSpriteState();
+		cmd.SetCullMode(vk::CullModeFlagBits::eNone);
+		cmd.SetVertexAttribute(0, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, pos));
+		cmd.SetVertexAttribute(1, 0, vk::Format::eR32G32Sfloat, offsetof(ImDrawVert, uv));
+		cmd.SetVertexAttribute(2, 0, vk::Format::eR8G8B8A8Unorm, offsetof(ImDrawVert, col));
+	};
+	SetRenderState();
+
+	size_t globalVtxOffset = 0;
+	size_t globalIdxOffset = 0;
+	for (int i = 0; i < drawData->CmdListsCount; ++i) {
+		const ImDrawList* cmdList = drawData->CmdLists[i];
+		for (int j = 0; j < cmdList->CmdBuffer.Size; ++j) {
+			const ImDrawCmd& drawCmd = cmdList->CmdBuffer[j];
+
+			if (drawCmd.UserCallback != nullptr) {
+				if (drawCmd.UserCallback == ImDrawCallback_ResetRenderState) {
+					SetRenderState();
+				} else {
+					drawCmd.UserCallback(cmdList, &drawCmd);
+				}
+			} else {
+				const ImVec2 clipMin(std::max((drawCmd.ClipRect.x - clipOffset.x) * clipScale.x, 0.0f),
+				                     std::max((drawCmd.ClipRect.y - clipOffset.y) * clipScale.y, 0.0f));
+				const ImVec2 clipMax(std::min((drawCmd.ClipRect.z - clipOffset.x) * clipScale.x, float(fbWidth)),
+				                     std::min((drawCmd.ClipRect.w - clipOffset.y) * clipScale.y, float(fbHeight)));
+				if (clipMax.x <= clipMin.x || clipMax.y <= clipMin.y) { continue; }
+
+				const vk::Rect2D scissor({int32_t(clipMin.x), int32_t(clipMin.y)},
+				                         {uint32_t(clipMax.x - clipMin.x), uint32_t(clipMax.y - clipMin.y)});
+				cmd.SetScissor(scissor);
+
+				pc.SampleMode = ImGuiSampleMode::Standard;
+				if (drawCmd.TextureId == 0) {
+					cmd.SetTexture(0, 0, State.FontImage->GetView(), *State.FontSampler);
+					pc.SampleMode = ImGuiSampleMode::ImGuiFont;
+				} else {
+				}
+
+				cmd.PushConstants(&pc, 0, sizeof(pc));
+
+				cmd.DrawIndexed(
+					drawCmd.ElemCount, 1, drawCmd.IdxOffset + globalIdxOffset, drawCmd.VtxOffset + globalVtxOffset, 0);
+			}
+		}
+		globalVtxOffset += cmdList->VtxBuffer.Size;
+		globalIdxOffset += cmdList->IdxBuffer.Size;
+	}
+}
+
+void UIManager::UpdateFontAtlas() {
+	ImGuiIO& io = ImGui::GetIO();
+	io.Fonts->Build();
+
+	unsigned char* pixels = nullptr;
+	int width, height;
+	io.Fonts->GetTexDataAsAlpha8(&pixels, &width, &height);
+	const Vulkan::ImageInitialData data{.Data = pixels};
+	const auto imageCI = Vulkan::ImageCreateInfo::Immutable2D(
+		vk::Format::eR8Unorm, static_cast<uint32_t>(width), static_cast<uint32_t>(height), false);
+	State.FontImage = Renderer::GetDevice().CreateImage(imageCI, &data);
+}
+}  // namespace Luna

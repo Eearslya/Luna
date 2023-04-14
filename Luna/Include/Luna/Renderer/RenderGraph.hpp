@@ -17,10 +17,8 @@ class RenderGraph {
  public:
 	/**
 	 * Initializes a new RenderGraph object.
-	 *
-	 * @param device The Vulkan Device.
 	 */
-	RenderGraph(Vulkan::Device& device);
+	RenderGraph();
 
 	// Do not allow copies or moves.
 	RenderGraph(const RenderGraph&)    = delete;
@@ -213,8 +211,6 @@ class RenderGraph {
 	void SwapchainScalePass();
 	void TraverseDependencies(const RenderPass& pass, uint32_t depth);
 	void ValidatePasses();
-
-	Vulkan::Device& _device; /** The Vulkan Device we're running on. */
 
 	/** The name of the resource used as the final output. */
 	std::string _backbufferSource;

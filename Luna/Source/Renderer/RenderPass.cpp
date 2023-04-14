@@ -33,7 +33,7 @@ void RenderPassInterface::BuildRenderPassSeparateLayer(Vulkan::CommandBuffer& cm
 
 void RenderPassInterface::EnqueuePrepareRenderPass(RenderGraph& graph, TaskComposer& composer) {}
 
-void RenderPassInterface::Setup(Vulkan::Device& device) {}
+void RenderPassInterface::Setup() {}
 
 void RenderPassInterface::SetupDependencies(RenderPass& pass, RenderGraph& graph) {}
 
@@ -377,8 +377,8 @@ void RenderPass::PrepareRenderPass(TaskComposer& composer) {
 	if (_interface) { _interface->EnqueuePrepareRenderPass(_graph, composer); }
 }
 
-void RenderPass::Setup(Vulkan::Device& device) {
-	if (_interface) { _interface->Setup(device); }
+void RenderPass::Setup() {
+	if (_interface) { _interface->Setup(); }
 }
 
 void RenderPass::SetupDependencies() {

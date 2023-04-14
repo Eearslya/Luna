@@ -1,8 +1,9 @@
 #include <Luna/Platform/Filesystem.hpp>
 #include <Luna/Platform/Windows/OSFilesystem.hpp>
+#include <Tracy/Tracy.hpp>
 
 namespace Luna {
-Filesystem* Filesystem::_instance = nullptr;
+static struct FilesystemState { std::unordered_map<std::string, std::unique_ptr<FilesystemBackend>> Protocols; } State;
 
 // ================
 // ===== File =====
@@ -77,33 +78,34 @@ std::vector<ListEntry> FilesystemBackend::Walk(const Path& path) {
 // ======================
 // ===== Filesystem =====
 // ======================
-Filesystem::Filesystem() {
-	_instance = this;
+bool Filesystem::Initialize() {
+	ZoneScopedN("Filesystem::Initialize");
 
 	RegisterProtocol("file", std::unique_ptr<FilesystemBackend>(new OSFilesystem(".")));
 	RegisterProtocol("memory", std::unique_ptr<FilesystemBackend>(new ScratchFilesystem));
+
+	return true;
+}
+
+void Filesystem::Shutdown() {
+	ZoneScopedN("Filesystem::Shutdown");
+
+	State.Protocols.clear();
 }
 
 FilesystemBackend* Filesystem::GetBackend(const std::string& proto) {
-	const auto it = _protocols.find(proto.empty() ? "file" : proto);
-	if (it == _protocols.end()) { return nullptr; }
-
-	return it->second.get();
-}
-
-const FilesystemBackend* Filesystem::GetBackend(const std::string& proto) const {
-	const auto it = _protocols.find(proto.empty() ? "file" : proto);
-	if (it == _protocols.end()) { return nullptr; }
+	const auto it = State.Protocols.find(proto.empty() ? "file" : proto);
+	if (it == State.Protocols.end()) { return nullptr; }
 
 	return it->second.get();
 }
 
 void Filesystem::RegisterProtocol(const std::string& proto, std::unique_ptr<FilesystemBackend>&& backend) {
 	backend->SetProtocol(proto);
-	_protocols[proto] = std::move(backend);
+	State.Protocols[proto] = std::move(backend);
 }
 
-bool Filesystem::Exists(const Path& path) const {
+bool Filesystem::Exists(const Path& path) {
 	FileStat stat;
 	return Stat(path, stat);
 }
@@ -192,7 +194,7 @@ bool Filesystem::Remove(const Path& path) {
 	return backend->Remove(parts.second);
 }
 
-bool Filesystem::Stat(const Path& path, FileStat& outStat) const {
+bool Filesystem::Stat(const Path& path, FileStat& outStat) {
 	const auto parts = path.ProtocolSplit();
 	auto* backend    = GetBackend(parts.first);
 	if (!backend) { return false; }
@@ -201,7 +203,9 @@ bool Filesystem::Stat(const Path& path, FileStat& outStat) const {
 }
 
 void Filesystem::Update() {
-	for (auto& proto : _protocols) { proto.second->Update(); }
+	ZoneScopedN("Filesystem::Update");
+
+	for (auto& proto : State.Protocols) { proto.second->Update(); }
 }
 
 std::vector<ListEntry> Filesystem::Walk(const Path& path) {

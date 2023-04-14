@@ -1,107 +1,129 @@
-#include <Luna/Renderer/RenderContext.hpp>
-#include <Luna/Renderer/RenderQueue.hpp>
+#include <Luna/Core/Window.hpp>
+#include <Luna/Core/WindowManager.hpp>
+#include <Luna/Renderer/RenderGraph.hpp>
+#include <Luna/Renderer/RenderPass.hpp>
 #include <Luna/Renderer/Renderer.hpp>
+#include <Luna/Renderer/Swapchain.hpp>
+#include <Luna/UI/UIManager.hpp>
+#include <Luna/Utility/Threading.hpp>
+#include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
-#include <Luna/Vulkan/Image.hpp>
+#include <Luna/Vulkan/Context.hpp>
+#include <Luna/Vulkan/Device.hpp>
+#include <Luna/Vulkan/RenderPass.hpp>
+#include <Tracy/Tracy.hpp>
 
 namespace Luna {
-Renderer::Renderer(Vulkan::Device& device, RendererType type) : _device(device), _type(type) {
-	SetupShaderSuite();
-	UpdateShaderDefines();
+struct RenderGraphState {
+	uint32_t Width  = 0;
+	uint32_t Height = 0;
+};
+}  // namespace Luna
 
-	if (_type == RendererType::GeneralForward) {
-		SetMeshRendererOptions(RendererOptionFlagBits::EnableShadows);
-	} else {
-		SetMeshRendererOptions({});
+template <>
+struct std::hash<Luna::RenderGraphState> {
+	size_t operator()(const Luna::RenderGraphState& state) const {
+		Luna::Hasher h;
+		h(state.Width);
+		h(state.Height);
+
+		return static_cast<size_t>(h.Get());
+	}
+};
+
+namespace Luna {
+static struct RendererState {
+	Vulkan::ContextHandle Context;
+	Vulkan::DeviceHandle Device;
+	Window* MainWindow;
+	const Scene* ActiveScene;
+	Hash GraphHash = 0;
+	RenderGraph Graph;
+} State;
+
+bool Renderer::Initialize() {
+	ZoneScopedN("Renderer::Initialize");
+
+	const auto instanceExtensions                   = WindowManager::GetRequiredInstanceExtensions();
+	const std::vector<const char*> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+
+	State.Context = MakeHandle<Vulkan::Context>(instanceExtensions, deviceExtensions);
+	State.Device  = MakeHandle<Vulkan::Device>(*State.Context);
+
+	return true;
+}
+
+void Renderer::Shutdown() {
+	ZoneScopedN("Renderer::Shutdown");
+
+	State.Graph.Reset();
+	State.Device.Reset();
+	State.Context.Reset();
+}
+
+Vulkan::Device& Renderer::GetDevice() {
+	return *State.Device;
+}
+
+static void BakeRenderGraph() {
+	auto physicalBuffers = State.Graph.ConsumePhysicalBuffers();
+	State.Graph.Reset();
+	State.Device->NextFrame();
+
+	// Update swapchain dimensions and format.
+	const auto& swapchainExtent = State.MainWindow->GetSwapchain().GetExtent();
+	const auto swapchainFormat  = State.MainWindow->GetSwapchain().GetFormat();
+	const Luna::ResourceDimensions backbufferDims{
+		.Format = swapchainFormat, .Width = swapchainExtent.width, .Height = swapchainExtent.height};
+	State.Graph.SetBackbufferDimensions(backbufferDims);
+
+	{
+		Luna::AttachmentInfo uiColor;
+
+		auto& ui = State.Graph.AddPass("UI", RenderGraphQueueFlagBits::Graphics);
+
+		ui.AddColorOutput("UI", uiColor);
+
+		ui.SetGetClearColor([](uint32_t, vk::ClearColorValue* value) -> bool {
+			if (value) { *value = vk::ClearColorValue(0.0f, 0.0f, 0.2f, 1.0f); }
+			return true;
+		});
+		ui.SetBuildRenderPass([](Vulkan::CommandBuffer& cmd) { UIManager::Render(cmd); });
+	}
+
+	State.Graph.SetBackbufferSource("UI");
+	State.Graph.Bake();
+	State.Graph.InstallPhysicalBuffers(physicalBuffers);
+}
+
+void Renderer::Render(double deltaTime) {
+	ZoneScopedN("Renderer::Render");
+
+	auto& device = *State.Device;
+
+	if (State.MainWindow && State.MainWindow->GetSwapchain().Acquire()) {
+		const auto windowSize = State.MainWindow->GetFramebufferSize();
+		const RenderGraphState state{.Width = uint32_t(windowSize.x), .Height = uint32_t(windowSize.y)};
+		const auto stateHash = Hasher(state).Get();
+		if (stateHash != State.GraphHash) {
+			BakeRenderGraph();
+			State.GraphHash = stateHash;
+		}
+
+		TaskComposer composer;
+		State.Graph.SetupAttachments(&State.Device->GetSwapchainView());
+		State.Graph.EnqueueRenderPasses(*State.Device, composer);
+		composer.GetOutgoingTask()->Wait();
+
+		State.MainWindow->GetSwapchain().Present();
 	}
 }
 
-void Renderer::Begin(RenderQueue& queue) const {
-	queue.Reset();
-	queue.SetShaderSuites(_shaderSuites.data());
+void Renderer::SetMainWindow(Window& window) {
+	State.MainWindow = &window;
 }
 
-void Renderer::Flush(Vulkan::CommandBuffer& cmd,
-                     RenderQueue& queue,
-                     const RenderContext& context,
-                     RendererFlushFlags flush) const {
-	queue.Sort();
-	FlushSubset(cmd, queue, context, 0, 1, flush);
-}
-
-void Renderer::Flush(Vulkan::CommandBuffer& cmd,
-                     const RenderQueue& queue,
-                     const RenderContext& context,
-                     RendererFlushFlags flush) const {
-	FlushSubset(cmd, queue, context, 0, 1, flush);
-}
-
-void Renderer::FlushSubset(Vulkan::CommandBuffer& cmd,
-                           const RenderQueue& queue,
-                           const RenderContext& context,
-                           uint32_t subsetIndex,
-                           uint32_t subsetCount,
-                           RendererFlushFlags flush) const {
-	// Bind global uniforms
-	RenderParameters* params = cmd.AllocateTypedUniformData<RenderParameters>(0, 0, 1);
-	*params                  = context.GetRenderParameters();
-
-	// Bind texture array
-	cmd.SetBindless(1, context.GetBindlessSet());
-
-	cmd.SetOpaqueState();
-
-	if (flush & RendererFlushFlagBits::FrontFaceClockwise) {}
-	if (flush & RendererFlushFlagBits::NoColor) {}
-	if (flush & RendererFlushFlagBits::DepthStencilReadOnly) { cmd.SetDepthWrite(false); }
-	if (flush & RendererFlushFlagBits::Backface) {}
-	if (flush & RendererFlushFlagBits::DepthTestEqual) {
-		cmd.SetDepthCompareOp(vk::CompareOp::eEqual);
-	} else if (flush & RendererFlushFlagBits::DepthTestInvert) {
-	}
-
-	queue.DispatchSubset(RenderQueueType::Opaque, cmd, subsetIndex, subsetCount);
-	queue.DispatchSubset(RenderQueueType::OpaqueEmissive, cmd, subsetIndex, subsetCount);
-}
-
-void Renderer::SetMeshRendererOptions(RendererOptionFlags options) {
-	if (options == _options) { return; }
-	_options = options;
-	UpdateShaderDefines();
-}
-
-std::vector<std::pair<std::string, int>> Renderer::BuildShaderDefines() {
-	std::vector<std::pair<std::string, int>> defines;
-	if (_options & RendererOptionFlagBits::EnableShadows) { defines.emplace_back("SHADOWS", 1); }
-
-	switch (_type) {
-		case RendererType::GeneralForward:
-			defines.emplace_back("RENDERER_FORWARD", 1);
-			break;
-
-		case RendererType::DepthOnly:
-			defines.emplace_back("RENDERER_DEPTH", 1);
-			break;
-
-		default:
-			break;
-	}
-
-	return defines;
-}
-
-void Renderer::SetupShaderSuite() {
-	ShaderSuiteResolver defaultResolver;
-	for (uint32_t i = 0; i < RenderableTypeCount; ++i) {
-		defaultResolver.Resolve(_device, _shaderSuites[i], _type, static_cast<RenderableType>(i));
-	}
-}
-
-void Renderer::UpdateShaderDefines() {
-	auto globalDefines = BuildShaderDefines();
-
-	auto& mesh            = _shaderSuites[int(RenderableType::Mesh)];
-	mesh.GetBaseDefines() = globalDefines;
-	mesh.BakeBaseDefines();
+void Renderer::SetScene(const Scene& scene) {
+	State.ActiveScene = &scene;
 }
 }  // namespace Luna

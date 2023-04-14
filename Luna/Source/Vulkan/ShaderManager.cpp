@@ -22,11 +22,9 @@ ShaderTemplate::ShaderTemplate(Device& device,
                                Hash pathHash,
                                const std::vector<Path>& includeDirs)
 		: _device(device), _path(shaderPath), _pathHash(pathHash), _stage(stage), _cache(cache), _includeDirs(includeDirs) {
-	auto filesystem = Filesystem::Get();
-
 	const auto ext = _path.Extension();
 	if (ext == "spv") {
-		auto spvFile = filesystem->OpenReadOnlyMapping(_path);
+		auto spvFile = Filesystem::OpenReadOnlyMapping(_path);
 		if (!spvFile) { throw std::runtime_error("[ShaderTemplate] Failed to load Shader SPV file."); }
 
 		_staticShader = {spvFile->Data<uint32_t>(), spvFile->Data<uint32_t>() + (spvFile->GetSize() / sizeof(uint32_t))};
@@ -341,15 +339,13 @@ void ShaderManager::RegisterDependency(ShaderTemplate* shader, const Path& depen
 }
 
 void ShaderManager::RegisterDependencyNoLock(ShaderTemplate* shader, const Path& dependency) {
-	auto* filesystem = Filesystem::Get();
-
 	_dependees[dependency].insert(shader);
 
 	const auto baseDir = dependency.BaseDirectory();
 	if (_directoryWatches.find(baseDir) != _directoryWatches.end()) { return; }
 
 	auto [protocol, path] = baseDir.ProtocolSplit();
-	auto* backend         = filesystem->GetBackend(protocol);
+	auto* backend         = Filesystem::GetBackend(protocol);
 	if (!backend) { return; }
 
 	FileNotifyHandle handle = backend->WatchFile(path, [this](const FileNotifyInfo& info) { Recompile(info); });

@@ -20,7 +20,8 @@ class Context : public IntrusivePtrEnabled<Context> {
 	 * fail.
 	 * @param deviceExtensions A list of required Device extensions. Missing extensions will cause initialization to fail.
 	 */
-	Context(const std::vector<const char*>& instanceExtensions, const std::vector<const char*>& deviceExtensions);
+	Context(const std::vector<const char*>& instanceExtensions = {},
+	        const std::vector<const char*>& deviceExtensions   = {});
 	Context(const Context&)        = delete;
 	void operator=(const Context&) = delete;
 	~Context() noexcept;

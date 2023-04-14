@@ -2,12 +2,15 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <Luna/Utility/Log.hpp>
+#include <Tracy/Tracy.hpp>
 #include <filesystem>
 
 namespace Luna {
 std::shared_ptr<spdlog::logger> Log::_mainLogger;
 
-void Log::Initialize() {
+bool Log::Initialize() {
+	ZoneScopedN("Log::Initialize");
+
 	const std::filesystem::path logDirectory = "Logs";
 	if (!std::filesystem::exists(logDirectory)) { std::filesystem::create_directories(logDirectory); }
 	// TODO: Separate log files per run?
@@ -26,9 +29,13 @@ void Log::Initialize() {
 
 	// Default to Info level logging.
 	SetLevel(Level::Info);
+
+	return bool(_mainLogger);
 }
 
 void Log::Shutdown() {
+	ZoneScopedN("Log::Shutdown");
+
 	_mainLogger->flush();
 	_mainLogger.reset();
 	spdlog::drop_all();

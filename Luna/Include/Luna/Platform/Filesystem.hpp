@@ -101,39 +101,30 @@ class FilesystemBackend {
 	std::string _protocol;
 };
 
-class Filesystem {
+class Filesystem final {
  public:
-	Filesystem();
+	static bool Initialize();
+	static void Shutdown();
 
-	FilesystemBackend* GetBackend(const std::string& proto = "file");
-	const FilesystemBackend* GetBackend(const std::string& proto = "file") const;
-	void RegisterProtocol(const std::string& proto, std::unique_ptr<FilesystemBackend>&& backend);
+	static FilesystemBackend* GetBackend(const std::string& proto = "file");
+	static void RegisterProtocol(const std::string& proto, std::unique_ptr<FilesystemBackend>&& backend);
 
-	bool Exists(const Path& path) const;
-	std::filesystem::path GetFilesystemPath(const Path& path);
-	std::vector<ListEntry> List(const Path& path);
-	bool MoveReplace(const Path& dst, const Path& src);
-	bool MoveYield(const Path& dst, const Path& src);
-	FileHandle Open(const Path& path, FileMode mode = FileMode::ReadOnly);
-	FileMappingHandle OpenReadOnlyMapping(const Path& path);
-	FileMappingHandle OpenTransactionalMapping(const Path& path, size_t size);
-	FileMappingHandle OpenWriteOnlyMapping(const Path& path);
-	bool ReadFileToString(const Path& path, std::string& outStr);
-	bool Remove(const Path& path);
-	bool Stat(const Path& path, FileStat& outStat) const;
-	void Update();
-	std::vector<ListEntry> Walk(const Path& path);
-	bool WriteDataToFile(const Path& path, size_t size, const void* data);
-	bool WriteStringToFile(const Path& path, const std::string& str);
-
-	static Filesystem* Get() {
-		return _instance;
-	}
-
- private:
-	static Filesystem* _instance;
-
-	std::unordered_map<std::string, std::unique_ptr<FilesystemBackend>> _protocols;
+	static bool Exists(const Path& path);
+	static std::filesystem::path GetFilesystemPath(const Path& path);
+	static std::vector<ListEntry> List(const Path& path);
+	static bool MoveReplace(const Path& dst, const Path& src);
+	static bool MoveYield(const Path& dst, const Path& src);
+	static FileHandle Open(const Path& path, FileMode mode = FileMode::ReadOnly);
+	static FileMappingHandle OpenReadOnlyMapping(const Path& path);
+	static FileMappingHandle OpenTransactionalMapping(const Path& path, size_t size);
+	static FileMappingHandle OpenWriteOnlyMapping(const Path& path);
+	static bool ReadFileToString(const Path& path, std::string& outStr);
+	static bool Remove(const Path& path);
+	static bool Stat(const Path& path, FileStat& outStat);
+	static void Update();
+	static std::vector<ListEntry> Walk(const Path& path);
+	static bool WriteDataToFile(const Path& path, size_t size, const void* data);
+	static bool WriteStringToFile(const Path& path, const std::string& str);
 };
 
 class ScratchFilesystem : public FilesystemBackend {

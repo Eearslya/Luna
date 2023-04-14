@@ -54,8 +54,7 @@ AssetHandle AssetManager::ImportAsset(const Path& assetPath) {
 }
 
 void AssetManager::LoadAssets() {
-	auto filesystem = Filesystem::Get();
-	for (auto& entry : filesystem->Walk("project://")) {
+	for (auto& entry : Filesystem::Walk("project://")) {
 		if (entry.Type != PathType::File) { continue; }
 		ImportAsset(entry.Path.WithoutProtocol());
 	}
@@ -64,23 +63,20 @@ void AssetManager::LoadAssets() {
 }
 
 void AssetManager::LoadRegistry() {
-	auto filesystem = Filesystem::Get();
-	if (!filesystem->Exists("project://AssetRegistry.lregistry")) { return; }
+	if (!Filesystem::Exists("project://AssetRegistry.lregistry")) { return; }
 
 	std::string registryJson;
-	if (!filesystem->ReadFileToString("project://AssetRegistry.lregistry", registryJson)) { return; }
+	if (!Filesystem::ReadFileToString("project://AssetRegistry.lregistry", registryJson)) { return; }
 }
 
 void AssetManager::SaveRegistry() {
-	auto filesystem = Filesystem::Get();
-
 	struct AssetRegistryEntry {
 		Path FilePath;
 		AssetType Type;
 	};
 	std::map<UUID, AssetRegistryEntry> assetMap;
 	for (auto& [handle, metadata] : Registry) {
-		if (!filesystem->Exists(GetFilesystemPath(metadata))) { continue; }
+		if (!Filesystem::Exists(GetFilesystemPath(metadata))) { continue; }
 		assetMap[metadata.Handle] = {metadata.FilePath, metadata.Type};
 	}
 
@@ -95,6 +91,6 @@ void AssetManager::SaveRegistry() {
 		assets.push_back(asset);
 	}
 
-	filesystem->WriteStringToFile("project://AssetRegistry.lregistry", data.dump());
+	Filesystem::WriteStringToFile("project://AssetRegistry.lregistry", data.dump());
 }
 }  // namespace Luna

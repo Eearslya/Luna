@@ -15,7 +15,7 @@
 #include <Luna/Vulkan/Semaphore.hpp>
 #include <Luna/Vulkan/Shader.hpp>
 #include <Luna/Vulkan/ShaderCompiler.hpp>
-#include <Luna/Vulkan/ShaderManager.hpp>
+// #include <Luna/Vulkan/ShaderManager.hpp>
 #include <Luna/Vulkan/WSI.hpp>
 
 namespace Luna {
@@ -93,9 +93,9 @@ Device::Device(Context& context)
 		}
 	}
 
-	_framebufferAllocator         = std::make_unique<FramebufferAllocator>(*this);
-	_shaderCompiler               = std::make_unique<ShaderCompiler>();
-	_shaderManager                = std::make_unique<ShaderManager>(*this);
+	_framebufferAllocator = std::make_unique<FramebufferAllocator>(*this);
+	_shaderCompiler       = std::make_unique<ShaderCompiler>();
+	// _shaderManager                = std::make_unique<ShaderManager>(*this);
 	_transientAttachmentAllocator = std::make_unique<TransientAttachmentAllocator>(*this);
 
 	CreateStockSamplers();
@@ -136,7 +136,7 @@ Device::~Device() noexcept {
 	_indexBlocks.reset();
 
 	_transientAttachmentAllocator.reset();
-	_shaderManager.reset();
+	// _shaderManager.reset();
 	_shaderCompiler.reset();
 	_framebufferAllocator.reset();
 
@@ -286,6 +286,55 @@ CommandBufferHandle Device::RequestCommandBuffer(CommandBufferType type) {
 CommandBufferHandle Device::RequestCommandBufferForThread(uint32_t threadIndex, CommandBufferType type) {
 	DeviceLock();
 	return RequestCommandBufferNoLock(threadIndex, type);
+}
+
+void Device::SetAcquireSemaphore(uint32_t imageIndex, SemaphoreHandle& semaphore) {
+	_swapchainAcquire         = std::move(semaphore);
+	_swapchainAcquireConsumed = false;
+	_swapchainIndex           = imageIndex;
+
+	if (_swapchainAcquire) { _swapchainAcquire->SetInternalSync(); }
+}
+
+void Device::SetupSwapchain(const vk::Extent2D& extent,
+                            const vk::SurfaceFormatKHR& format,
+                            const std::vector<vk::Image>& images) {
+	DeviceFlush();
+	WaitIdleNoLock();
+
+	const auto imageCI = ImageCreateInfo::RenderTarget(format.format, extent.width, extent.height);
+
+	_swapchainAcquireConsumed = false;
+	_swapchainImages.clear();
+	_swapchainImages.reserve(images.size());
+	_swapchainIndex = std::numeric_limits<uint32_t>::max();
+
+	for (size_t i = 0; i < images.size(); ++i) {
+		const auto& image = images[i];
+
+		const vk::ImageViewCreateInfo viewCI({},
+		                                     image,
+		                                     vk::ImageViewType::e2D,
+		                                     format.format,
+		                                     vk::ComponentMapping(),
+		                                     vk::ImageSubresourceRange(FormatAspectFlags(format.format), 0, 1, 0, 1));
+		auto imageView = _device.createImageView(viewCI);
+		Log::Trace("Vulkan", "Image View created.");
+
+		Image* img = _imagePool.Allocate(*this, image, imageView, VmaAllocation{}, imageCI, viewCI.viewType);
+		ImageHandle handle(img);
+		handle->DisownImage();
+		handle->DisownMemory();
+		handle->SetInternalSync();
+		handle->GetView().SetInternalSync();
+		handle->SetSwapchainLayout(vk::ImageLayout::ePresentSrcKHR);
+
+		_swapchainImages.push_back(handle);
+	}
+}
+
+bool Device::SwapchainAcquired() const {
+	return _swapchainAcquireConsumed;
 }
 
 void Device::Submit(CommandBufferHandle& cmd, FenceHandle* fence, std::vector<SemaphoreHandle>* semaphores) {
@@ -1075,13 +1124,12 @@ void Device::CreatePipelineCache() {
 	constexpr static const auto uuidSize = sizeof(_deviceInfo.Properties.Core.pipelineCacheUUID);
 	constexpr static const auto hashSize = sizeof(Hash);
 
-	auto* filesystem = Filesystem::Get();
 	FileMappingHandle cacheFile;
 	const uint8_t* data = nullptr;
 	size_t dataSize     = 0;
 
-	if (filesystem->Exists(PipelineCachePath)) {
-		cacheFile = filesystem->OpenReadOnlyMapping(PipelineCachePath);
+	if (Filesystem::Exists(PipelineCachePath)) {
+		cacheFile = Filesystem::OpenReadOnlyMapping(PipelineCachePath);
 		if (cacheFile) {
 			data     = cacheFile->Data<uint8_t>();
 			dataSize = cacheFile->GetSize();
@@ -1303,9 +1351,9 @@ void Device::FlushPipelineCache() {
 	h.Data(cacheData.size(), cacheData.data());
 	const auto hash = h.Get();
 
-	auto* filesystem = Filesystem::Get();
-	auto cacheFile   = filesystem->OpenTransactionalMapping(PipelineCachePath, fileSize);
-	auto* fileData   = cacheFile->MutableData<uint8_t>();
+	auto cacheFile = Filesystem::OpenTransactionalMapping(PipelineCachePath, fileSize);
+	if (!cacheFile) { return; }
+	auto* fileData = cacheFile->MutableData<uint8_t>();
 
 	memcpy(fileData, _deviceInfo.Properties.Core.pipelineCacheUUID, uuidSize);
 	fileData += uuidSize;
@@ -1328,7 +1376,7 @@ void Device::PromoteReadWriteCachesToReadOnly() {
 		_programs.MoveToReadOnly();
 		_renderPasses.MoveToReadOnly();
 		_shaders.MoveToReadOnly();
-		_shaderManager->PromoteReadWriteCachesToReadOnly();
+		// _shaderManager->PromoteReadWriteCachesToReadOnly();
 
 		for (auto& program : _programs.GetReadOnly()) {}
 
@@ -1412,18 +1460,11 @@ const RenderPass& Device::RequestRenderPass(const RenderPassInfo& rpInfo, bool c
 	return *ret;
 }
 
-void Device::SetAcquireSemaphore(uint32_t imageIndex, SemaphoreHandle& semaphore) {
-	_swapchainAcquire         = std::move(semaphore);
-	_swapchainAcquireConsumed = false;
-	_swapchainIndex           = imageIndex;
-
-	if (_swapchainAcquire) { _swapchainAcquire->SetInternalSync(); }
-}
-
 void Device::SetupSwapchain(WSI& wsi) {
 	DeviceFlush();
 	WaitIdleNoLock();
 
+	/*
 	const auto& extent = wsi._swapchainConfig.Extent;
 	const auto& format = wsi._swapchainConfig.Format.format;
 	const auto& images = wsi._swapchainImages;
@@ -1435,27 +1476,28 @@ void Device::SetupSwapchain(WSI& wsi) {
 	_swapchainIndex = std::numeric_limits<uint32_t>::max();
 
 	for (size_t i = 0; i < images.size(); ++i) {
-		const auto& image = images[i];
+	  const auto& image = images[i];
 
-		const vk::ImageViewCreateInfo viewCI({},
-		                                     image,
-		                                     vk::ImageViewType::e2D,
-		                                     format,
-		                                     vk::ComponentMapping(),
-		                                     vk::ImageSubresourceRange(FormatAspectFlags(format), 0, 1, 0, 1));
-		auto imageView = _device.createImageView(viewCI);
-		Log::Trace("Vulkan", "Image View created.");
+	  const vk::ImageViewCreateInfo viewCI({},
+	                                       image,
+	                                       vk::ImageViewType::e2D,
+	                                       format,
+	                                       vk::ComponentMapping(),
+	                                       vk::ImageSubresourceRange(FormatAspectFlags(format), 0, 1, 0, 1));
+	  auto imageView = _device.createImageView(viewCI);
+	  Log::Trace("Vulkan", "Image View created.");
 
-		Image* img = _imagePool.Allocate(*this, image, imageView, VmaAllocation{}, imageCI, viewCI.viewType);
-		ImageHandle handle(img);
-		handle->DisownImage();
-		handle->DisownMemory();
-		handle->SetInternalSync();
-		handle->GetView().SetInternalSync();
-		handle->SetSwapchainLayout(vk::ImageLayout::ePresentSrcKHR);
+	  Image* img = _imagePool.Allocate(*this, image, imageView, VmaAllocation{}, imageCI, viewCI.viewType);
+	  ImageHandle handle(img);
+	  handle->DisownImage();
+	  handle->DisownMemory();
+	  handle->SetInternalSync();
+	  handle->GetView().SetInternalSync();
+	  handle->SetSwapchainLayout(vk::ImageLayout::ePresentSrcKHR);
 
-		_swapchainImages.push_back(handle);
+	  _swapchainImages.push_back(handle);
 	}
+	*/
 }
 
 void Device::EndFrameNoLock() {
@@ -1908,7 +1950,7 @@ void Device::ResetFenceNoLock(vk::Fence fence, bool observedWait) {
 Device::FrameContext::FrameContext(Device& device, uint32_t frameIndex) : Parent(device), FrameIndex(frameIndex) {
 	std::fill(TimelineValues.begin(), TimelineValues.end(), 0);
 
-	const uint32_t threadCount = Threading::Get()->GetThreadCount() + 1;
+	const uint32_t threadCount = Threading::GetThreadCount() + 1;
 	for (uint32_t q = 0; q < QueueTypeCount; ++q) {
 		CommandPools[q].reserve(threadCount);
 		TimelineValues[q] = Parent._queueData[q].TimelineValue;

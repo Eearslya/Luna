@@ -1,5 +1,6 @@
 #include <Luna/Renderer/RenderGraph.hpp>
 #include <Luna/Renderer/RenderPass.hpp>
+#include <Luna/Renderer/Renderer.hpp>
 #include <Luna/Utility/BitOps.hpp>
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
@@ -7,14 +8,13 @@
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
-#include <Luna/Vulkan/ShaderManager.hpp>
 #include <glm/glm.hpp>
 
 namespace Luna {
 static constexpr RenderGraphQueueFlags ComputeQueues =
 	RenderGraphQueueFlagBits::Compute | RenderGraphQueueFlagBits::AsyncCompute;
 
-RenderGraph::RenderGraph(Vulkan::Device& device) : _device(device) {}
+RenderGraph::RenderGraph() {}
 
 RenderGraph::~RenderGraph() noexcept {}
 
@@ -101,13 +101,11 @@ void RenderGraph::Bake() {
 	BuildAliases();
 
 	for (auto& physicalPass : _physicalPasses) {
-		for (auto pass : physicalPass.Passes) { _passes[pass]->Setup(_device); }
+		for (auto pass : physicalPass.Passes) { _passes[pass]->Setup(); }
 	}
 }
 
 void RenderGraph::EnqueueRenderPasses(Vulkan::Device& device, TaskComposer& composer) {
-	auto* threading = Threading::Get();
-
 	const size_t count = _physicalPasses.size();
 	_passSubmissionStates.clear();
 	_passSubmissionStates.resize(count);
@@ -124,7 +122,7 @@ void RenderGraph::EnqueueRenderPasses(Vulkan::Device& device, TaskComposer& comp
 	for (auto& state : _passSubmissionStates) {
 		auto& group = composer.BeginPipelineStage();
 		if (state.RenderingDependency) {
-			threading->AddDependency(group, *state.RenderingDependency);
+			Threading::AddDependency(group, *state.RenderingDependency);
 			state.RenderingDependency.Reset();
 		}
 
@@ -262,6 +260,7 @@ void RenderGraph::Reset() {
 	_resources.clear();
 	_passToIndex.clear();
 	_resourceToIndex.clear();
+	_passSubmissionStates.clear();
 	_physicalPasses.clear();
 	_physicalDimensions.clear();
 	_physicalAttachments.clear();
@@ -301,7 +300,7 @@ void RenderGraph::SetupAttachments(Vulkan::ImageView* swapchain) {
 			} else if (i == _swapchainPhysicalIndex) {
 				_physicalAttachments[i] = swapchain;
 			} else if (att.Flags & AttachmentInfoFlagBits::InternalTransient) {
-				_physicalImageAttachments[i] = _device.GetTransientAttachment(
+				_physicalImageAttachments[i] = Renderer::GetDevice().GetTransientAttachment(
 					vk::Extent2D(att.Width, att.Height), att.Format, i, vk::SampleCountFlagBits::e1, att.Layers);
 				_physicalAttachments[i] = &_physicalImageAttachments[i]->GetView();
 			} else {
@@ -1635,14 +1634,15 @@ void RenderGraph::PerformScaleRequests(Vulkan::CommandBuffer& cmd, const std::ve
 
 	std::vector<std::pair<std::string, int>> defines;
 
+	/*
 	auto& shaderManager = cmd.GetDevice().GetShaderManager();
 	auto* shaderProgram =
-		shaderManager.RegisterGraphics("res://Shaders/Fullscreen.vert.glsl", "res://Shaders/Scale.frag.glsl");
+	  shaderManager.RegisterGraphics("res://Shaders/Fullscreen.vert.glsl", "res://Shaders/Scale.frag.glsl");
 
 	for (auto& req : requests) {
-		const std::string def = fmt::format("ATTACHMENT_{}", req.Target);
-		defines.push_back({def, 1});
-		cmd.SetTexture(0, req.Target, *_physicalAttachments[req.PhysicalResource], Vulkan::StockSampler::LinearClamp);
+	  const std::string def = fmt::format("ATTACHMENT_{}", req.Target);
+	  defines.push_back({def, 1});
+	  cmd.SetTexture(0, req.Target, *_physicalAttachments[req.PhysicalResource], Vulkan::StockSampler::LinearClamp);
 	}
 
 	auto* variant = shaderProgram->RegisterVariant(defines);
@@ -1652,6 +1652,8 @@ void RenderGraph::PerformScaleRequests(Vulkan::CommandBuffer& cmd, const std::ve
 	cmd.SetCullMode(vk::CullModeFlagBits::eNone);
 	cmd.SetProgram(program);
 	cmd.Draw(3);
+	*/
+	Log::Error("RenderGraph", "Trying to scale, but haven't re-implemented shader manager!");
 }
 
 void RenderGraph::PhysicalPassEnqueueComputeCommands(const PhysicalPass& physicalPass, PassSubmissionState& state) {
@@ -1749,8 +1751,7 @@ void RenderGraph::PhysicalPassHandleFlushBarrier(const Barrier& barrier, PassSub
 }
 
 void RenderGraph::PhysicalPassHandleGPU(Vulkan::Device& device, const PhysicalPass& pass, PassSubmissionState& state) {
-	auto* threading = Threading::Get();
-	auto group      = threading->CreateTaskGroup();
+	auto group = Threading::CreateTaskGroup();
 
 	group->Enqueue([&]() {
 		state.Cmd = device.RequestCommandBuffer(state.QueueType);
@@ -1763,7 +1764,7 @@ void RenderGraph::PhysicalPassHandleGPU(Vulkan::Device& device, const PhysicalPa
 		}
 	});
 
-	if (state.RenderingDependency) { threading->AddDependency(*group, *state.RenderingDependency); }
+	if (state.RenderingDependency) { Threading::AddDependency(*group, *state.RenderingDependency); }
 	state.RenderingDependency = group;
 }
 
@@ -1893,7 +1894,7 @@ void RenderGraph::SetupPhysicalBuffer(uint32_t attachment) {
 		}
 	}
 
-	_physicalBuffers[attachment] = _device.CreateBuffer(bufferCI);
+	_physicalBuffers[attachment] = Renderer::GetDevice().CreateBuffer(bufferCI);
 	_physicalEvents[attachment]  = {};
 }
 
@@ -1951,7 +1952,7 @@ void RenderGraph::SetupPhysicalImage(uint32_t attachment) {
 			imageCI.MiscFlags |= Vulkan::ImageCreateFlagBits::ConcurrentQueueAsyncGraphics;
 		}
 
-		_physicalImageAttachments[attachment] = _device.CreateImage(imageCI);
+		_physicalImageAttachments[attachment] = Renderer::GetDevice().CreateImage(imageCI);
 		_physicalEvents[attachment]           = {};
 	}
 
@@ -1966,9 +1967,9 @@ void RenderGraph::SwapchainScalePass() {
 	const auto queueType         = (_physicalDimensions[index].Queues & RenderGraphQueueFlagBits::Graphics)
 	                                 ? Vulkan::CommandBufferType::Generic
 	                                 : Vulkan::CommandBufferType::AsyncGraphics;
-	const auto physicalQueueType = _device.GetQueueType(queueType);
+	const auto physicalQueueType = Renderer::GetDevice().GetQueueType(queueType);
 
-	auto cmd = _device.RequestCommandBuffer(queueType);
+	auto cmd = Renderer::GetDevice().RequestCommandBuffer(queueType);
 
 	const auto& image   = _physicalAttachments[index]->GetImage();
 	auto& waitSemaphore = physicalQueueType == Vulkan::QueueType::Graphics ? _physicalEvents[index].WaitGraphicsSemaphore
@@ -1997,7 +1998,8 @@ void RenderGraph::SwapchainScalePass() {
 		_physicalEvents[index].Layout = targetLayout;
 	} else if (waitSemaphore) {
 		if (waitSemaphore->GetSemaphore() && !waitSemaphore->IsPendingWait()) {
-			_device.AddWaitSemaphore(queueType, waitSemaphore, vk::PipelineStageFlagBits2::eFragmentShader, true);
+			Renderer::GetDevice().AddWaitSemaphore(
+				queueType, waitSemaphore, vk::PipelineStageFlagBits2::eFragmentShader, true);
 		}
 
 		if (_physicalEvents[index].Layout != targetLayout) {
@@ -2032,11 +2034,11 @@ void RenderGraph::SwapchainScalePass() {
 
 	if (_physicalDimensions[index].UsesSemaphore()) {
 		std::vector<Vulkan::SemaphoreHandle> semaphores(2);
-		_device.Submit(cmd, nullptr, &semaphores);
+		Renderer::GetDevice().Submit(cmd, nullptr, &semaphores);
 		_physicalEvents[index].WaitGraphicsSemaphore = semaphores[0];
 		_physicalEvents[index].WaitComputeSemaphore  = semaphores[1];
 	} else {
-		_device.Submit(cmd);
+		Renderer::GetDevice().Submit(cmd);
 	}
 }
 

@@ -83,50 +83,28 @@ class TaskComposer {
 	TaskGroupHandle _nextStageDependencies;
 };
 
-class Threading {
+class Threading final {
 	friend struct TaskDependenciesDeleter;
 	friend struct TaskGroup;
 	friend struct TaskGroupDeleter;
 
  public:
-	Threading();
-	~Threading() noexcept;
+	static bool Initialize();
+	static void Shutdown();
 
-	static Threading* Get() {
-		return _instance;
-	}
-
-	uint32_t GetThreadCount() const;
-
-	void AddDependency(TaskGroup& dependee, TaskGroup& dependency);
-	TaskGroupHandle CreateTaskGroup();
-	void Submit(TaskGroupHandle& group);
-	void SubmitTasks(const std::vector<Task*>& tasks);
-	void WaitIdle();
+	static void AddDependency(TaskGroup& dependee, TaskGroup& dependency);
+	static TaskGroupHandle CreateTaskGroup();
+	static uint32_t GetThreadCount();
+	static void Submit(TaskGroupHandle& group);
+	static void SubmitTasks(const std::vector<Task*>& tasks);
+	static void WaitIdle();
 
 	static void SetThreadID(uint32_t thread);
 	static uint32_t GetThreadID();
 
  private:
-	static Threading* _instance;
-
-	void FreeTaskDependencies(TaskDependencies* dependencies);
-	void FreeTaskGroup(TaskGroup* group);
-	void WorkerThread(int threadID);
-
-	ThreadSafeObjectPool<Task> _taskPool;
-	ThreadSafeObjectPool<TaskGroup> _taskGroupPool;
-	ThreadSafeObjectPool<TaskDependencies> _taskDependenciesPool;
-
-	std::queue<Task*> _tasks;
-	std::condition_variable _tasksCondition;
-	std::mutex _tasksMutex;
-	std::atomic_uint _tasksCompleted;
-	std::atomic_uint _tasksTotal;
-	std::condition_variable _waitCondition;
-	std::mutex _waitMutex;
-
-	std::atomic_bool _running = false;
-	std::vector<std::thread> _workerThreads;
+	static void FreeTaskDependencies(TaskDependencies* dependencies);
+	static void FreeTaskGroup(TaskGroup* group);
+	static void WorkerThread(int threadID);
 };
 }  // namespace Luna

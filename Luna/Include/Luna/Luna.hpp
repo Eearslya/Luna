@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Luna/Application/Application.hpp>
-#include <Luna/Application/Input.hpp>
+#include <Luna/Core/CommandLine.hpp>
+#include <Luna/Core/Engine.hpp>
+#include <Luna/Core/Input.hpp>
+#include <Luna/Core/Window.hpp>
 #include <Luna/Platform/Filesystem.hpp>
 #include <Luna/Project/Project.hpp>
 #include <Luna/Scene/Entity.hpp>

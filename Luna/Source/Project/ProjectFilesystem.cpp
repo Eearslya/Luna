@@ -3,7 +3,7 @@
 
 namespace Luna {
 static FilesystemBackend* ProjectBackend() {
-	return Filesystem::Get()->GetBackend(Project::ProjectPath().Protocol());
+	return Filesystem::GetBackend(Project::ProjectPath().Protocol());
 }
 
 static Path ProjectPath(const Path& path) {

@@ -1,9 +1,10 @@
-#include <Luna/Utility/Log.hpp>
-#include <Luna/Vulkan/Context.hpp>
-#include <Luna/Vulkan/Device.hpp>
-#include <Luna/Vulkan/Semaphore.hpp>
-#include <Luna/Vulkan/WSI.hpp>
-#include <Tracy/Tracy.hpp>
+#if 0
+#	include <Luna/Utility/Log.hpp>
+#	include <Luna/Vulkan/Context.hpp>
+#	include <Luna/Vulkan/Device.hpp>
+#	include <Luna/Vulkan/Semaphore.hpp>
+#	include <Luna/Vulkan/WSI.hpp>
+#	include <Tracy/Tracy.hpp>
 
 namespace Luna {
 namespace Vulkan {
@@ -203,3 +204,4 @@ void WSI::RecreateSwapchain() {
 }
 }  // namespace Vulkan
 }  // namespace Luna
+#endif

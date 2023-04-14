@@ -11,12 +11,9 @@ target_sources(Luna PRIVATE
 	Fence.cpp
 	Format.cpp
 	Image.cpp
-	ImGuiRenderer.cpp
 	RenderPass.cpp
 	Sampler.cpp
 	Semaphore.cpp
 	Shader.cpp
 	ShaderCompiler.cpp
-	ShaderManager.cpp
-	TextureFormat.cpp
-	WSI.cpp)
+	TextureFormat.cpp)

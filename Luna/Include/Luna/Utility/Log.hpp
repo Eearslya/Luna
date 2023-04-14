@@ -13,7 +13,7 @@ class Log {
 		_mainLogger->set_level(ConvertLevel(level));
 	}
 
-	static void Initialize();
+	static bool Initialize();
 	static void Shutdown();
 
 	template <typename... Args>

@@ -757,6 +757,20 @@ void* CommandBuffer::AllocateUniformData(uint32_t set, uint32_t binding, vk::Dev
 	return data.Host;
 }
 
+void* CommandBuffer::AllocateVertexData(uint32_t binding,
+                                        vk::DeviceSize size,
+                                        vk::DeviceSize stride,
+                                        vk::VertexInputRate rate) {
+	auto data = _vertexBlock.Allocate(size);
+	if (!data.Host) {
+		_device.RequestVertexBlock(_vertexBlock, size);
+		data = _vertexBlock.Allocate(size);
+	}
+	SetVertexBinding(binding, *_vertexBlock.Gpu, data.Offset, stride, rate);
+
+	return data.Host;
+}
+
 void CommandBuffer::BeginCompute() {
 	_isCompute = true;
 	BeginContext();

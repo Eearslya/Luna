@@ -15,8 +15,6 @@
 
 namespace Luna {
 Environment::Environment(Vulkan::Device& device, const Path& envPath) {
-	auto* filesystem = Luna::Filesystem::Get();
-
 	auto& shaderManager             = device.GetShaderManager();
 	Vulkan::Program* progCubemap    = nullptr;
 	Vulkan::Program* progIrradiance = nullptr;
@@ -40,7 +38,7 @@ Environment::Environment(Vulkan::Device& device, const Path& envPath) {
 
 	Vulkan::ImageHandle baseHdr;
 	{
-		auto envFile = filesystem->OpenReadOnlyMapping(envPath);
+		auto envFile = Filesystem::OpenReadOnlyMapping(envPath);
 		if (!envFile) { throw std::runtime_error("Failed to load environment map!"); }
 		const uint8_t* envData = envFile->Data<uint8_t>();
 

@@ -7,9 +7,7 @@
 #include <vector>
 
 namespace Luna {
-namespace Vulkan {
-class WSIPlatform;
-}
+class Window;
 
 enum class Key : int16_t {
 	Unknown        = -1,
@@ -152,14 +150,13 @@ enum class MouseButton : uint8_t {
 };
 
 class Input {
-	friend class Vulkan::WSIPlatform;
-
  public:
 	static InputAction GetButton(MouseButton button);
 	static bool GetCursorHidden();
+	static glm::dvec2 GetCursorPosition();
 	static InputAction GetKey(Key key);
 	static void SetCursorHidden(bool hidden);
-	static void SetMousePosition(const glm::dvec2& position);
+	static void SetCursorPosition(const glm::dvec2& position);
 
 	static void CharEvent(int);
 	static void DropEvent(const std::vector<std::filesystem::path>& paths);
@@ -174,16 +171,6 @@ class Input {
 	inline static Delegate<void(MouseButton, InputAction, InputMods)> OnMouseButton;
 	inline static Delegate<void(glm::dvec2)> OnMouseMoved;
 	inline static Delegate<void(glm::dvec2)> OnMouseScrolled;
-
- private:
-	inline static bool _cursorHidden = false;
-	inline static glm::dvec2 _lastPosition;
-	inline static glm::dvec2 _lastScroll;
-	inline static glm::dvec2 _position;
-	inline static glm::dvec2 _positionDelta;
-	inline static glm::dvec2 _savedPosition;
-	inline static glm::dvec2 _scroll;
-	inline static glm::dvec2 _scrollDelta;
 };
 }  // namespace Luna
 
