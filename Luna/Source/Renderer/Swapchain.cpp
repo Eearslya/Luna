@@ -25,7 +25,7 @@ Swapchain::Swapchain(Window& window) : _window(&window) {
 	}
 	if (_format.format == vk::Format::eUndefined) { _format = formats[0]; }
 
-	_presentMode = vk::PresentModeKHR::eImmediate;
+	_presentMode = vk::PresentModeKHR::eFifo;
 	for (const auto& presentMode : presentModes) {
 		if (presentMode == vk::PresentModeKHR::eMailbox) {
 			_presentMode = presentMode;

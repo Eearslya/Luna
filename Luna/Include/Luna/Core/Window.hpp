@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Luna/Utility/Delegate.hpp>
 #include <Luna/Utility/IntrusivePtr.hpp>
 #include <glm/glm.hpp>
 #include <string>
@@ -35,6 +36,8 @@ class Window final {
 	void Minimize();
 	void Restore();
 	void Show();
+
+	Delegate<void()> OnRefresh;
 
  private:
 	GLFWwindow* _window = nullptr;

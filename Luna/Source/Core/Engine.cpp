@@ -46,6 +46,20 @@ static void RunFrame(double deltaTime) {
 	State.FrameCount++;
 }
 
+static void Update() {
+	ZoneScopedN("Engine::Update");
+
+	const double now       = WindowManager::GetTime();
+	const double deltaTime = now - State.LastFrame;
+	State.LastFrame        = now;
+
+	Filesystem::Update();
+	WindowManager::Update();
+	if (State.Window->IsCloseRequested()) { State.Running = false; }
+
+	RunFrame(deltaTime);
+}
+
 bool Engine::Initialize(const EngineOptions& options) {
 	ZoneScopedN("Engine::Initialize");
 
@@ -63,6 +77,10 @@ bool Engine::Initialize(const EngineOptions& options) {
 	if (!State.Window) { return -1; }
 	State.Window->Maximize();
 	Renderer::SetMainWindow(*State.Window);
+	State.Window->OnRefresh += []() {
+		Update();
+		FrameMark;
+	};
 
 	Renderer::SetScene(State.ActiveScene);
 
@@ -81,19 +99,7 @@ int Engine::Run() {
 	State.LastFrame  = WindowManager::GetTime();
 	State.Running    = true;
 	while (State.Running) {
-		{
-			ZoneScopedN("Engine::Update");
-
-			const double now       = WindowManager::GetTime();
-			const double deltaTime = now - State.LastFrame;
-			State.LastFrame        = now;
-
-			Filesystem::Update();
-			WindowManager::Update();
-			if (State.Window->IsCloseRequested()) { State.Running = false; }
-
-			RunFrame(deltaTime);
-		}
+		Update(); 
 		FrameMark;
 	}
 

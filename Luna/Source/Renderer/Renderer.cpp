@@ -100,6 +100,7 @@ void Renderer::Render(double deltaTime) {
 	ZoneScopedN("Renderer::Render");
 
 	auto& device = *State.Device;
+	device.NextFrame();
 
 	if (State.MainWindow && State.MainWindow->GetSwapchain().Acquire()) {
 		const auto windowSize = State.MainWindow->GetFramebufferSize();
