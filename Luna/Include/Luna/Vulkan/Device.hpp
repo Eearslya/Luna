@@ -114,6 +114,12 @@ class Device : public IntrusivePtrEnabled<Device> {
 	PipelineLayout* RequestPipelineLayout(const ProgramResourceLayout& layout);
 	SemaphoreHandle RequestSemaphore();
 
+	void SetObjectName(vk::ObjectType type, uint64_t handle, const std::string& name);
+	template <typename T>
+	void SetObjectName(T obj, const std::string& name) {
+		SetObjectName(T::objectType, reinterpret_cast<uint64_t>(static_cast<typename T::NativeType>(obj)), name);
+	}
+
  private:
 	struct FrameContext {
 		FrameContext(Device& device, uint32_t frameIndex);

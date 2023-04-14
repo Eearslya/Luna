@@ -10,6 +10,7 @@
 #include <Luna/Renderer/ShaderManager.hpp>
 #include <Luna/Scene/Scene.hpp>
 #include <Luna/UI/UIManager.hpp>
+#include <Luna/Utility/BitOps.hpp>
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Utility/Threading.hpp>
 #include <Tracy/Tracy.hpp>
@@ -24,6 +25,7 @@ static struct EngineState {
 
 	uint64_t FrameCount = 0;
 	double LastFrame    = 0.0;
+	uint8_t SceneViews  = 1;
 } State;
 
 static void RenderMainUI(double deltaTime) {
@@ -53,7 +55,36 @@ static void RenderMainUI(double deltaTime) {
 		ImGui::PopStyleVar();
 	}
 
+	if (ImGui::BeginMainMenuBar()) {
+		if (ImGui::BeginMenu("Windows")) {
+			if (ImGui::MenuItem("Add Scene View", nullptr, false, State.SceneViews != 0xff)) {
+				State.SceneViews |= 1 << TrailingOnes(State.SceneViews);
+			}
+
+			ImGui::EndMenu();
+		}
+
+		ImGui::EndMainMenuBar();
+	}
+
 	ImGui::ShowDemoWindow();
+
+	ForEachBit(State.SceneViews, [](uint32_t i) {
+		const std::string windowName = "Scene##" + (i == 0 ? "Main" : std::to_string(i));
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+		bool windowOpen        = true;
+		const bool sceneWindow = ImGui::Begin(windowName.c_str(), i == 0 ? nullptr : &windowOpen);
+		ImGui::PopStyleVar();
+		if (sceneWindow) {
+			const auto size       = ImGui::GetContentRegionAvail();
+			const int view        = Renderer::RegisterSceneView(size.x, size.y);
+			const ImTextureID tex = UIManager::SceneView(view);
+			ImGui::Image(tex, ImGui::GetContentRegionAvail());
+		}
+		ImGui::End();
+
+		if (!windowOpen) { State.SceneViews &= ~(1 << i); }
+	});
 
 	// End Dockspace
 	ImGui::End();

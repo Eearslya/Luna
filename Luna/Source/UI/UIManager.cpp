@@ -25,13 +25,20 @@ struct PushConstant {
 	ImGuiSampleMode SampleMode;
 };
 
+struct UITexture {
+	Vulkan::ImageView* View = nullptr;
+	int32_t SceneView       = -1;
+};
+
 static struct UIState {
 	std::vector<Vulkan::BufferHandle> Buffers;
 	Vulkan::ImageHandle FontImage;
 	Vulkan::SamplerHandle FontSampler;
 	bool MouseJustPressed[16] = {false};
 	Vulkan::Program* Program  = nullptr;
-} State;
+	std::array<UITexture, 64> Textures;
+	uint32_t NextTexture = 0;
+} UIState;
 
 bool UIManager::Initialize() {
 	ZoneScopedN("UIManager::Initialize");
@@ -180,9 +187,9 @@ bool UIManager::Initialize() {
 	}
 
 	io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
-	State.Program = ShaderManager::RegisterGraphics("res://Shaders/ImGui.vert.glsl", "res://Shaders/ImGui.frag.glsl")
-	                  ->RegisterVariant()
-	                  ->GetProgram();
+	UIState.Program = ShaderManager::RegisterGraphics("res://Shaders/ImGui.vert.glsl", "res://Shaders/ImGui.frag.glsl")
+	                    ->RegisterVariant()
+	                    ->GetProgram();
 
 	const Vulkan::SamplerCreateInfo samplerCI{.MagFilter        = vk::Filter::eLinear,
 	                                          .MinFilter        = vk::Filter::eLinear,
@@ -194,7 +201,7 @@ bool UIManager::Initialize() {
 	                                          .MaxAnisotropy    = 1.0f,
 	                                          .MinLod           = -1000.0f,
 	                                          .MaxLod           = 1000.0f};
-	State.FontSampler = Renderer::GetDevice().CreateSampler(samplerCI);
+	UIState.FontSampler = Renderer::GetDevice().CreateSampler(samplerCI);
 
 	Input::OnChar += [](int c) {
 		ImGuiIO& io = ImGui::GetIO();
@@ -216,7 +223,7 @@ bool UIManager::Initialize() {
 		ImGuiIO& io = ImGui::GetIO();
 
 		if (action == InputAction::Press && int(button) < ImGuiMouseButton_COUNT) {
-			State.MouseJustPressed[int(button)] = true;
+			UIState.MouseJustPressed[int(button)] = true;
 		}
 	};
 	Input::OnMouseMoved += [](const glm::dvec2& pos) {
@@ -237,9 +244,9 @@ bool UIManager::Initialize() {
 void UIManager::Shutdown() {
 	ZoneScopedN("UIManager::Shutdown");
 
-	State.FontSampler.Reset();
-	State.FontImage.Reset();
-	State.Buffers.clear();
+	UIState.FontSampler.Reset();
+	UIState.FontImage.Reset();
+	UIState.Buffers.clear();
 }
 
 void UIManager::BeginFrame(double deltaTime) {
@@ -257,13 +264,14 @@ void UIManager::BeginFrame(double deltaTime) {
 		}
 
 		for (int i = 0; i < ImGuiMouseButton_COUNT; ++i) {
-			io.MouseDown[i]           = State.MouseJustPressed[i] || Input::GetButton(MouseButton(i)) == InputAction::Press;
-			State.MouseJustPressed[i] = false;
+			io.MouseDown[i] = UIState.MouseJustPressed[i] || Input::GetButton(MouseButton(i)) == InputAction::Press;
+			UIState.MouseJustPressed[i] = false;
 		}
 
 		io.DeltaTime = deltaTime;
 	}
 
+	UIState.NextTexture = 0;
 	ImGui::NewFrame();
 }
 
@@ -289,8 +297,8 @@ void UIManager::Render(Vulkan::CommandBuffer& cmd) {
 	const vk::DeviceSize vertexSize = drawData->TotalVtxCount * sizeof(ImDrawVert);
 	const vk::DeviceSize indexSize  = drawData->TotalIdxCount * sizeof(ImDrawIdx);
 	const vk::DeviceSize bufferSize = vertexSize + indexSize;
-	if (frameIndex >= State.Buffers.size()) { State.Buffers.resize(frameIndex + 1); }
-	auto& buffer = State.Buffers[frameIndex];
+	if (frameIndex >= UIState.Buffers.size()) { UIState.Buffers.resize(frameIndex + 1); }
+	auto& buffer = UIState.Buffers[frameIndex];
 	if (!buffer || buffer->GetCreateInfo().Size < bufferSize) {
 		const Vulkan::BufferCreateInfo bufferCI(
 			Vulkan::BufferDomain::Host,
@@ -320,7 +328,7 @@ void UIManager::Render(Vulkan::CommandBuffer& cmd) {
 	                           .SampleMode = ImGuiSampleMode::Standard};
 
 	const auto SetRenderState = [&cmd, &buffer, vertexSize]() {
-		cmd.SetProgram(State.Program);
+		cmd.SetProgram(UIState.Program);
 		cmd.SetTransparentSpriteState();
 		cmd.SetCullMode(vk::CullModeFlagBits::eNone);
 		cmd.SetVertexBinding(0, *buffer, 0, sizeof(ImDrawVert), vk::VertexInputRate::eVertex);
@@ -357,9 +365,22 @@ void UIManager::Render(Vulkan::CommandBuffer& cmd) {
 
 				pc.SampleMode = ImGuiSampleMode::Standard;
 				if (drawCmd.TextureId == 0) {
-					cmd.SetTexture(0, 0, State.FontImage->GetView(), *State.FontSampler);
+					cmd.SetTexture(0, 0, UIState.FontImage->GetView(), *UIState.FontSampler);
 					pc.SampleMode = ImGuiSampleMode::ImGuiFont;
 				} else {
+					UITexture* tex = static_cast<UITexture*>(drawCmd.TextureId);
+					if (tex->SceneView >= 0) {
+						const auto& view = Renderer::GetSceneView(tex->SceneView);
+						if (Vulkan::FormatChannelCount(view.GetCreateInfo().Format) == 1) {
+							pc.SampleMode = ImGuiSampleMode::Grayscale;
+						}
+						cmd.SetTexture(0, 0, view, Vulkan::StockSampler::LinearClamp);
+					} else {
+						if (Vulkan::FormatChannelCount(tex->View->GetCreateInfo().Format) == 1) {
+							pc.SampleMode = ImGuiSampleMode::Grayscale;
+						}
+						cmd.SetTexture(0, 0, *tex->View, Vulkan::StockSampler::LinearClamp);
+					}
 				}
 
 				cmd.PushConstants(&pc, 0, sizeof(pc));
@@ -373,6 +394,13 @@ void UIManager::Render(Vulkan::CommandBuffer& cmd) {
 	}
 }
 
+ImTextureID UIManager::SceneView(int view) {
+	auto& tex     = UIState.Textures[UIState.NextTexture++];
+	tex.SceneView = view;
+
+	return &tex;
+}
+
 void UIManager::UpdateFontAtlas() {
 	ImGuiIO& io = ImGui::GetIO();
 	io.Fonts->Build();
@@ -383,6 +411,6 @@ void UIManager::UpdateFontAtlas() {
 	const Vulkan::ImageInitialData data{.Data = pixels};
 	const auto imageCI = Vulkan::ImageCreateInfo::Immutable2D(
 		vk::Format::eR8Unorm, static_cast<uint32_t>(width), static_cast<uint32_t>(height), false);
-	State.FontImage = Renderer::GetDevice().CreateImage(imageCI, &data);
+	UIState.FontImage = Renderer::GetDevice().CreateImage(imageCI, &data);
 }
 }  // namespace Luna

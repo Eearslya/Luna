@@ -21,6 +21,7 @@ static struct ThreadingState {
 } State;
 
 static thread_local uint32_t ThreadID = ~0u;
+static thread_local std::thread::id SysThreadID;
 
 void Threading::SetThreadID(uint32_t thread) {
 	ThreadID = thread;
@@ -158,6 +159,7 @@ bool Threading::Initialize() {
 	ZoneScopedN("Threading::Initialize");
 
 	SetThreadID(0);
+	SysThreadID = std::this_thread::get_id();
 
 	const auto threadCount = std::thread::hardware_concurrency();
 	Log::Debug("Threading", "Starting {} worker threads.", threadCount);
@@ -239,6 +241,7 @@ void Threading::WorkerThread(int threadID) {
 	Log::Trace("Threading", "Starting worker thread {}.", threadID);
 
 	SetThreadID(threadID);
+	SysThreadID = std::this_thread::get_id();
 
 	while (State.Running) {
 		Task* task = nullptr;

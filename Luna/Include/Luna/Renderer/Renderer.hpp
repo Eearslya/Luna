@@ -3,7 +3,8 @@
 namespace Luna {
 namespace Vulkan {
 class Device;
-}
+class ImageView;
+}  // namespace Vulkan
 class Scene;
 class Window;
 
@@ -13,6 +14,8 @@ class Renderer final {
 	static void Shutdown();
 
 	static Vulkan::Device& GetDevice();
+	static const Vulkan::ImageView& GetSceneView(int view);
+	static int RegisterSceneView(int width, int height);
 	static void Render(double deltaTime);
 	static void SetMainWindow(Window& window);
 	static void SetScene(const Scene& scene);

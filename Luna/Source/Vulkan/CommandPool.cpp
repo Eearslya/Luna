@@ -4,7 +4,8 @@
 
 namespace Luna {
 namespace Vulkan {
-CommandPool::CommandPool(Device& device, uint32_t familyIndex, bool resettable) : _device(device) {
+CommandPool::CommandPool(Device& device, uint32_t familyIndex, bool resettable, const std::string& debugName)
+		: _device(device) {
 	const auto dev = _device.GetDevice();
 
 	vk::CommandPoolCreateFlags flags = vk::CommandPoolCreateFlagBits::eTransient;
@@ -12,6 +13,8 @@ CommandPool::CommandPool(Device& device, uint32_t familyIndex, bool resettable) 
 
 	const vk::CommandPoolCreateInfo poolCI(flags, familyIndex);
 	_pool = dev.createCommandPool(poolCI);
+
+	if (!debugName.empty()) { _device.SetObjectName(_pool, debugName); }
 
 	Log::Trace("Vulkan", "Command Pool created.");
 }

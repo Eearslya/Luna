@@ -1,9 +1,13 @@
 #pragma once
 
+using ImTextureID = void*;
+
 namespace Luna {
 namespace Vulkan {
 class CommandBuffer;
-}
+}  // namespace Vulkan
+
+struct UITexture;
 
 class UIManager {
  public:
@@ -13,6 +17,7 @@ class UIManager {
 	static void BeginFrame(double deltaTime);
 	static void EndFrame();
 	static void Render(Vulkan::CommandBuffer& cmd);
+	static ImTextureID SceneView(int view);
 	static void UpdateFontAtlas();
 };
 }  // namespace Luna

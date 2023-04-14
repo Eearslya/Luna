@@ -1041,6 +1041,12 @@ void Device::AddWaitSemaphoreNoLock(QueueType queueType,
 	data.NeedsFence = true;
 }
 
+void Device::SetObjectName(vk::ObjectType type, uint64_t handle, const std::string& name) {
+	if (!_extensions.DebugUtils) { return; }
+	const vk::DebugUtilsObjectNameInfoEXT nameInfo(type, handle, name.c_str());
+	_device.setDebugUtilsObjectNameEXT(nameInfo);
+}
+
 uint64_t Device::AllocateCookie() {
 	return _nextCookie.fetch_add(16, std::memory_order_relaxed) + 16;
 }
@@ -1877,10 +1883,13 @@ Device::FrameContext::FrameContext(Device& device, uint32_t frameIndex) : Parent
 
 	const uint32_t threadCount = Threading::GetThreadCount() + 1;
 	for (uint32_t q = 0; q < QueueTypeCount; ++q) {
+		const std::string queueType = VulkanEnumToString(QueueType(q));
+
 		CommandPools[q].reserve(threadCount);
 		TimelineValues[q] = Parent._queueData[q].TimelineValue;
 		for (uint32_t i = 0; i < threadCount; ++i) {
-			CommandPools[q].push_back(std::make_unique<CommandPool>(Parent, Parent._queueInfo.Families[q]));
+			const std::string debugName = fmt::format("{} Queue Thread {}", queueType, i);
+			CommandPools[q].push_back(std::make_unique<CommandPool>(Parent, Parent._queueInfo.Families[q], false, debugName));
 		}
 	}
 }

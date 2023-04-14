@@ -6,7 +6,7 @@ namespace Luna {
 namespace Vulkan {
 class CommandPool {
  public:
-	CommandPool(Device& device, uint32_t familyIndex, bool resettable = false);
+	CommandPool(Device& device, uint32_t familyIndex, bool resettable = false, const std::string& debugName = "");
 	~CommandPool() noexcept;
 
 	vk::CommandBuffer RequestCommandBuffer();

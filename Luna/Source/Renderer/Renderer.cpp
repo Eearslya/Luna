@@ -5,6 +5,7 @@
 #include <Luna/Renderer/Renderer.hpp>
 #include <Luna/Renderer/Swapchain.hpp>
 #include <Luna/UI/UIManager.hpp>
+#include <Luna/Utility/Color.hpp>
 #include <Luna/Utility/Threading.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
@@ -14,9 +15,15 @@
 #include <Tracy/Tracy.hpp>
 
 namespace Luna {
+struct SceneView {
+	uint32_t Width  = 0;
+	uint32_t Height = 0;
+};
+
 struct RenderGraphState {
 	uint32_t Width  = 0;
 	uint32_t Height = 0;
+	std::vector<SceneView> SceneViews;
 };
 }  // namespace Luna
 
@@ -26,6 +33,11 @@ struct std::hash<Luna::RenderGraphState> {
 		Luna::Hasher h;
 		h(state.Width);
 		h(state.Height);
+		h(state.SceneViews.size());
+		for (const auto& view : state.SceneViews) {
+			h(view.Width);
+			h(view.Height);
+		}
 
 		return static_cast<size_t>(h.Get());
 	}
@@ -37,6 +49,7 @@ static struct RendererState {
 	Vulkan::DeviceHandle Device;
 	Window* MainWindow;
 	const Scene* ActiveScene;
+	RenderGraphState GraphState;
 	Hash GraphHash = 0;
 	RenderGraph Graph;
 } State;
@@ -65,6 +78,28 @@ Vulkan::Device& Renderer::GetDevice() {
 	return *State.Device;
 }
 
+static void AddSceneView(int viewIndex) {
+	const auto& view          = State.GraphState.SceneViews[viewIndex];
+	const std::string attName = "SceneView-" + std::to_string(viewIndex);
+	const auto Prefix         = [&attName](const std::string& str) { return attName + "/" + str; };
+
+	const AttachmentInfo baseAttachment = {
+		.SizeClass = SizeClass::Absolute, .Width = float(view.Width), .Height = float(view.Height)};
+
+	AttachmentInfo color = baseAttachment;
+	auto& pass           = State.Graph.AddPass(attName, RenderGraphQueueFlagBits::Graphics);
+
+	pass.AddColorOutput(attName, color);
+
+	pass.SetGetClearColor([viewIndex](uint32_t, vk::ClearColorValue* value) -> bool {
+		if (value) {
+			const auto col = HSVtoRGB({float(viewIndex) * 0.23f, 0.9f, 0.7f});
+			*value         = vk::ClearColorValue(col.r, col.g, col.b, 1.0f);
+		}
+		return true;
+	});
+}
+
 static void BakeRenderGraph() {
 	auto physicalBuffers = State.Graph.ConsumePhysicalBuffers();
 	State.Graph.Reset();
@@ -77,12 +112,19 @@ static void BakeRenderGraph() {
 		.Format = swapchainFormat, .Width = swapchainExtent.width, .Height = swapchainExtent.height};
 	State.Graph.SetBackbufferDimensions(backbufferDims);
 
+	// Scene Views
+	for (int i = 0; i < State.GraphState.SceneViews.size(); ++i) { AddSceneView(i); }
+
+	// UI Pass
 	{
 		Luna::AttachmentInfo uiColor;
 
 		auto& ui = State.Graph.AddPass("UI", RenderGraphQueueFlagBits::Graphics);
 
 		ui.AddColorOutput("UI", uiColor);
+		for (int i = 0; i < State.GraphState.SceneViews.size(); ++i) {
+			ui.AddTextureInput("SceneView-" + std::to_string(i), vk::PipelineStageFlagBits2::eFragmentShader);
+		}
 
 		ui.SetGetClearColor([](uint32_t, vk::ClearColorValue* value) -> bool {
 			if (value) { *value = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f); }
@@ -96,6 +138,22 @@ static void BakeRenderGraph() {
 	State.Graph.InstallPhysicalBuffers(physicalBuffers);
 }
 
+const Vulkan::ImageView& Renderer::GetSceneView(int view) {
+	const std::string attachmentName = "SceneView-" + std::to_string(view);
+	const auto& res                  = State.Graph.GetTextureResource(attachmentName);
+	const auto& phys                 = State.Graph.GetPhysicalTextureResource(res);
+
+	return phys;
+}
+
+int Renderer::RegisterSceneView(int width, int height) {
+	if (width <= 0 || height <= 0) { return -1; }
+
+	State.GraphState.SceneViews.push_back(SceneView{uint32_t(width), uint32_t(height)});
+
+	return State.GraphState.SceneViews.size() - 1;
+}
+
 void Renderer::Render(double deltaTime) {
 	ZoneScopedN("Renderer::Render");
 
@@ -103,9 +161,10 @@ void Renderer::Render(double deltaTime) {
 	device.NextFrame();
 
 	if (State.MainWindow && State.MainWindow->GetSwapchain().Acquire()) {
-		const auto windowSize = State.MainWindow->GetFramebufferSize();
-		const RenderGraphState state{.Width = uint32_t(windowSize.x), .Height = uint32_t(windowSize.y)};
-		const auto stateHash = Hasher(state).Get();
+		const auto windowSize   = State.MainWindow->GetFramebufferSize();
+		State.GraphState.Width  = uint32_t(windowSize.x);
+		State.GraphState.Height = uint32_t(windowSize.y);
+		const auto stateHash    = Hasher(State.GraphState).Get();
 		if (stateHash != State.GraphHash) {
 			BakeRenderGraph();
 			State.GraphHash = stateHash;
@@ -118,6 +177,8 @@ void Renderer::Render(double deltaTime) {
 
 		State.MainWindow->GetSwapchain().Present();
 	}
+
+	State.GraphState.SceneViews.clear();
 }
 
 void Renderer::SetMainWindow(Window& window) {
