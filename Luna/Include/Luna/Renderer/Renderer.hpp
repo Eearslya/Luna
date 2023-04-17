@@ -17,7 +17,5 @@ class Renderer final {
 	static const Vulkan::ImageView& GetSceneView(int view);
 	static int RegisterSceneView(int width, int height);
 	static void Render(double deltaTime);
-	static void SetMainWindow(Window& window);
-	static void SetScene(const Scene& scene);
 };
 }  // namespace Luna

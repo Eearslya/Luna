@@ -108,6 +108,7 @@ class Filesystem final {
 
 	static FilesystemBackend* GetBackend(const std::string& proto = "file");
 	static void RegisterProtocol(const std::string& proto, std::unique_ptr<FilesystemBackend>&& backend);
+	static void UnregisterProtocol(const std::string& proto);
 
 	static bool Exists(const Path& path);
 	static std::filesystem::path GetFilesystemPath(const Path& path);

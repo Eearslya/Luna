@@ -105,6 +105,11 @@ void Filesystem::RegisterProtocol(const std::string& proto, std::unique_ptr<File
 	State.Protocols[proto] = std::move(backend);
 }
 
+void Filesystem::UnregisterProtocol(const std::string& proto) {
+	const auto it = State.Protocols.find(proto);
+	if (it != State.Protocols.end()) { State.Protocols.erase(it); }
+}
+
 bool Filesystem::Exists(const Path& path) {
 	FileStat stat;
 	return Stat(path, stat);

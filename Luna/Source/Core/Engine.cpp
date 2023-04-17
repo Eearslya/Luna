@@ -4,6 +4,7 @@
 #include <Luna/Core/Input.hpp>
 #include <Luna/Core/Window.hpp>
 #include <Luna/Core/WindowManager.hpp>
+#include <Luna/Editor/Editor.hpp>
 #include <Luna/Platform/Filesystem.hpp>
 #include <Luna/Platform/Windows/OSFilesystem.hpp>
 #include <Luna/Renderer/Renderer.hpp>
@@ -91,19 +92,7 @@ static void RenderMainUI(double deltaTime) {
 }
 
 static void RenderMain(double deltaTime) {
-	UIManager::BeginFrame(deltaTime);
-	RenderMainUI(deltaTime);
-	UIManager::EndFrame();
-
 	Renderer::Render(deltaTime);
-}
-
-static void RunFrame(double deltaTime) {
-	ZoneScopedN("Engine::RunFrame");
-
-	if (!State.Window->IsMinimized()) { RenderMain(deltaTime); }
-
-	State.FrameCount++;
 }
 
 static void Update() {
@@ -113,11 +102,29 @@ static void Update() {
 	const double deltaTime = now - State.LastFrame;
 	State.LastFrame        = now;
 
-	Filesystem::Update();
-	WindowManager::Update();
-	if (State.Window->IsCloseRequested()) { State.Running = false; }
+	const double updateStart = WindowManager::GetTime();
+	{
+		ZoneScopedN("Systems");
 
-	RunFrame(deltaTime);
+		UIManager::BeginFrame(deltaTime);
+
+		Filesystem::Update();
+		ShaderManager::Update();
+		WindowManager::Update();
+		if (State.Window->IsCloseRequested()) { State.Running = false; }
+		Editor::Update(deltaTime);
+	}
+	const double updateTime = WindowManager::GetTime() - updateStart;
+
+	const double renderStart = WindowManager::GetTime();
+	if (!State.Window->IsMinimized()) {
+		ZoneScopedN("Render");
+
+		Renderer::Render(deltaTime);
+	}
+	const double renderTime = WindowManager::GetTime() - renderStart;
+
+	State.FrameCount++;
 }
 
 bool Engine::Initialize(const EngineOptions& options) {
@@ -126,7 +133,6 @@ bool Engine::Initialize(const EngineOptions& options) {
 	if (!Log::Initialize()) { return -1; }
 	if (!Threading::Initialize()) { return -1; }
 	if (!Filesystem::Initialize()) { return -1; }
-	Filesystem::RegisterProtocol("assets", std::unique_ptr<FilesystemBackend>(new OSFilesystem("Assets")));
 	Filesystem::RegisterProtocol("res", std::unique_ptr<FilesystemBackend>(new OSFilesystem("Resources")));
 	if (!WindowManager::Initialize()) { return -1; }
 	if (!Renderer::Initialize()) { return -1; }
@@ -136,11 +142,8 @@ bool Engine::Initialize(const EngineOptions& options) {
 	State.Window = std::make_unique<Window>("Luna", 1600, 900, false);
 	if (!State.Window) { return -1; }
 	State.Window->Maximize();
-	Renderer::SetMainWindow(*State.Window);
 
-	Renderer::SetScene(State.ActiveScene);
-
-	RunFrame(0.0);
+	if (!Editor::Initialize()) { return -1; }
 
 	State.Window->Show();
 
@@ -156,6 +159,7 @@ int Engine::Run() {
 	State.Running    = true;
 	while (State.Running) {
 		Update();
+
 		FrameMark;
 	}
 
@@ -167,6 +171,8 @@ void Engine::Shutdown() {
 
 	if (!State.Initialized) { return; }
 
+	Editor::Shutdown();
+
 	State.Window.reset();
 
 	UIManager::Shutdown();
@@ -177,6 +183,10 @@ void Engine::Shutdown() {
 	Log::Shutdown();
 
 	State.Initialized = false;
+}
+
+Scene& Engine::GetActiveScene() {
+	return State.ActiveScene;
 }
 
 Window* Engine::GetMainWindow() {

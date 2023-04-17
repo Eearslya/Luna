@@ -285,6 +285,10 @@ bool ShaderManager::Initialize() {
 	return true;
 }
 
+void ShaderManager::Update() {
+	PromoteReadWriteCachesToReadOnly();
+}
+
 void ShaderManager::Shutdown() {
 	for (auto& dir : State.DirectoryWatches) {
 		if (dir.second.Backend) { dir.second.Backend->UnwatchFile(dir.second.Handle); }

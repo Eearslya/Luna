@@ -29,12 +29,16 @@ class Window final {
 	bool IsMaximized() const;
 	bool IsMinimized() const;
 
+	void CenterPosition();
 	void Close();
 	Swapchain& GetSwapchain();
 	void Hide();
 	void Maximize();
 	void Minimize();
 	void Restore();
+	void SetPosition(const glm::ivec2& pos);
+	void SetSize(const glm::ivec2& size);
+	void SetTitle(const std::string& title);
 	void Show();
 
 	Delegate<void()> OnRefresh;

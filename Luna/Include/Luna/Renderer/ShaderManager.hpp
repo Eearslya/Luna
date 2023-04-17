@@ -105,6 +105,7 @@ class ShaderProgram : public IntrusiveHashMapEnabled<ShaderProgram> {
 class ShaderManager final {
  public:
 	static bool Initialize();
+	static void Update();
 	static void Shutdown();
 
 	static bool GetShaderHashByVariantHash(Hash variantHash, Hash& shaderHash);

@@ -275,15 +275,12 @@ void UIManager::BeginFrame(double deltaTime) {
 	ImGui::NewFrame();
 }
 
-void UIManager::EndFrame() {
-	ZoneScopedN("UIManager::EndFrame");
-
-	ImGui::Render();
-}
-
 void UIManager::Render(Vulkan::CommandBuffer& cmd) {
+	ZoneScopedN("UIManager::Render");
+
 	const uint32_t frameIndex = Renderer::GetDevice().GetFrameIndex();
 
+	ImGui::Render();
 	ImDrawData* drawData = ImGui::GetDrawData();
 	if (drawData->CmdListsCount == 0 || drawData->TotalVtxCount == 0 || drawData->TotalIdxCount == 0) { return; }
 

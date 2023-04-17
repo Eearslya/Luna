@@ -1,3 +1,4 @@
+#include <Luna/Core/Engine.hpp>
 #include <Luna/Core/Window.hpp>
 #include <Luna/Core/WindowManager.hpp>
 #include <Luna/Renderer/RenderGraph.hpp>
@@ -47,8 +48,6 @@ namespace Luna {
 static struct RendererState {
 	Vulkan::ContextHandle Context;
 	Vulkan::DeviceHandle Device;
-	Window* MainWindow;
-	const Scene* ActiveScene;
 	RenderGraphState GraphState;
 	Hash GraphHash = 0;
 	RenderGraph Graph;
@@ -106,8 +105,8 @@ static void BakeRenderGraph() {
 	State.Device->NextFrame();
 
 	// Update swapchain dimensions and format.
-	const auto& swapchainExtent = State.MainWindow->GetSwapchain().GetExtent();
-	const auto swapchainFormat  = State.MainWindow->GetSwapchain().GetFormat();
+	const auto& swapchainExtent = Engine::GetMainWindow()->GetSwapchain().GetExtent();
+	const auto swapchainFormat  = Engine::GetMainWindow()->GetSwapchain().GetFormat();
 	const Luna::ResourceDimensions backbufferDims{
 		.Format = swapchainFormat, .Width = swapchainExtent.width, .Height = swapchainExtent.height};
 	State.Graph.SetBackbufferDimensions(backbufferDims);
@@ -160,8 +159,8 @@ void Renderer::Render(double deltaTime) {
 	auto& device = *State.Device;
 	device.NextFrame();
 
-	if (State.MainWindow && State.MainWindow->GetSwapchain().Acquire()) {
-		const auto windowSize   = State.MainWindow->GetFramebufferSize();
+	if (Engine::GetMainWindow() && Engine::GetMainWindow()->GetSwapchain().Acquire()) {
+		const auto windowSize   = Engine::GetMainWindow()->GetFramebufferSize();
 		State.GraphState.Width  = uint32_t(windowSize.x);
 		State.GraphState.Height = uint32_t(windowSize.y);
 		const auto stateHash    = Hasher(State.GraphState).Get();
@@ -175,17 +174,9 @@ void Renderer::Render(double deltaTime) {
 		State.Graph.EnqueueRenderPasses(*State.Device, composer);
 		composer.GetOutgoingTask()->Wait();
 
-		State.MainWindow->GetSwapchain().Present();
+		Engine::GetMainWindow()->GetSwapchain().Present();
 	}
 
 	State.GraphState.SceneViews.clear();
-}
-
-void Renderer::SetMainWindow(Window& window) {
-	State.MainWindow = &window;
-}
-
-void Renderer::SetScene(const Scene& scene) {
-	State.ActiveScene = &scene;
 }
 }  // namespace Luna

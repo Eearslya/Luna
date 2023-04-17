@@ -25,12 +25,7 @@ Window::Window(const std::string& title, int width, int height, bool show) {
 	if (!_window) { throw std::runtime_error("Failed to create GLFW window!"); }
 	glfwSetWindowUserPointer(_window, this);
 
-	if (glfwGetWindowAttrib(_window, GLFW_MAXIMIZED) == GLFW_FALSE) {
-		glfwGetWindowSize(_window, &width, &height);
-		const int winX = (videoMode->width - width) / 2;
-		const int winY = (videoMode->height - height) / 2;
-		glfwSetWindowPos(_window, winX, winY);
-	}
+	if (glfwGetWindowAttrib(_window, GLFW_MAXIMIZED) == GLFW_FALSE) { CenterPosition(); }
 
 	glfwSetCharCallback(_window, [](GLFWwindow* window, unsigned int c) { Input::CharEvent(c); });
 	glfwSetCursorPosCallback(_window, [](GLFWwindow* window, double x, double y) { Input::MouseMovedEvent({x, y}); });
@@ -105,6 +100,17 @@ bool Window::IsMinimized() const {
 	return glfwGetWindowAttrib(_window, GLFW_ICONIFIED) == GLFW_TRUE;
 }
 
+void Window::CenterPosition() {
+	GLFWmonitor* monitor         = glfwGetPrimaryMonitor();
+	const GLFWvidmode* videoMode = glfwGetVideoMode(monitor);
+
+	int width, height;
+	glfwGetWindowSize(_window, &width, &height);
+	const int winX = (videoMode->width - width) / 2;
+	const int winY = (videoMode->height - height) / 2;
+	glfwSetWindowPos(_window, winX, winY);
+}
+
 void Window::Close() {
 	glfwSetWindowShouldClose(_window, GLFW_TRUE);
 }
@@ -123,6 +129,20 @@ void Window::Maximize() {
 
 void Window::Minimize() {
 	glfwIconifyWindow(_window);
+}
+
+void Window::SetPosition(const glm::ivec2& pos) {
+	glfwSetWindowPos(_window, pos.x, pos.y);
+}
+
+void Window::SetSize(const glm::ivec2& size) {
+	if (size.x <= 0 || size.y <= 0) { return; }
+
+	glfwSetWindowSize(_window, size.x, size.y);
+}
+
+void Window::SetTitle(const std::string& title) {
+	glfwSetWindowTitle(_window, title.c_str());
 }
 
 void Window::Restore() {
