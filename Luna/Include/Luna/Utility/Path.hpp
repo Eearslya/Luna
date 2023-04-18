@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
 
 namespace Luna {
@@ -8,6 +9,7 @@ class Path {
 	Path();
 	Path(const char* pathStr);
 	Path(const std::string& pathStr);
+	Path(const std::filesystem::path& fsPath);
 
 	Path operator/(const Path& other) const {
 		return Join(other);

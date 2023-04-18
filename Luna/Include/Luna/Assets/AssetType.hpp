@@ -8,13 +8,13 @@ enum class AssetType { None, Material, Mesh, Scene, Texture };
 inline AssetType AssetTypeFromPath(const Path& assetPath) {
 	const auto ext = assetPath.Extension();
 
-	if (ext == ".lmesh") {
+	if (ext == "lmesh") {
 		return AssetType::Mesh;
-	} else if (ext == ".lmaterial") {
+	} else if (ext == "lmaterial") {
 		return AssetType::Material;
-	} else if (ext == ".lscene") {
+	} else if (ext == "lscene") {
 		return AssetType::Scene;
-	} else if (ext == ".ltexture") {
+	} else if (ext == "ltexture") {
 		return AssetType::Texture;
 	}
 

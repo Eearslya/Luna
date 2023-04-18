@@ -72,6 +72,6 @@ target_compile_definitions(Luna
 target_include_directories(Luna PUBLIC "Include")
 target_link_libraries(Luna
 	PUBLIC EnTT::EnTT glm imgui nlohmann_json spdlog stb TracyClient Vulkan::Headers VulkanMemoryAllocator
-	PRIVATE glfw glslang shaderc SPIRV SPIRV-Tools spirv-cross-cpp)
+	PRIVATE fastgltf glfw glslang shaderc SPIRV SPIRV-Tools spirv-cross-cpp)
 
 add_subdirectory(Source)

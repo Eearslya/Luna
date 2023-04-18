@@ -3,6 +3,7 @@
 #include <Luna/Assets/AssetManager.hpp>
 #include <Luna/Core/Engine.hpp>
 #include <Luna/Core/Window.hpp>
+#include <Luna/Editor/AssetRegistryWindow.hpp>
 #include <Luna/Editor/ContentBrowserWindow.hpp>
 #include <Luna/Editor/Editor.hpp>
 #include <Luna/Editor/EditorAssets.hpp>
@@ -64,6 +65,16 @@ void Editor::Update(double deltaTime) {
 
 	UI::BeginDockspace(true);
 
+	if (ImGui::BeginMainMenuBar()) {
+		if (ImGui::BeginMenu("Window")) {
+			if (ImGui::MenuItem("Asset Registry")) { State.NewWindows.emplace_back(new AssetRegistryWindow); }
+
+			ImGui::EndMenu();
+		}
+
+		ImGui::EndMainMenuBar();
+	}
+
 	for (auto& window : State.NewWindows) { State.Windows.push_back(std::move(window)); }
 	State.NewWindows.clear();
 
@@ -71,6 +82,8 @@ void Editor::Update(double deltaTime) {
 		std::remove_if(State.Windows.begin(), State.Windows.end(), [](auto& windowPtr) { return windowPtr->Closed(); }),
 		State.Windows.end());
 	for (auto& window : State.Windows) { window->Update(deltaTime); }
+
+	ImGui::ShowDemoWindow();
 
 	UI::EndDockspace();
 }

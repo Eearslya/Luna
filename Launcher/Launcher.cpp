@@ -16,13 +16,17 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 }
 
 static LONG UnhandledExceptionHandler(LPEXCEPTION_POINTERS exceptions) {
+	constexpr static int MaxBacktraceFrames  = 32;
+	constexpr static int MaxFileNameLength   = MAX_PATH;
+	constexpr static int MaxSymbolNameLength = 256;
+
 	const auto record = exceptions->ExceptionRecord;
 
 	struct Symbol {
-		const void* Address     = nullptr;
-		const char* Name        = nullptr;
-		size_t NameLength       = 0;
-		const char* SourceFile  = nullptr;
+		const void* Address = nullptr;
+		char Name[MaxSymbolNameLength];
+		size_t NameLength = 0;
+		char SourceFile[MaxFileNameLength];
 		size_t SourceFileLength = 0;
 		uint32_t SourceLine     = 0;
 	};
@@ -39,7 +43,7 @@ static LONG UnhandledExceptionHandler(LPEXCEPTION_POINTERS exceptions) {
 		symbolInfo->MaxNameLen   = 1024;
 
 		if (::SymFromAddr(SymHandle, addr, 0, symbolInfo)) {
-			symbol.Name       = symbolInfo->Name;
+			strncpy_s(symbol.Name, symbolInfo->Name, symbolInfo->NameLen);
 			symbol.NameLength = symbolInfo->NameLen;
 		}
 
@@ -47,39 +51,29 @@ static LONG UnhandledExceptionHandler(LPEXCEPTION_POINTERS exceptions) {
 		DWORD displacement = 0;
 		line.SizeOfStruct  = sizeof(line);
 		if (::SymGetLineFromAddr64(SymHandle, addr, &displacement, &line)) {
-			symbol.SourceFile       = line.FileName;
+			strncpy_s(symbol.SourceFile, line.FileName, strlen(line.FileName));
 			symbol.SourceFileLength = strlen(line.FileName);
 			symbol.SourceLine       = line.LineNumber;
 		}
 
 		return symbol;
 	};
-	const auto PrintSymbol = [](const Symbol& sym) {
-		fprintf(stderr, "0x%016zX", reinterpret_cast<uintptr_t>(sym.Address));
-
-		if (sym.Name) {
-			fprintf(stderr, " (%s)", sym.Name);
-		} else {
-			fprintf(stderr, " (Symbol unavailable)");
-		}
-
-		if (sym.SourceFile) { fprintf(stderr, " - (%s:%u)", sym.SourceFile, sym.SourceLine); }
-	};
 	const auto PrintSymbolAligned = [](const Symbol& sym, uint32_t maxSymLength) {
-		fprintf(stderr, "0x%016zX (", reinterpret_cast<uintptr_t>(sym.Address));
+		fprintf(stderr, "0x%012zX (", reinterpret_cast<uintptr_t>(sym.Address));
 
 		int writtenLen = 0;
-		if (sym.Name) {
+		if (sym.NameLength > 0) {
 			writtenLen = fprintf(stderr, "%s", sym.Name);
 		} else {
 			writtenLen = fprintf(stderr, "Symbol unavailable");
 		}
 		fprintf(stderr, ")");
 
-		if (sym.SourceFile) {
+		if (sym.SourceFileLength > 0) {
 			fprintf(stderr, "%*c(%s:%u)", (maxSymLength - writtenLen) + 1, ' ', sym.SourceFile, sym.SourceLine);
 		}
 	};
+	const auto PrintSymbol = [&](const Symbol& sym) { PrintSymbolAligned(sym, sym.NameLength); };
 
 	const Symbol exceptSymbol = GetSymbol(record->ExceptionAddress);
 
@@ -103,19 +97,19 @@ static LONG UnhandledExceptionHandler(LPEXCEPTION_POINTERS exceptions) {
 		} else {
 			fprintf(stderr, "accessing");
 		}
-		fprintf(stderr, " memory at 0x%016zX\n", record->ExceptionInformation[1]);
+		fprintf(stderr, " memory at 0x%012zX\n", record->ExceptionInformation[1]);
 	}
 
-	constexpr static int BtMax = 32;
-	void* backtrace[BtMax]     = {nullptr};
-	USHORT btSize              = ::CaptureStackBackTrace(0, BtMax, backtrace, NULL);
+	void* backtrace[MaxBacktraceFrames] = {nullptr};
+	Symbol backtraceSymbols[MaxBacktraceFrames];
+	USHORT btSize = ::CaptureStackBackTrace(0, MaxBacktraceFrames, backtrace, NULL);
 
 	// The backtrace we just captured will include all of the exception handling code, including this function.
 	// So we first walk the backtrace to see if it includes our exception address.
 	// If it does, we offset the backtrace so that it starts at the function that caused the exception instead.
 	for (int i = 0; i < btSize; ++i) {
 		if (backtrace[i] == record->ExceptionAddress) {
-			btSize = ::CaptureStackBackTrace(i, BtMax, backtrace, NULL);
+			btSize = ::CaptureStackBackTrace(i, MaxBacktraceFrames, backtrace, NULL);
 			break;
 		}
 	}
@@ -124,8 +118,8 @@ static LONG UnhandledExceptionHandler(LPEXCEPTION_POINTERS exceptions) {
 	// source location.
 	uint32_t maxSymLength = 0;
 	for (int i = 0; i < btSize; ++i) {
-		const auto sym = GetSymbol(backtrace[i]);
-		if (sym.NameLength > maxSymLength) { maxSymLength = sym.NameLength; }
+		backtraceSymbols[i] = GetSymbol(backtrace[i]);
+		if (backtraceSymbols[i].NameLength > maxSymLength) { maxSymLength = backtraceSymbols[i].NameLength; }
 	}
 
 	const char* spacer = "";
@@ -133,14 +127,14 @@ static LONG UnhandledExceptionHandler(LPEXCEPTION_POINTERS exceptions) {
 	if (btSize > 99) { spacer = "  "; }
 	if (btSize > 0) {
 		fprintf(stderr, "[Luna]\n");
-		fprintf(stderr, "[Luna] Backtrace (up to %d frames):\n", BtMax);
+		fprintf(stderr, "[Luna] Backtrace (up to %d frames):\n", MaxBacktraceFrames);
 		for (int i = 0; i < btSize; ++i) {
 			int indent = 0;
 			if (i > 9) { indent = 1; }
 			if (i > 99) { indent = 2; }
 
 			fprintf(stderr, "[Luna] - %d:%s ", i, spacer + indent);
-			PrintSymbolAligned(GetSymbol(backtrace[i]), maxSymLength);
+			PrintSymbolAligned(backtraceSymbols[i], maxSymLength);
 			fprintf(stderr, "\n");
 		}
 	}

@@ -18,6 +18,8 @@ Path::Path(const std::string& pathStr) : _pathStr(pathStr) {
 	}
 }
 
+Path::Path(const std::filesystem::path& fsPath) : Path(fsPath.string()) {}
+
 bool Path::IsAbsolute() const {
 	if (_pathStr.empty()) { return false; }
 	if (_pathStr.front() == '/') { return true; }

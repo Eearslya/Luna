@@ -56,9 +56,10 @@ bool UIManager::Initialize() {
 		ImGuiStyle& style = ImGui::GetStyle();
 
 		// Main
-		style.WindowPadding = ImVec2(8.0f, 8.0f);
-		style.FramePadding  = ImVec2(5.0f, 3.0f);
-		style.CellPadding   = ImVec2(4.0f, 2.0f);
+		style.WindowPadding   = ImVec2(8.0f, 8.0f);
+		style.FramePadding    = ImVec2(5.0f, 3.0f);
+		style.CellPadding     = ImVec2(4.0f, 2.0f);
+		style.FrameBorderSize = 1.0f;
 
 		// Rounding
 		style.WindowRounding    = 8.0f;

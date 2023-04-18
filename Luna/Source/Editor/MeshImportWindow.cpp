@@ -1,3 +1,4 @@
+#include <Luna/Editor/MeshGltfImporter.hpp>
 #include <Luna/Editor/MeshImportWindow.hpp>
 #include <Luna/UI/UI.hpp>
 
@@ -20,7 +21,27 @@ void MeshImportWindow::Update(double deltaTime) {
 
 	bool open = true;
 	if (ImGui::BeginPopupModal("Mesh Import Wizard##MeshImportWindow", &open)) {
+		bool close = false;
+
 		ImGui::Text("Import File: %s", _meshPath.Filename().c_str());
+
+		ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_TitleBgActive));
+		if (ImGui::Button("Import")) {
+			bool imported = false;
+
+			const auto extension = _meshPath.Extension();
+			if (extension == "gltf" || extension == "glb") { imported = MeshGltfImporter::Import(_meshPath); }
+
+			close = true;
+		}
+		ImGui::PopStyleColor();
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel")) { close = true; }
+
+		if (close) {
+			ImGui::CloseCurrentPopup();
+			_closed = true;
+		}
 
 		ImGui::EndPopup();
 	}

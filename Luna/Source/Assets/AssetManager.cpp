@@ -1,4 +1,6 @@
+#include <Luna/Assets/AssetFile.hpp>
 #include <Luna/Assets/AssetManager.hpp>
+#include <Luna/Assets/Mesh.hpp>
 #include <Luna/Platform/Filesystem.hpp>
 #include <Luna/Project/Project.hpp>
 #include <nlohmann/json.hpp>
@@ -37,6 +39,12 @@ const AssetMetadata& AssetManager::GetAssetMetadata(const Path& assetPath) {
 	return NullMetadata;
 }
 
+const AssetMetadata& AssetManager::GetAssetMetadata(AssetHandle handle) {
+	if (Registry.Contains(handle)) { return Registry.Get(handle); }
+
+	return NullMetadata;
+}
+
 Path AssetManager::GetFilesystemPath(const AssetMetadata& metadata) {
 	return Path("project://") / metadata.FilePath;
 }
@@ -51,6 +59,28 @@ AssetHandle AssetManager::ImportAsset(const Path& assetPath) {
 	Registry[metadata.Handle] = metadata;
 
 	return metadata.Handle;
+}
+
+bool AssetManager::LoadAsset(const AssetMetadata& metadata, IntrusivePtr<Asset>& asset) {
+	AssetFile file;
+	if (!file.Load(metadata.FilePath)) { return false; }
+
+	if (metadata.Type == AssetType::Mesh) {}
+
+	return false;
+}
+
+void AssetManager::SaveAsset(const AssetMetadata& metadata, const IntrusivePtr<Asset>& asset) {
+	if (metadata.Type == AssetType::Mesh) {
+		const Mesh* mesh = reinterpret_cast<const Mesh*>(asset.Get());
+
+		json assetData;
+
+		AssetFile file;
+		file.Type = AssetType::Mesh;
+		file.Json = assetData.dump();
+		file.Save(metadata.FilePath);
+	}
 }
 
 void AssetManager::LoadAssets() {
@@ -92,5 +122,9 @@ void AssetManager::SaveRegistry() {
 	}
 
 	Filesystem::WriteStringToFile("project://AssetRegistry.lregistry", data.dump());
+}
+
+AssetRegistry& AssetManager::GetRegistry() {
+	return Registry;
 }
 }  // namespace Luna
