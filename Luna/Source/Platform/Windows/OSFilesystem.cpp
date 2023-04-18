@@ -137,6 +137,8 @@ OSFilesystem::~OSFilesystem() noexcept {
 }
 
 std::filesystem::path OSFilesystem::GetFilesystemPath(const Path& path) const {
+	if (path.IsAbsolute()) { return _basePath / std::string(path).substr(1); }
+
 	return _basePath / std::string(path);
 }
 

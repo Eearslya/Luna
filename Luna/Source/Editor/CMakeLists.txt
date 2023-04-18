@@ -1,2 +1,4 @@
 target_sources(Luna PRIVATE
-		Editor.cpp)
+	ContentBrowserWindow.cpp
+	Editor.cpp
+	MeshImportWindow.cpp)

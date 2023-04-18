@@ -67,7 +67,7 @@ FetchContent_MakeAvailable(entt glfw glm glslang json spirv-headers spirv-tools 
 
 add_library(Luna STATIC)
 target_compile_definitions(Luna
-	PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE VK_ENABLE_BETA_EXTENSIONS VK_NO_PROTOTYPES
+	PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE IMGUI_DEFINE_MATH_OPERATORS VK_ENABLE_BETA_EXTENSIONS VK_NO_PROTOTYPES
 	PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC)
 target_include_directories(Luna PUBLIC "Include")
 target_link_libraries(Luna

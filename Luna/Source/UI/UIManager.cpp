@@ -26,8 +26,8 @@ struct PushConstant {
 };
 
 struct UITexture {
-	Vulkan::ImageView* View = nullptr;
-	int32_t SceneView       = -1;
+	const Vulkan::ImageView* View = nullptr;
+	int32_t SceneView             = -1;
 };
 
 static struct UIState {
@@ -394,6 +394,13 @@ void UIManager::Render(Vulkan::CommandBuffer& cmd) {
 ImTextureID UIManager::SceneView(int view) {
 	auto& tex     = UIState.Textures[UIState.NextTexture++];
 	tex.SceneView = view;
+
+	return &tex;
+}
+
+ImTextureID UIManager::Texture(const Vulkan::ImageHandle& img) {
+	auto& tex = UIState.Textures[UIState.NextTexture++];
+	tex.View  = &img->GetView();
 
 	return &tex;
 }
