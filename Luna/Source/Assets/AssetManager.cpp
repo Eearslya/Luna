@@ -3,6 +3,7 @@
 #include <Luna/Assets/Mesh.hpp>
 #include <Luna/Platform/Filesystem.hpp>
 #include <Luna/Project/Project.hpp>
+#include <Luna/Scene/Scene.hpp>
 #include <nlohmann/json.hpp>
 
 using nlohmann::json;
@@ -65,7 +66,12 @@ bool AssetManager::LoadAsset(const AssetMetadata& metadata, IntrusivePtr<Asset>&
 	AssetFile file;
 	if (!file.Load(metadata.FilePath)) { return false; }
 
-	if (metadata.Type == AssetType::Mesh) {}
+	if (metadata.Type == AssetType::Mesh) {
+	} else if (metadata.Type == AssetType::Scene) {
+		Scene* scene = reinterpret_cast<Scene*>(asset.Get());
+
+		return scene->Deserialize(file.Json);
+	}
 
 	return false;
 }
@@ -79,6 +85,13 @@ void AssetManager::SaveAsset(const AssetMetadata& metadata, const IntrusivePtr<A
 		AssetFile file;
 		file.Type = AssetType::Mesh;
 		file.Json = assetData.dump();
+		file.Save(metadata.FilePath);
+	} else if (metadata.Type == AssetType::Scene) {
+		const Scene* scene = reinterpret_cast<const Scene*>(asset.Get());
+
+		AssetFile file;
+		file.Type = AssetType::Scene;
+		file.Json = scene->Serialize();
 		file.Save(metadata.FilePath);
 	}
 }

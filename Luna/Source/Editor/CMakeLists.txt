@@ -3,4 +3,5 @@ target_sources(Luna PRIVATE
 	ContentBrowserWindow.cpp
 	Editor.cpp
 	MeshGltfImporter.cpp
-	MeshImportWindow.cpp)
+	MeshImportWindow.cpp
+	SceneHeirarchyWindow.cpp)

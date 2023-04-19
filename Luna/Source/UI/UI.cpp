@@ -80,6 +80,27 @@ bool ButtonExRounded(const char* label, const ImVec2& size_arg, ImGuiButtonFlags
 	return pressed;
 }
 
+bool CollapsingHeader(const char* label, bool* specialClick, ImGuiTreeNodeFlags flags, const char* buttonLabel) {
+	ImGuiWindow* window = ImGui::GetCurrentWindow();
+	if (window->SkipItems) { return false; }
+	const auto& style = ImGui::GetStyle();
+
+	const ImVec2 buttonSize(GImGui->FontSize + style.FramePadding.x * 2.0f,
+	                        GImGui->FontSize + style.FramePadding.y * 2.0f);
+
+	flags |= ImGuiTreeNodeFlags_CollapsingHeader | ImGuiTreeNodeFlags_AllowItemOverlap |
+	         static_cast<ImGuiTreeNodeFlags>(ImGuiTreeNodeFlags_ClipLabelForTrailingButton);
+
+	ImGuiID id  = window->GetID(label);
+	bool isOpen = ImGui::TreeNodeBehavior(id, flags, label);
+	ImGui::SameLine(ImGui::GetItemRectSize().x - buttonSize.x);
+	ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+	if (ImGui::Button(buttonLabel, buttonSize)) { *specialClick = true; }
+	ImGui::PopStyleColor();
+
+	return isOpen;
+}
+
 void RenderFrameRounded(
 	ImVec2 p_min, ImVec2 p_max, ImU32 fill_col, bool border, float rounding, ImDrawFlags drawFlags) {
 	ImGuiContext& g     = *GImGui;

@@ -1,11 +1,12 @@
 #pragma once
 
+#include <Luna/Assets/Asset.hpp>
 #include <entt/entt.hpp>
 
 namespace Luna {
 class Entity;
 
-class Scene {
+class Scene final : public Asset {
 	friend class Entity;
 
  public:
@@ -16,6 +17,9 @@ class Scene {
 	void operator=(Scene&&)      = delete;
 	~Scene() noexcept;
 
+	const std::string& GetName() const {
+		return _name;
+	}
 	entt::registry& GetRegistry() {
 		return _registry;
 	}
@@ -29,8 +33,17 @@ class Scene {
 	Entity CreateChildEntity(Entity parent, const std::string& name = "");
 	void DestroyEntity(Entity entity);
 	void MoveEntity(Entity entity, Entity newParent);
+	void SetName(const std::string& name);
+
+	bool Deserialize(const std::string& sceneJson);
+	std::string Serialize() const;
+
+	static AssetType GetAssetType() {
+		return AssetType::Scene;
+	}
 
  private:
+	std::string _name = "NewScene";
 	entt::registry _registry;
 	std::vector<entt::entity> _rootEntities;
 };

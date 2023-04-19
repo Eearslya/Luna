@@ -3,6 +3,9 @@
 #include <Luna/Scene/RelationshipComponent.hpp>
 #include <Luna/Scene/Scene.hpp>
 #include <Luna/Scene/TransformComponent.hpp>
+#include <nlohmann/json.hpp>
+
+using nlohmann::json;
 
 namespace Luna {
 Scene::Scene() {}
@@ -111,5 +114,25 @@ void Scene::MoveEntity(Entity entity, Entity newParent) {
 		auto it = std::find(_rootEntities.begin(), _rootEntities.end(), entity);
 		if (it == _rootEntities.end()) { _rootEntities.push_back(entity); }
 	}
+}
+
+void Scene::SetName(const std::string& name) {
+	_name = name;
+}
+
+bool Scene::Deserialize(const std::string& sceneJson) {
+	json sceneData = json::parse(sceneJson);
+
+	_name = sceneData["Name"].get<std::string>();
+
+	return true;
+}
+
+std::string Scene::Serialize() const {
+	json sceneData;
+	sceneData["Name"]     = _name;
+	sceneData["Entities"] = json::array();
+
+	return sceneData.dump();
 }
 }  // namespace Luna

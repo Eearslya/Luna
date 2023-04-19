@@ -248,6 +248,7 @@ void UIManager::Shutdown() {
 	UIState.FontSampler.Reset();
 	UIState.FontImage.Reset();
 	UIState.Buffers.clear();
+	ImGui::SaveIniSettingsToDisk(ImGui::GetIO().IniFilename);
 }
 
 void UIManager::BeginFrame(double deltaTime) {

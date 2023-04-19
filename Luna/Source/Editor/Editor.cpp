@@ -9,10 +9,12 @@
 #include <Luna/Editor/EditorAssets.hpp>
 #include <Luna/Editor/EditorWindow.hpp>
 #include <Luna/Editor/MeshImportWindow.hpp>
+#include <Luna/Editor/SceneHeirarchyWindow.hpp>
 #include <Luna/Platform/Filesystem.hpp>
 #include <Luna/Platform/Windows/OSFilesystem.hpp>
 #include <Luna/Project/Project.hpp>
 #include <Luna/Renderer/Renderer.hpp>
+#include <Luna/Scene/Scene.hpp>
 #include <Luna/UI/UI.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Image.hpp>
@@ -23,12 +25,15 @@ static struct EditorState {
 	ProjectHandle Project;
 	std::vector<std::unique_ptr<EditorWindow>> Windows;
 	std::vector<std::unique_ptr<EditorWindow>> NewWindows;
+	IntrusivePtr<Scene> Scene;
+	AssetHandle SceneHandle;
 } State;
 
 static void CloseProject();
 static void OpenProject(const Path& projectPath);
 static void SaveProject();
 static void UpdateProjectBrowser();
+static void UpdateTitle();
 
 bool Editor::Initialize() {
 	ZoneScopedN("Editor::Initialize");
@@ -53,6 +58,7 @@ bool Editor::Initialize() {
 	Engine::GetMainWindow()->SetTitle("Luna Editor");
 
 	State.Windows.emplace_back(new ContentBrowserWindow);
+	State.Windows.emplace_back(new SceneHeirarchyWindow);
 
 	return true;
 }
@@ -97,6 +103,10 @@ void Editor::Shutdown() {
 	EditorAssets::FileIcon.Reset();
 }
 
+Scene& Editor::GetActiveScene() {
+	return *State.Scene;
+}
+
 void Editor::RequestAsset(const Path& assetPath) {
 	const auto extension = assetPath.Extension();
 
@@ -113,7 +123,7 @@ void CloseProject() {
 
 	for (auto& window : State.Windows) { window->OnProjectChanged(); }
 
-	Engine::GetMainWindow()->SetTitle("Luna Editor");
+	UpdateTitle();
 }
 
 void OpenProject(const Path& projectPath) {
@@ -122,12 +132,16 @@ void OpenProject(const Path& projectPath) {
 	// TODO: Temporary until project creation is implemented.
 	if (!State.Project->Load()) { State.Project->Save(); }
 
-	Engine::GetMainWindow()->SetTitle("Luna Editor - " + State.Project->GetSettings().Name);
 	Project::SetActive(State.Project);
 
 	Filesystem::RegisterProtocol(
 		"project", std::unique_ptr<FilesystemBackend>(new OSFilesystem(projectPath.BaseDirectory().WithoutProtocol())));
 	AssetManager::Initialize();
+
+	State.Scene       = MakeHandle<Scene>();
+	State.SceneHandle = 0;
+
+	UpdateTitle();
 
 	for (auto& window : State.Windows) { window->OnProjectChanged(); }
 }
@@ -145,5 +159,14 @@ void UpdateProjectBrowser() {
 	OpenProject("file://Project/Project.luna");
 
 	UI::EndDockspace();
+}
+
+void UpdateTitle() {
+	if (State.Project) {
+		Engine::GetMainWindow()->SetTitle("Luna Editor - " + State.Project->GetSettings().Name + " (" +
+		                                  State.Scene->GetName() + ")");
+	} else {
+		Engine::GetMainWindow()->SetTitle("Luna Editor");
+	}
 }
 }  // namespace Luna
