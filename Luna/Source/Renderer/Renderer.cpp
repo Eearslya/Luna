@@ -1,10 +1,14 @@
 #include <Luna/Core/Engine.hpp>
 #include <Luna/Core/Window.hpp>
 #include <Luna/Core/WindowManager.hpp>
+#include <Luna/Renderer/RenderContext.hpp>
 #include <Luna/Renderer/RenderGraph.hpp>
 #include <Luna/Renderer/RenderPass.hpp>
 #include <Luna/Renderer/Renderer.hpp>
+#include <Luna/Renderer/SceneRenderer.hpp>
 #include <Luna/Renderer/Swapchain.hpp>
+#include <Luna/Scene/Camera.hpp>
+#include <Luna/Scene/EditorCamera.hpp>
 #include <Luna/UI/UIManager.hpp>
 #include <Luna/Utility/Color.hpp>
 #include <Luna/Utility/Threading.hpp>
@@ -14,17 +18,21 @@
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
 #include <Tracy/Tracy.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 namespace Luna {
 struct SceneView {
+	bool Active     = false;
 	uint32_t Width  = 0;
 	uint32_t Height = 0;
+
+	RenderContext Context;
 };
 
 struct RenderGraphState {
 	uint32_t Width  = 0;
 	uint32_t Height = 0;
-	std::vector<SceneView> SceneViews;
+	std::array<SceneView, 8> SceneViews;
 };
 }  // namespace Luna
 
@@ -36,6 +44,7 @@ struct std::hash<Luna::RenderGraphState> {
 		h(state.Height);
 		h(state.SceneViews.size());
 		for (const auto& view : state.SceneViews) {
+			h(view.Active);
 			h(view.Width);
 			h(view.Height);
 		}
@@ -77,7 +86,15 @@ Vulkan::Device& Renderer::GetDevice() {
 	return *State.Device;
 }
 
+static bool IsViewValid(int viewIndex) {
+	const auto& view = State.GraphState.SceneViews[viewIndex];
+
+	return view.Active && view.Width > 0 && view.Height > 0;
+}
+
 static void AddSceneView(int viewIndex) {
+	if (!IsViewValid(viewIndex)) { return; }
+
 	const auto& view          = State.GraphState.SceneViews[viewIndex];
 	const std::string attName = "SceneView-" + std::to_string(viewIndex);
 	const auto Prefix         = [&attName](const std::string& str) { return attName + "/" + str; };
@@ -90,13 +107,8 @@ static void AddSceneView(int viewIndex) {
 
 	pass.AddColorOutput(attName, color);
 
-	pass.SetGetClearColor([viewIndex](uint32_t, vk::ClearColorValue* value) -> bool {
-		if (value) {
-			const auto col = HSVtoRGB({float(viewIndex) * 0.23f, 0.9f, 0.7f});
-			*value         = vk::ClearColorValue(col.r, col.g, col.b, 1.0f);
-		}
-		return true;
-	});
+	auto renderer = MakeHandle<SceneRenderer>(view.Context);
+	pass.SetRenderPassInterface(renderer);
 }
 
 static void BakeRenderGraph() {
@@ -112,7 +124,9 @@ static void BakeRenderGraph() {
 	State.Graph.SetBackbufferDimensions(backbufferDims);
 
 	// Scene Views
-	for (int i = 0; i < State.GraphState.SceneViews.size(); ++i) { AddSceneView(i); }
+	for (int i = 0; i < State.GraphState.SceneViews.size(); ++i) {
+		if (IsViewValid(i)) { AddSceneView(i); }
+	}
 
 	// UI Pass
 	{
@@ -122,7 +136,9 @@ static void BakeRenderGraph() {
 
 		ui.AddColorOutput("UI", uiColor);
 		for (int i = 0; i < State.GraphState.SceneViews.size(); ++i) {
-			ui.AddTextureInput("SceneView-" + std::to_string(i), vk::PipelineStageFlagBits2::eFragmentShader);
+			if (IsViewValid(i)) {
+				ui.AddTextureInput("SceneView-" + std::to_string(i), vk::PipelineStageFlagBits2::eFragmentShader);
+			}
 		}
 
 		ui.SetGetClearColor([](uint32_t, vk::ClearColorValue* value) -> bool {
@@ -145,12 +161,22 @@ const Vulkan::ImageView& Renderer::GetSceneView(int view) {
 	return phys;
 }
 
-int Renderer::RegisterSceneView(int width, int height) {
-	if (width <= 0 || height <= 0) { return -1; }
+int Renderer::RegisterSceneView() {
+	int viewIndex = -1;
+	for (int i = 0; i < State.GraphState.SceneViews.size(); ++i) {
+		if (!State.GraphState.SceneViews[i].Active) {
+			viewIndex = i;
+			break;
+		}
+	}
+	if (viewIndex == -1) { return -1; }
 
-	State.GraphState.SceneViews.push_back(SceneView{uint32_t(width), uint32_t(height)});
+	auto& view  = State.GraphState.SceneViews[viewIndex];
+	view.Active = true;
+	view.Width  = 0;
+	view.Height = 0;
 
-	return State.GraphState.SceneViews.size() - 1;
+	return viewIndex;
 }
 
 void Renderer::Render(double deltaTime) {
@@ -176,7 +202,20 @@ void Renderer::Render(double deltaTime) {
 
 		Engine::GetMainWindow()->GetSwapchain().Present();
 	}
+}
 
-	State.GraphState.SceneViews.clear();
+void Renderer::UnregisterSceneView(int viewIndex) {
+	if (viewIndex < 0 || viewIndex >= State.GraphState.SceneViews.size()) { return; }
+
+	State.GraphState.SceneViews[viewIndex].Active = false;
+}
+
+void Renderer::UpdateSceneView(int viewIndex, int width, int height, const EditorCamera& camera) {
+	if (viewIndex < 0 || viewIndex >= State.GraphState.SceneViews.size()) { return; }
+
+	auto& view  = State.GraphState.SceneViews[viewIndex];
+	view.Width  = width;
+	view.Height = height;
+	view.Context.SetCamera(camera.GetProjection(), camera.GetView());
 }
 }  // namespace Luna

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Luna/Editor/EditorContent.hpp>
 #include <Luna/Editor/EditorWindow.hpp>
 #include <Luna/Utility/Path.hpp>
 #include <vector>
@@ -15,6 +16,7 @@ class ContentBrowserWindow final : public EditorWindow {
  private:
 	void ChangeDirectory(const Path& directory);
 
+	EditorContent _currentDragDropItem;
 	Path _currentDirectory;
 	std::vector<Path> _directories;
 	std::vector<Path> _files;

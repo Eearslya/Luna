@@ -14,6 +14,7 @@ void AssetRegistryWindow::Update(double deltaTime) {
 		auto& registry = AssetManager::GetRegistry();
 
 		ImGui::Text("Asset Registry Size: %zu", registry.Size());
+		for (const auto& [handle, metadata] : registry) { ImGui::Text("%s", metadata.FilePath.String().c_str()); }
 	}
 	ImGui::End();
 

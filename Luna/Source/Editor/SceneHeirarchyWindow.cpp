@@ -1,17 +1,30 @@
 #include <imgui_internal.h>
 
+#include <Luna/Assets/AssetManager.hpp>
+#include <Luna/Assets/Mesh.hpp>
 #include <Luna/Editor/Editor.hpp>
+#include <Luna/Editor/EditorContent.hpp>
 #include <Luna/Editor/SceneHeirarchyWindow.hpp>
+#include <Luna/Scene/MeshRendererComponent.hpp>
 #include <Luna/Scene/NameComponent.hpp>
 #include <Luna/Scene/RelationshipComponent.hpp>
 #include <Luna/Scene/Scene.hpp>
 #include <Luna/Scene/TransformComponent.hpp>
 #include <Luna/UI/UI.hpp>
+#include <Luna/Utility/Log.hpp>
 #include <functional>
 #include <optional>
 
 namespace Luna {
 void SceneHeirarchyWindow::OnProjectChanged() {}
+
+template <typename T, typename... Args>
+static bool AddComponentMenu(Entity entity, const char* label, Args&&... args) {
+	const bool showItem = !entity.HasComponent<T>();
+	if (showItem && ImGui::MenuItem(label)) { entity.AddComponent<T>(std::forward<Args>(args)...); }
+
+	return showItem;
+}
 
 void SceneHeirarchyWindow::Update(double deltaTime) {
 	if (ImGui::Begin("Heirarchy##SceneHeirarchyWindow")) {
@@ -42,6 +55,8 @@ void SceneHeirarchyWindow::Update(double deltaTime) {
 		if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
 			bool anyShown = false;
 
+			anyShown |= AddComponentMenu<MeshRendererComponent>(_selected, ICON_FA_CIRCLE_NODES " MeshRenderer");
+
 			if (!anyShown) {
 				ImGui::BeginDisabled();
 				ImGui::MenuItem(ICON_FA_X " No Components Available");
@@ -55,33 +70,109 @@ void SceneHeirarchyWindow::Update(double deltaTime) {
 }
 
 template <typename T>
+static bool AssetButton(const char* id, AssetHandle& handle, AssetMetadata& metadata) {
+	bool clear             = false;
+	AssetMetadata newAsset = {};
+
+	ImGui::PushID(id);
+
+	metadata                = AssetManager::GetAssetMetadata(handle);
+	std::string fileDisplay = "None";
+	std::string pathDisplay = fmt::format("No {} loaded", AssetTypeToString(T::GetAssetType()));
+	if (metadata.IsValid()) {
+		fileDisplay = metadata.FilePath.Filename();
+		pathDisplay = metadata.FilePath.String();
+	} else {
+		clear = true;
+	}
+	if (fileDisplay.size() > 17) { fileDisplay = fmt::format("{}...", fileDisplay.substr(0, 17)); }
+
+	const char* assetIcon = ICON_FA_FILE;
+	switch (T::GetAssetType()) {
+		case AssetType::Mesh:
+			assetIcon = ICON_FA_CIRCLE_NODES;
+			break;
+
+		default:
+			break;
+	}
+	const std::string buttonText = fmt::format("{} {}", assetIcon, fileDisplay);
+	ImGui::Button(buttonText.c_str());
+	if (ImGui::BeginDragDropTarget()) {
+		const ImGuiPayload* payload  = ImGui::GetDragDropPayload();
+		const EditorContent* content = static_cast<const EditorContent*>(payload->Data);
+
+		const auto& metadata = AssetManager::GetAssetMetadata(content->ContentPath);
+		if (metadata.IsValid() && metadata.Type == T::GetAssetType()) {
+			if (ImGui::AcceptDragDropPayload("EditorContent")) { newAsset = metadata; }
+		}
+
+		ImGui::EndDragDropTarget();
+	}
+	if (ImGui::IsItemHovered()) {
+		ImGui::BeginTooltip();
+		ImGui::Text("%s", pathDisplay.c_str());
+		ImGui::EndTooltip();
+	}
+	if (metadata.IsValid()) {
+		ImGui::SameLine();
+		ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
+		if (ImGui::Button(ICON_FA_XMARK)) { clear = true; }
+		ImGui::PopStyleColor();
+	}
+
+	if (clear) {
+		handle   = AssetHandle(0);
+		metadata = {};
+	}
+	if (newAsset.IsValid()) {
+		handle   = newAsset.Handle;
+		metadata = newAsset;
+	}
+
+	ImGui::PopID();
+
+	return metadata.IsValid();
+}
+
+template <typename T>
+static bool AssetButton(const char* id, AssetHandle& handle) {
+	AssetMetadata metadata;
+
+	return AssetButton(id, handle, metadata);
+}
+
+template <typename T>
+static bool DefaultPropertyMenu(Entity entity, T& component) {
+	bool deleted = false;
+	if (ImGui::MenuItem(ICON_FA_TRASH_CAN " Remove Component")) { deleted = true; }
+
+	return deleted;
+}
+
+template <typename T>
 static void DrawComponent(Entity& entity,
                           const std::string& label,
                           std::function<bool(Entity, T&)> drawFn,
                           std::optional<std::function<bool(Entity, T&)>> propsFn = std::nullopt) {
-	bool hasPropertyMenu = propsFn.has_value();
-	bool propertyMenu    = false;
-	bool deleted         = false;
+	bool hasPropertyMenu                       = propsFn.has_value();
+	bool propertyMenu                          = false;
+	bool deleted                               = false;
+	std::function<bool(Entity, T&)> properties = hasPropertyMenu ? propsFn.value() : DefaultPropertyMenu<T>;
 
 	if (entity.HasComponent<T>()) {
 		const std::string compId = label + "##Properties";
 		ImGui::PushID(compId.c_str());
-		if (hasPropertyMenu) {
-			if (UI::CollapsingHeader(
-						label.c_str(), hasPropertyMenu ? &propertyMenu : nullptr, ImGuiTreeNodeFlags_DefaultOpen, ICON_FA_WRENCH)) {
-				auto& component = entity.GetComponent<T>();
-				deleted |= drawFn(entity, component);
-
-				if (propertyMenu) { ImGui::OpenPopup(compId.c_str()); }
-
-				if (ImGui::BeginPopup(compId.c_str())) {
-					deleted |= propsFn.value()(entity, component);
-					ImGui::EndPopup();
-				}
-			}
-		} else if (ImGui::CollapsingHeader(label.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+		if (UI::CollapsingHeader(label.c_str(), &propertyMenu, ImGuiTreeNodeFlags_DefaultOpen, ICON_FA_WRENCH)) {
 			auto& component = entity.GetComponent<T>();
 			deleted |= drawFn(entity, component);
+
+			if (propertyMenu) { ImGui::OpenPopup(compId.c_str()); }
+
+			if (ImGui::BeginPopup(compId.c_str())) {
+				deleted |= properties(entity, component);
+				ImGui::EndPopup();
+			}
 		}
 
 		if (deleted) { entity.RemoveComponent<T>(); }
@@ -236,6 +327,23 @@ void SceneHeirarchyWindow::DrawComponents(Entity& entity) {
 				cTransform.Translation = glm::vec3(0.0f);
 				cTransform.Rotation    = glm::vec3(0.0f);
 				cTransform.Scale       = glm::vec3(1.0f);
+			}
+
+			return false;
+		});
+
+	DrawComponent<MeshRendererComponent>(
+		entity, ICON_FA_CIRCLE_NODES " Mesh Renderer", [](Entity entity, auto& cMeshRenderer) -> bool {
+			if (ImGui::BeginTable("MeshRendererComponent_Properties", 2, ImGuiTableFlags_BordersInnerV)) {
+				ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_NoResize | ImGuiTableColumnFlags_WidthFixed, 85.0f);
+
+				ImGui::TableNextColumn();
+				ImGui::Text("Mesh");
+				ImGui::TableNextColumn();
+				AssetMetadata meshMeta;
+				if (AssetButton<Mesh>("Mesh", cMeshRenderer.MeshAsset, meshMeta)) {}
+
+				ImGui::EndTable();
 			}
 
 			return false;

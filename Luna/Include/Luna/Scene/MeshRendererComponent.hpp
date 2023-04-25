@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Luna/Renderer/StaticMesh.hpp>
+#include <Luna/Assets/Asset.hpp>
 
 namespace Luna {
 struct MeshRendererComponent {
-	IntrusivePtr<StaticMesh> StaticMesh;
+	AssetHandle MeshAsset = 0;
 };
 }  // namespace Luna

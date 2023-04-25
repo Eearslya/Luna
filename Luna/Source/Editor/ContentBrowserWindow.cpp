@@ -96,10 +96,10 @@ void ContentBrowserWindow::Update(double deltaTime) {
 					}
 				}
 				if (ImGui::BeginDragDropSource()) {
-					// _currentDragDropItem.Type     = directory ? ContentBrowserItemType::Directory :
-					// ContentBrowserItemType::File; _currentDragDropItem.FilePath = relativePath;
-					// ImGui::SetDragDropPayload("ContentBrowserItem", &_currentDragDropItem, sizeof(_currentDragDropItem));
-					// ImGui::Text("%s", pathStr.c_str());
+					_currentDragDropItem.ContentPathType = directory ? PathType::Directory : PathType::File;
+					_currentDragDropItem.ContentPath     = _currentDirectory / path;
+					ImGui::SetDragDropPayload("EditorContent", &_currentDragDropItem, sizeof(_currentDragDropItem));
+					ImGui::Text("%s", relativePath.Filename().c_str());
 
 					ImGui::EndDragDropSource();
 				}

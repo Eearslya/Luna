@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <nlohmann/json.hpp>
 
 namespace Luna {
 class AABB {
@@ -63,7 +64,11 @@ class AABB {
 	}
 
 	static AABB Empty() {
-		return AABB(glm::vec3(std::numeric_limits<float>::max()), glm::vec3(std::numeric_limits<float>::lowest()));
+		AABB aabb;
+		aabb._min.V3 = glm::vec3(std::numeric_limits<float>::max());
+		aabb._max.V3 = glm::vec3(std::numeric_limits<float>::lowest());
+
+		return aabb;
 	}
 
  private:

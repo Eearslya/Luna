@@ -230,7 +230,7 @@ bool UIManager::Initialize() {
 	Input::OnMouseMoved += [](const glm::dvec2& pos) {
 		ImGuiIO& io = ImGui::GetIO();
 
-		io.MousePos = ImVec2(pos.x, pos.y);
+		if (!Input::GetCursorHidden()) { io.MousePos = ImVec2(pos.x, pos.y); }
 	};
 	Input::OnMouseScrolled += [](const glm::dvec2& scroll) {
 		ImGuiIO& io = ImGui::GetIO();

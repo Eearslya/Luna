@@ -38,9 +38,25 @@ class AssetManager final {
 		return asset;
 	}
 
+	template <typename T>
+	static IntrusivePtr<T> GetAsset(AssetHandle handle) {
+		auto& metadata = GetAssetMetadata(handle);
+		if (!metadata.IsValid()) { return {}; }
+
+		IntrusivePtr<Asset> asset = {};
+		if (LoadedAssets.find(metadata.Handle) == LoadedAssets.end()) {
+			if (LoadAsset(metadata, asset)) { LoadedAssets[metadata.Handle] = asset; }
+		} else {
+			asset = LoadedAssets[metadata.Handle];
+		}
+
+		return IntrusivePtr<T>(std::move(asset));
+	}
+
 	static AssetRegistry& GetRegistry();
 
  private:
+	static std::unordered_map<AssetHandle, IntrusivePtr<Asset>> LoadedAssets;
 	static AssetRegistry Registry;
 
 	static void LoadAssets();

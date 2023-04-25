@@ -10,6 +10,7 @@
 #include <Luna/Editor/EditorWindow.hpp>
 #include <Luna/Editor/MeshImportWindow.hpp>
 #include <Luna/Editor/SceneHeirarchyWindow.hpp>
+#include <Luna/Editor/SceneWindow.hpp>
 #include <Luna/Platform/Filesystem.hpp>
 #include <Luna/Platform/Windows/OSFilesystem.hpp>
 #include <Luna/Project/Project.hpp>
@@ -25,6 +26,7 @@ static struct EditorState {
 	ProjectHandle Project;
 	std::vector<std::unique_ptr<EditorWindow>> Windows;
 	std::vector<std::unique_ptr<EditorWindow>> NewWindows;
+	std::unique_ptr<SceneWindow> SceneWindow;
 	IntrusivePtr<Scene> Scene;
 	AssetHandle SceneHandle;
 } State;
@@ -59,6 +61,7 @@ bool Editor::Initialize() {
 
 	State.Windows.emplace_back(new ContentBrowserWindow);
 	State.Windows.emplace_back(new SceneHeirarchyWindow);
+	State.SceneWindow.reset(new SceneWindow(0));
 
 	return true;
 }
@@ -80,6 +83,8 @@ void Editor::Update(double deltaTime) {
 
 		ImGui::EndMainMenuBar();
 	}
+
+	if (State.SceneWindow) { State.SceneWindow->Update(deltaTime); }
 
 	for (auto& window : State.NewWindows) { State.Windows.push_back(std::move(window)); }
 	State.NewWindows.clear();
