@@ -407,6 +407,12 @@ void CommandBuffer::SetTransparentSpriteState() {
 		}                                            \
 	} while (0)
 
+void CommandBuffer::SetAlphaBlend(vk::BlendFactor srcAlpha, vk::BlendOp op, vk::BlendFactor dstAlpha) {
+	SetStaticState(SrcAlphaBlend, srcAlpha);
+	SetStaticState(AlphaBlendOp, op);
+	SetStaticState(DstAlphaBlend, dstAlpha);
+}
+
 void CommandBuffer::SetBlendEnable(bool enable) {
 	SetStaticState(BlendEnable, enable);
 }

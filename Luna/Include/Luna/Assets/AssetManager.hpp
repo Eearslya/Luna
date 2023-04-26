@@ -17,6 +17,7 @@ class AssetManager final {
 	static void RenameAsset(const AssetMetadata& metadata, const std::string& newName);
 	static void SaveAsset(const AssetMetadata& metadata, const IntrusivePtr<Asset>& asset);
 	static void SaveLoaded();
+	static void UnloadAsset(const AssetMetadata& metadata);
 
 	template <typename T, typename... Args>
 	static IntrusivePtr<T> CreateAsset(const Path& assetPath, Args&&... args) {

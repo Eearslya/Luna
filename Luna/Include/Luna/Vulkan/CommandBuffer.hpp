@@ -232,6 +232,7 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void SetOpaqueState();
 	void SetTransparentSpriteState();
 
+	void SetAlphaBlend(vk::BlendFactor srcAlpha, vk::BlendOp op, vk::BlendFactor dstAlpha);
 	void SetBlendEnable(bool enable);
 	void SetColorBlend(vk::BlendFactor srcColor, vk::BlendOp op, vk::BlendFactor dstColor);
 	void SetCullMode(vk::CullModeFlagBits mode);

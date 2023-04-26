@@ -21,6 +21,7 @@ class UIManager {
 	static bool Initialize();
 	static void Shutdown();
 
+	static void Alert(const std::string& title, const std::string& message);
 	static void BeginFrame(double deltaTime);
 	static void Render(Vulkan::CommandBuffer& cmd);
 	static ImTextureID SceneView(int view);

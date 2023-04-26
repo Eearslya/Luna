@@ -45,7 +45,11 @@ void ContentBrowserWindow::Update(double deltaTime) {
 		ImGui::SameLine();
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(-1, 0));
 		if (inRootDir) { ImGui::BeginDisabled(); }
-		if (UI::ButtonExRounded(ICON_FA_TURN_UP, ImVec2(0, 0), 0, ImDrawFlags_RoundCornersLeft)) {
+		if (UI::ButtonExRounded(ICON_FA_HOUSE, ImVec2(0, 0), 0, ImDrawFlags_RoundCornersLeft)) {
+			ChangeDirectory(_viewSources ? sourceDir : assetsDir);
+		}
+		ImGui::SameLine();
+		if (UI::ButtonExRounded(ICON_FA_TURN_UP, ImVec2(0, 0), 0, ImDrawFlags_RoundCornersNone)) {
 			ChangeDirectory(_currentDirectory.BaseDirectory());
 		}
 		if (inRootDir) { ImGui::EndDisabled(); }

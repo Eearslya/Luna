@@ -196,6 +196,12 @@ void AssetManager::SaveLoaded() {
 	}
 }
 
+void AssetManager::UnloadAsset(const AssetMetadata& metadata) {
+	if (metadata.IsValid() && LoadedAssets.find(metadata.Handle) != LoadedAssets.end()) {
+		LoadedAssets.erase(metadata.Handle);
+	}
+}
+
 void AssetManager::LoadAssets() {
 	for (auto& entry : Filesystem::Walk("project://")) {
 		if (entry.Type != PathType::File) { continue; }

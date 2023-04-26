@@ -105,8 +105,6 @@ void Editor::Update(double deltaTime) {
 		State.Windows.end());
 	for (auto& window : State.Windows) { window->Update(deltaTime); }
 
-	ImGui::ShowDemoWindow();
-
 	UI::EndDockspace();
 }
 
@@ -142,6 +140,7 @@ void Editor::RequestAsset(const Path& assetPath) {
 			if (scene) {
 				State.Scene       = std::move(scene);
 				State.SceneHandle = metadata.Handle;
+				UpdateTitle();
 			}
 		}
 	}
@@ -183,6 +182,7 @@ void OpenProject(const Path& projectPath) {
 void SaveProject() {
 	if (!State.Project) { return; }
 
+	if (AssetManager::GetAssetMetadata(State.SceneHandle).IsValid()) { SaveScene(); }
 	State.Project->Save();
 }
 
@@ -192,15 +192,28 @@ void SaveScene(bool saveAs) {
 		AssetManager::SaveLoaded();
 		AssetManager::SaveAsset(sceneMeta, State.Scene);
 	} else {
-		UIManager::TextDialog("Save Scene As...", [](bool saved, const std::string& sceneName) {
-			if (!saved) { return; }
+		UIManager::TextDialog(
+			"Save Scene As...",
+			[](bool saved, const std::string& sceneName) {
+				if (!saved) { return; }
 
-			const Path assetPath = "Assets/Scenes/" + sceneName + ".lscene";
-			auto scene           = AssetManager::CreateAsset<Scene>(assetPath);
-			*scene               = std::move(*State.Scene);
-			State.Scene          = scene;
-			AssetManager::SaveAsset(AssetManager::GetAssetMetadata(scene->Handle), scene);
-		});
+				if (sceneName.empty()) {
+					UIManager::Alert("Cannot Save Scene", "Cannot save a scene with an empty name!");
+					return;
+				}
+
+				const Path assetPath = "Assets/Scenes/" + sceneName + ".lscene";
+				auto scene           = AssetManager::CreateAsset<Scene>(assetPath);
+				*scene               = std::move(*State.Scene);
+				scene->SetName(sceneName);
+				AssetManager::UnloadAsset(AssetManager::GetAssetMetadata(State.SceneHandle));
+				State.Scene       = scene;
+				State.SceneHandle = scene->Handle;
+				AssetManager::SaveAsset(AssetManager::GetAssetMetadata(scene->Handle), scene);
+
+				UpdateTitle();
+			},
+			State.Scene->GetName());
 	}
 }
 

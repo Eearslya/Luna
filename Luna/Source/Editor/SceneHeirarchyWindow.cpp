@@ -27,7 +27,7 @@ static bool AddComponentMenu(Entity entity, const char* label, Args&&... args) {
 }
 
 void SceneHeirarchyWindow::Update(double deltaTime) {
-	if (ImGui::Begin("Heirarchy##SceneHeirarchyWindow")) {
+	if (ImGui::Begin("Hierarchy##SceneHeirarchyWindow")) {
 		auto& scene = Editor::GetActiveScene();
 		if (!_selected) { _selected = {}; }
 

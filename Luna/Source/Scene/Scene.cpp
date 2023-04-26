@@ -11,7 +11,10 @@
 using nlohmann::json;
 
 namespace Luna {
-Scene::Scene() {}
+Scene::Scene() {
+	_editorCamera.SetPosition(glm::vec3(-2, 1.5, 2));
+	_editorCamera.SetRotation(-15, -65);
+}
 
 Scene::Scene(Scene&& other) {
 	*this = std::move(other);
@@ -21,6 +24,7 @@ Scene& Scene::operator=(Scene&& other) {
 	if (this == &other) { return *this; }
 
 	_name         = other._name;
+	_editorCamera = std::move(other._editorCamera);
 	_registry     = std::move(other._registry);
 	_rootEntities = std::move(other._rootEntities);
 
