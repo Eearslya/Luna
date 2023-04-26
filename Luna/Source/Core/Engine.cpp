@@ -18,8 +18,9 @@
 
 namespace Luna {
 static struct EngineState {
-	bool Initialized = false;
-	bool Running     = false;
+	bool Initialized       = false;
+	bool Running           = false;
+	bool ShutdownRequested = false;
 	std::unique_ptr<Window> Window;
 
 	Scene ActiveScene;
@@ -60,6 +61,8 @@ static void Update() {
 		Renderer::Render(deltaTime);
 	}
 	const double renderTime = WindowManager::GetTime() - renderStart;
+
+	if (State.ShutdownRequested) { State.Running = false; }
 
 	State.FrameCount++;
 }
@@ -128,5 +131,9 @@ Scene& Engine::GetActiveScene() {
 
 Window* Engine::GetMainWindow() {
 	return State.Window.get();
+}
+
+void Engine::RequestShutdown() {
+	State.ShutdownRequested = true;
 }
 }  // namespace Luna

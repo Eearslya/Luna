@@ -96,6 +96,15 @@ Path Path::Relative(const Path& other) const {
 	return BaseDirectory() / other;
 }
 
+std::string Path::Stem() const {
+	auto filename = Filename();
+
+	auto pos = filename.find_last_of('.');
+	if (pos == std::string::npos) { return filename; }
+
+	return filename.substr(0, pos);
+}
+
 std::string Path::WithoutProtocol() const {
 	return ProtocolSplit().second;
 }

@@ -103,8 +103,10 @@ static void AddSceneView(int viewIndex) {
 		.SizeClass = SizeClass::Absolute, .Width = float(view.Width), .Height = float(view.Height)};
 
 	AttachmentInfo color = baseAttachment;
+	AttachmentInfo depth = baseAttachment.Copy().SetFormat(Renderer::GetDevice().GetDefaultDepthFormat());
 	auto& pass           = State.Graph.AddPass(attName, RenderGraphQueueFlagBits::Graphics);
 
+	pass.SetDepthStencilOutput(Prefix("Depth"), depth);
 	pass.AddColorOutput(attName, color);
 
 	auto renderer = MakeHandle<SceneRenderer>(view.Context);

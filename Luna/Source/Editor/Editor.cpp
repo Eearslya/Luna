@@ -15,8 +15,10 @@
 #include <Luna/Platform/Windows/OSFilesystem.hpp>
 #include <Luna/Project/Project.hpp>
 #include <Luna/Renderer/Renderer.hpp>
+#include <Luna/Scene/MeshRendererComponent.hpp>
 #include <Luna/Scene/Scene.hpp>
 #include <Luna/UI/UI.hpp>
+#include <Luna/UI/UIManager.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Tracy/Tracy.hpp>
@@ -34,6 +36,7 @@ static struct EditorState {
 static void CloseProject();
 static void OpenProject(const Path& projectPath);
 static void SaveProject();
+static void SaveScene(bool saveAs = false);
 static void UpdateProjectBrowser();
 static void UpdateTitle();
 
@@ -75,6 +78,14 @@ void Editor::Update(double deltaTime) {
 	UI::BeginDockspace(true);
 
 	if (ImGui::BeginMainMenuBar()) {
+		if (ImGui::BeginMenu("File")) {
+			if (ImGui::MenuItem(ICON_FA_FLOPPY_DISK " Save Scene")) { SaveScene(); }
+			if (ImGui::MenuItem(ICON_FA_FLOPPY_DISK " Save Scene As...")) { SaveScene(true); }
+			if (ImGui::MenuItem(ICON_FA_POWER_OFF " Exit")) { Engine::RequestShutdown(); }
+
+			ImGui::EndMenu();
+		}
+
 		if (ImGui::BeginMenu("Window")) {
 			if (ImGui::MenuItem("Asset Registry")) { State.NewWindows.emplace_back(new AssetRegistryWindow); }
 
@@ -115,7 +126,25 @@ Scene& Editor::GetActiveScene() {
 void Editor::RequestAsset(const Path& assetPath) {
 	const auto extension = assetPath.Extension();
 
-	if (extension == "gltf" || extension == "glb") { State.NewWindows.emplace_back(new MeshImportWindow(assetPath)); }
+	if (extension == "gltf" || extension == "glb") {
+		State.NewWindows.emplace_back(new MeshImportWindow(assetPath));
+	} else if (extension == "lmesh") {
+		const auto& metadata = AssetManager::GetAssetMetadata(assetPath);
+		if (metadata.IsValid()) {
+			auto entity             = GetActiveScene().CreateEntity(assetPath.Stem());
+			auto& cMeshRenderer     = entity.AddComponent<MeshRendererComponent>();
+			cMeshRenderer.MeshAsset = metadata.Handle;
+		}
+	} else if (extension == "lscene") {
+		const auto& metadata = AssetManager::GetAssetMetadata(assetPath);
+		if (metadata.IsValid()) {
+			IntrusivePtr<Scene> scene = AssetManager::GetAsset<Scene>(metadata.Handle);
+			if (scene) {
+				State.Scene       = std::move(scene);
+				State.SceneHandle = metadata.Handle;
+			}
+		}
+	}
 }
 
 void CloseProject() {
@@ -137,10 +166,10 @@ void OpenProject(const Path& projectPath) {
 	// TODO: Temporary until project creation is implemented.
 	if (!State.Project->Load()) { State.Project->Save(); }
 
-	Project::SetActive(State.Project);
-
 	Filesystem::RegisterProtocol(
 		"project", std::unique_ptr<FilesystemBackend>(new OSFilesystem(projectPath.BaseDirectory().WithoutProtocol())));
+
+	Project::SetActive(State.Project);
 	AssetManager::Initialize();
 
 	State.Scene       = MakeHandle<Scene>();
@@ -155,6 +184,24 @@ void SaveProject() {
 	if (!State.Project) { return; }
 
 	State.Project->Save();
+}
+
+void SaveScene(bool saveAs) {
+	AssetMetadata sceneMeta = AssetManager::GetAssetMetadata(State.SceneHandle);
+	if (!saveAs && sceneMeta.IsValid()) {
+		AssetManager::SaveLoaded();
+		AssetManager::SaveAsset(sceneMeta, State.Scene);
+	} else {
+		UIManager::TextDialog("Save Scene As...", [](bool saved, const std::string& sceneName) {
+			if (!saved) { return; }
+
+			const Path assetPath = "Assets/Scenes/" + sceneName + ".lscene";
+			auto scene           = AssetManager::CreateAsset<Scene>(assetPath);
+			*scene               = std::move(*State.Scene);
+			State.Scene          = scene;
+			AssetManager::SaveAsset(AssetManager::GetAssetMetadata(scene->Handle), scene);
+		});
+	}
 }
 
 void UpdateProjectBrowser() {

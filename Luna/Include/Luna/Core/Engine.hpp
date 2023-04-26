@@ -14,5 +14,6 @@ class Engine final {
 
 	static Scene& GetActiveScene();
 	static Window* GetMainWindow();
+	static void RequestShutdown();
 };
 }  // namespace Luna

@@ -1,14 +1,35 @@
 #include <Luna/Scene/Entity.hpp>
+#include <Luna/Scene/MeshRendererComponent.hpp>
 #include <Luna/Scene/NameComponent.hpp>
 #include <Luna/Scene/RelationshipComponent.hpp>
 #include <Luna/Scene/Scene.hpp>
 #include <Luna/Scene/TransformComponent.hpp>
+#include <Luna/Utility/Log.hpp>
+#include <Luna/Utility/Serialization.hpp>
 #include <nlohmann/json.hpp>
 
 using nlohmann::json;
 
 namespace Luna {
 Scene::Scene() {}
+
+Scene::Scene(Scene&& other) {
+	*this = std::move(other);
+}
+
+Scene& Scene::operator=(Scene&& other) {
+	if (this == &other) { return *this; }
+
+	_name         = other._name;
+	_registry     = std::move(other._registry);
+	_rootEntities = std::move(other._rootEntities);
+
+	other._name.clear();
+	other._registry.clear();
+	other._rootEntities.clear();
+
+	return *this;
+}
 
 Scene::~Scene() noexcept {}
 
@@ -123,15 +144,86 @@ void Scene::SetName(const std::string& name) {
 bool Scene::Deserialize(const std::string& sceneJson) {
 	json sceneData = json::parse(sceneJson);
 
-	_name = sceneData["Name"].get<std::string>();
+	std::vector<std::tuple<Entity, json>> relationships;
+
+	_name                = sceneData.at("Name").get<std::string>();
+	const auto& entities = sceneData.at("Entities");
+	for (const auto& entityData : entities) {
+		if (!entityData.contains("NameComponent") || !entityData.contains("TransformComponent") ||
+		    !entityData.contains("RelationshipComponent")) {
+			continue;
+		}
+
+		Entity entity = CreateEntity();
+		try {
+			entity.GetComponent<NameComponent>().Deserialize(entityData.at("NameComponent"));
+			entity.GetComponent<TransformComponent>().Deserialize(entityData.at("TransformComponent"));
+			relationships.push_back({entity, entityData.at("RelationshipComponent")});
+		} catch (const std::exception& e) { DestroyEntity(entity); }
+
+		if (entityData.contains("MeshRendererComponent")) {
+			auto& cMeshRenderer = entity.AddComponent<MeshRendererComponent>();
+			cMeshRenderer.Deserialize(entityData.at("MeshRendererComponent"));
+		}
+	}
+
+	for (auto& [entity, relationshipData] : relationships) {}
+
+	if (sceneData.contains("EditorCamera")) {
+		const auto& camData = sceneData.at("EditorCamera");
+
+		_editorCamera.SetPosition(camData.at("Position").get<glm::vec3>());
+		_editorCamera.SetRotation(camData.at("Pitch").get<float>(), camData.at("Yaw").get<float>());
+	}
 
 	return true;
 }
 
 std::string Scene::Serialize() const {
 	json sceneData;
-	sceneData["Name"]     = _name;
-	sceneData["Entities"] = json::array();
+	sceneData["Name"] = _name;
+
+	json entitiesData = json::array();
+
+	_registry.each([&](auto entityId) {
+		Entity entity(entityId, *const_cast<Scene*>(this));
+		if (!entity) { return; }
+
+		json entityData;
+
+		try {
+			json nameData;
+			entity.GetComponent<NameComponent>().Serialize(nameData);
+			entityData["NameComponent"] = nameData;
+
+			json transformData;
+			entity.GetComponent<TransformComponent>().Serialize(transformData);
+			entityData["TransformComponent"] = transformData;
+
+			json relationshipData;
+			const auto& cRelationship           = entity.GetComponent<RelationshipComponent>();
+			entityData["RelationshipComponent"] = relationshipData;
+		} catch (const std::exception& e) {
+			Log::Error("Scene", "Failed to serialize required entity components.");
+			return;
+		}
+
+		if (entity.HasComponent<MeshRendererComponent>()) {
+			json meshRendererData;
+			entity.GetComponent<MeshRendererComponent>().Serialize(meshRendererData);
+			entityData["MeshRendererComponent"] = meshRendererData;
+		}
+
+		entitiesData.push_back(entityData);
+	});
+
+	sceneData["Entities"] = entitiesData;
+
+	json camData;
+	camData["Position"]       = _editorCamera.GetPosition();
+	camData["Pitch"]          = _editorCamera.GetPitch();
+	camData["Yaw"]            = _editorCamera.GetYaw();
+	sceneData["EditorCamera"] = camData;
 
 	return sceneData.dump();
 }

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Luna/Utility/IntrusivePtr.hpp>
+#include <functional>
+#include <string>
 
 using ImTextureID = void*;
 
@@ -22,6 +24,9 @@ class UIManager {
 	static void BeginFrame(double deltaTime);
 	static void Render(Vulkan::CommandBuffer& cmd);
 	static ImTextureID SceneView(int view);
+	static void TextDialog(const std::string& title,
+	                       std::function<void(bool, const std::string&)>&& callback,
+	                       const std::string& initialValue = "");
 	static ImTextureID Texture(const Vulkan::ImageHandle& img);
 	static void UpdateFontAtlas();
 };

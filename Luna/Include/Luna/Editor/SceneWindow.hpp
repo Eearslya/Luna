@@ -17,7 +17,6 @@ class SceneWindow final : public Observer {
  private:
 	void Invalidate();
 
-	EditorCamera _camera;
 	bool _cameraControl  = false;
 	bool _focusNextFrame = false;
 	int _sceneView       = -1;

@@ -1,22 +1,30 @@
 #pragma once
 
 #include <Luna/Assets/Asset.hpp>
+#include <Luna/Scene/EditorCamera.hpp>
 #include <entt/entt.hpp>
 
 namespace Luna {
 class Entity;
 
 class Scene final : public Asset {
+	friend class ConstEntity;
 	friend class Entity;
 
  public:
 	Scene();
-	Scene(const Scene&)          = delete;
-	Scene(Scene&&)               = delete;
+	Scene(const Scene&) = delete;
+	Scene(Scene&&);
 	void operator=(const Scene&) = delete;
-	void operator=(Scene&&)      = delete;
+	Scene& operator=(Scene&&);
 	~Scene() noexcept;
 
+	EditorCamera& GetEditorCamera() {
+		return _editorCamera;
+	}
+	const EditorCamera& GetEditorCamera() const {
+		return _editorCamera;
+	}
 	const std::string& GetName() const {
 		return _name;
 	}
@@ -46,5 +54,6 @@ class Scene final : public Asset {
 	std::string _name = "NewScene";
 	entt::registry _registry;
 	std::vector<entt::entity> _rootEntities;
+	EditorCamera _editorCamera;
 };
 }  // namespace Luna

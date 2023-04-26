@@ -1,5 +1,6 @@
 #include <imgui_internal.h>
 
+#include <Luna/Assets/AssetManager.hpp>
 #include <Luna/Editor/ContentBrowserWindow.hpp>
 #include <Luna/Editor/Editor.hpp>
 #include <Luna/Editor/EditorAssets.hpp>
@@ -90,8 +91,6 @@ void ContentBrowserWindow::Update(double deltaTime) {
 					if (directory) {
 						newDirectory = _currentDirectory / path;
 					} else {
-						// ContentBrowserItem item{.Type = ContentBrowserItemType::File, .FilePath = relativePath};
-						// Editor::Get()->RequestContent(item);
 						Editor::RequestAsset(relativePath);
 					}
 				}
@@ -102,6 +101,23 @@ void ContentBrowserWindow::Update(double deltaTime) {
 					ImGui::Text("%s", relativePath.Filename().c_str());
 
 					ImGui::EndDragDropSource();
+				}
+				if (!directory && ImGui::BeginPopupContextWindow(nullptr, ImGuiPopupFlags_MouseButtonRight)) {
+					if (ImGui::MenuItem(ICON_FA_PEN_TO_SQUARE " Rename")) {
+						const auto basePath = _currentDirectory;
+						const auto filename = path;
+						UIManager::TextDialog(
+							"Rename",
+							[this, basePath, filename](bool renamed, const std::string& newName) {
+								if (!renamed) { return; }
+
+								AssetManager::RenameAsset(AssetManager::GetAssetMetadata(basePath / filename), newName);
+								ChangeDirectory(_currentDirectory);
+							},
+							filename);
+					}
+
+					ImGui::EndPopup();
 				}
 
 				ImGui::TextWrapped("%s", path.c_str());

@@ -120,6 +120,7 @@ bool AssetManager::LoadAsset(const AssetMetadata& metadata, IntrusivePtr<Asset>&
 
 			return true;
 		} else if (metadata.Type == AssetType::Scene) {
+			asset        = MakeHandle<Scene>();
 			Scene* scene = reinterpret_cast<Scene*>(asset.Get());
 
 			return scene->Deserialize(file.Json);
@@ -137,6 +138,16 @@ bool AssetManager::LoadAsset(const AssetMetadata& metadata, IntrusivePtr<Asset>&
 	Log::Error("AssetManager", "Failed to load asset from '{}': Unknown asset type.", metadata.FilePath.String());
 
 	return false;
+}
+
+void AssetManager::RenameAsset(const AssetMetadata& metadata, const std::string& newName) {
+	if (!metadata.IsValid()) { return; }
+
+	auto& meta         = Registry.Get(metadata.Handle);
+	const auto baseDir = meta.FilePath.BaseDirectory();
+	const auto newPath = baseDir / newName;
+	auto* backend      = Filesystem::GetBackend("project");
+	if (backend->MoveYield(newPath, metadata.FilePath)) { meta.FilePath = newPath; }
 }
 
 void AssetManager::SaveAsset(const AssetMetadata& metadata, const IntrusivePtr<Asset>& asset) {
@@ -178,6 +189,13 @@ void AssetManager::SaveAsset(const AssetMetadata& metadata, const IntrusivePtr<A
 	}
 }
 
+void AssetManager::SaveLoaded() {
+	for (auto& asset : LoadedAssets) {
+		const auto& metadata = GetAssetMetadata(asset.first);
+		SaveAsset(metadata, asset.second);
+	}
+}
+
 void AssetManager::LoadAssets() {
 	for (auto& entry : Filesystem::Walk("project://")) {
 		if (entry.Type != PathType::File) { continue; }
@@ -192,6 +210,27 @@ void AssetManager::LoadRegistry() {
 
 	std::string registryJson;
 	if (!Filesystem::ReadFileToString("project://AssetRegistry.lregistry", registryJson)) { return; }
+
+	try {
+		const auto registryData = json::parse(registryJson);
+		const auto& assetsData  = registryData.at("Assets");
+		for (const auto& assetData : assetsData) {
+			try {
+				const auto filePath      = assetData.at("FilePath").get<std::string>();
+				const AssetHandle handle = assetData.at("Handle").get<uint64_t>();
+				const AssetType type     = AssetTypeFromString(assetData.at("Type").get<std::string>());
+				const AssetMetadata metadata{.FilePath = filePath, .Handle = handle, .Type = type};
+
+				if (type == AssetType::None) { continue; }
+				if (!Filesystem::Exists(GetFilesystemPath(metadata))) { continue; }
+				if (uint64_t(handle) == 0) { continue; }
+
+				Registry[metadata.Handle] = metadata;
+			} catch (const std::exception& e) {
+				Log::Warning("AssetManager", "Encountered malformed asset in Asset Registry. Ignoring.");
+			}
+		}
+	} catch (const std::exception& e) { Log::Error("AssetManager", "Failed to load Asset Registry!"); }
 }
 
 void AssetManager::SaveRegistry() {

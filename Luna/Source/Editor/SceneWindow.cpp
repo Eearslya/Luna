@@ -21,8 +21,9 @@ SceneWindow::SceneWindow(int index) : _windowIndex(index), _windowSize(0.0f, 0.0
 	Input::OnMouseMoved.Add(
 		[this](const glm::dvec2& pos) {
 			if (_cameraControl) {
+				auto& camera            = Editor::GetActiveScene().GetEditorCamera();
 				const float sensitivity = 0.5f;
-				_camera.Rotate(pos.y * sensitivity, -(pos.x * sensitivity));
+				camera.Rotate(pos.y * sensitivity, -(pos.x * sensitivity));
 			}
 		},
 		this);
@@ -63,6 +64,8 @@ void SceneWindow::Update(double deltaTime) {
 			Input::SetCursorHidden(false);
 		}
 
+		auto& camera = Editor::GetActiveScene().GetEditorCamera();
+		camera.SetViewport(_windowSize.x, _windowSize.y);
 		if (_cameraControl) {
 			const float camSpeed = 3.0f;
 			glm::vec3 camMove(0);
@@ -73,10 +76,10 @@ void SceneWindow::Update(double deltaTime) {
 			if (Luna::Input::GetKey(Luna::Key::R) == Luna::InputAction::Press) { camMove += glm::vec3(0, 1, 0); }
 			if (Luna::Input::GetKey(Luna::Key::F) == Luna::InputAction::Press) { camMove -= glm::vec3(0, 1, 0); }
 			camMove *= camSpeed * deltaTime;
-			_camera.Move(camMove);
+			camera.Move(camMove);
 		}
 
-		Renderer::UpdateSceneView(_sceneView, int(imWindowSize.x), int(imWindowSize.y), _camera);
+		Renderer::UpdateSceneView(_sceneView, int(imWindowSize.x), int(imWindowSize.y), camera);
 		ImGui::Image(UIManager::SceneView(_sceneView), imWindowSize);
 	}
 
@@ -84,6 +87,7 @@ void SceneWindow::Update(double deltaTime) {
 }
 
 void SceneWindow::Invalidate() {
-	_camera.SetViewport(_windowSize.x, _windowSize.y);
+	auto& camera = Editor::GetActiveScene().GetEditorCamera();
+	camera.SetViewport(_windowSize.x, _windowSize.y);
 }
 }  // namespace Luna

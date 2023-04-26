@@ -40,6 +40,14 @@ void SceneRenderer::BuildRenderPass(Vulkan::CommandBuffer& cmd) {
 
 	cmd.SetProgram(program);
 	cmd.SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
+	cmd.SetVertexAttribute(1, 1, vk::Format::eR32G32B32Sfloat, offsetof(Mesh::Vertex, Normal));
+	cmd.SetVertexAttribute(2, 1, vk::Format::eR32G32B32A32Sfloat, offsetof(Mesh::Vertex, Tangent));
+	cmd.SetVertexAttribute(3, 1, vk::Format::eR32G32Sfloat, offsetof(Mesh::Vertex, Texcoord0));
+	cmd.SetVertexAttribute(4, 1, vk::Format::eR32G32Sfloat, offsetof(Mesh::Vertex, Texcoord1));
+	cmd.SetVertexAttribute(5, 1, vk::Format::eR32G32B32Sfloat, offsetof(Mesh::Vertex, Color0));
+	cmd.SetVertexAttribute(6, 1, vk::Format::eR32G32B32A32Uint, offsetof(Mesh::Vertex, Joints0));
+	cmd.SetVertexAttribute(7, 1, vk::Format::eR32G32B32A32Sfloat, offsetof(Mesh::Vertex, Weights0));
+
 	for (const auto entityId : view) {
 		const Entity entity(entityId, Editor::GetActiveScene());
 		const auto transform      = entity.GetGlobalTransform();
@@ -50,6 +58,7 @@ void SceneRenderer::BuildRenderPass(Vulkan::CommandBuffer& cmd) {
 		if (!mesh || !mesh->PositionBuffer) { continue; }
 
 		cmd.SetVertexBinding(0, *mesh->PositionBuffer, 0, 12, vk::VertexInputRate::eVertex);
+		cmd.SetVertexBinding(1, *mesh->AttributeBuffer, 0, sizeof(Mesh::Vertex), vk::VertexInputRate::eVertex);
 		cmd.SetIndexBuffer(*mesh->PositionBuffer, mesh->TotalVertexCount * 12, vk::IndexType::eUint32);
 		cmd.PushConstants(glm::value_ptr(mvp), 0, sizeof(mvp));
 

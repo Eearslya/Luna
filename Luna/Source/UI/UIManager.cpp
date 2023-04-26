@@ -7,6 +7,7 @@
 #include <Luna/Renderer/ShaderManager.hpp>
 #include <Luna/UI/IconsFontAwesome6.hpp>
 #include <Luna/UI/UIManager.hpp>
+#include <Luna/Utility/Log.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Device.hpp>
@@ -30,6 +31,14 @@ struct UITexture {
 	int32_t SceneView             = -1;
 };
 
+struct DialogState {
+	bool Active = false;
+	bool Opened = false;
+	std::string Title;
+	std::string Value;
+	std::function<void(bool, const std::string&)> Callback;
+};
+
 static struct UIState {
 	std::vector<Vulkan::BufferHandle> Buffers;
 	Vulkan::ImageHandle FontImage;
@@ -38,6 +47,7 @@ static struct UIState {
 	Vulkan::Program* Program  = nullptr;
 	std::array<UITexture, 64> Textures;
 	uint32_t NextTexture = 0;
+	DialogState TextDialogState;
 } UIState;
 
 bool UIManager::Initialize() {
@@ -275,6 +285,44 @@ void UIManager::BeginFrame(double deltaTime) {
 
 	UIState.NextTexture = 0;
 	ImGui::NewFrame();
+
+	if (UIState.TextDialogState.Active) {
+		const std::string dialogId = fmt::format("{}##UIManagerTextDialog", UIState.TextDialogState.Title);
+
+		if (UIState.TextDialogState.Opened) {
+			ImGui::OpenPopup(dialogId.c_str());
+			UIState.TextDialogState.Opened = false;
+		}
+
+		if (ImGui::BeginPopupModal(dialogId.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+			static constexpr size_t MaxLength = 256;
+			char value[MaxLength]             = {0};
+			strncpy_s(value, UIState.TextDialogState.Value.c_str(), MaxLength);
+
+			bool submit = false;
+			bool cancel = false;
+
+			if (ImGui::InputText("##UIManagerTextDialogInput", value, MaxLength, ImGuiInputTextFlags_EnterReturnsTrue)) {
+				submit = true;
+			}
+
+			if (ImGui::Button("OK")) { submit = true; }
+			ImGui::SameLine();
+			if (ImGui::Button("Cancel")) { cancel = true; }
+
+			if (submit) {
+				UIState.TextDialogState.Callback(true, value);
+				UIState.TextDialogState.Active = false;
+				ImGui::CloseCurrentPopup();
+			} else if (cancel) {
+				UIState.TextDialogState.Callback(false, "");
+				UIState.TextDialogState.Active = false;
+				ImGui::CloseCurrentPopup();
+			}
+
+			ImGui::EndPopup();
+		}
+	}
 }
 
 void UIManager::Render(Vulkan::CommandBuffer& cmd) {
@@ -398,6 +446,16 @@ ImTextureID UIManager::SceneView(int view) {
 	tex.SceneView = view;
 
 	return &tex;
+}
+
+void UIManager::TextDialog(const std::string& title,
+                           std::function<void(bool, const std::string&)>&& callback,
+                           const std::string& initialValue) {
+	if (UIState.TextDialogState.Active) { return; }
+	UIState.TextDialogState.Active   = true;
+	UIState.TextDialogState.Opened   = true;
+	UIState.TextDialogState.Value    = initialValue;
+	UIState.TextDialogState.Callback = std::move(callback);
 }
 
 ImTextureID UIManager::Texture(const Vulkan::ImageHandle& img) {
