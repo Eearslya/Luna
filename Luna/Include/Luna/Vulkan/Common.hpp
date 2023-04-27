@@ -28,6 +28,7 @@ class Buffer;
 struct BufferCreateInfo;
 class BufferPool;
 class CommandBuffer;
+struct CommandBufferSavedState;
 class CommandPool;
 class Context;
 class DescriptorSetAllocator;

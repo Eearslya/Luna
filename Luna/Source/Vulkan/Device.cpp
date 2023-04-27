@@ -23,11 +23,9 @@ static uint32_t GetThreadIndex() {
 #define DeviceLock()       std::lock_guard<std::mutex> _lockHolder##__COUNTER__(_lock.Lock)
 #define DeviceMemoryLock() std::lock_guard<std::mutex> _lockHolder##__COUNTER__(_lock.MemoryLock)
 #define DeviceCacheLock()  RWSpinLockReadHolder _lockHolder##__COUNTER__(_lock.ReadOnlyCache)
-#define DeviceFlush()                                                        \
-	do {                                                                       \
-		std::unique_lock<std::mutex> _lockHolder(_lock.Lock);                    \
-		_lock.Condition.wait(_lockHolder, [&]() { return _lock.Counter == 0; }); \
-	} while (0)
+#define DeviceFlush()                                   \
+	std::unique_lock<std::mutex> _lockHolder(_lock.Lock); \
+	_lock.Condition.wait(_lockHolder, [&]() { return _lock.Counter == 0; })
 
 constexpr const char* PipelineCachePath = "cache://PipelineCache.bin";
 constexpr QueueType QueueFlushOrder[]   = {QueueType::Transfer, QueueType::Graphics, QueueType::Compute};

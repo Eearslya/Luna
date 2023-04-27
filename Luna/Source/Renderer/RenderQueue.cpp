@@ -1,5 +1,6 @@
 #include <Luna/Renderer/RenderQueue.hpp>
 #include <Luna/Renderer/Renderable.hpp>
+#include <Luna/Vulkan/CommandBuffer.hpp>
 
 namespace Luna {
 ThreadSafeObjectPool<RenderQueue::Block> RenderQueue::_allocatorPool;
@@ -27,14 +28,22 @@ void* RenderQueue::Allocate(size_t size, size_t alignment) {
 	return data;
 }
 
-void RenderQueue::Dispatch(RenderQueueType type, Vulkan::CommandBuffer& cmd) const {
-	DispatchRange(type, cmd, 0, _queues[int(type)].Size());
+void RenderQueue::Dispatch(RenderQueueType type,
+                           Vulkan::CommandBuffer& cmd,
+                           const Vulkan::CommandBufferSavedState& state) const {
+	DispatchRange(type, cmd, state, 0, _queues[int(type)].Size());
 }
 
-void RenderQueue::DispatchRange(RenderQueueType type, Vulkan::CommandBuffer& cmd, size_t begin, size_t end) const {
+void RenderQueue::DispatchRange(RenderQueueType type,
+                                Vulkan::CommandBuffer& cmd,
+                                const Vulkan::CommandBufferSavedState& state,
+                                size_t begin,
+                                size_t end) const {
 	auto* queue = _queues[int(type)].SortedData();
 
 	while (begin < end) {
+		cmd.RestoreState(state);
+
 		uint32_t instances = 1;
 		for (size_t i = begin + 1; i < end && queue[i].RenderInfo == queue[begin].RenderInfo; ++i) { instances++; }
 
@@ -45,12 +54,13 @@ void RenderQueue::DispatchRange(RenderQueueType type, Vulkan::CommandBuffer& cmd
 
 void RenderQueue::DispatchSubset(RenderQueueType type,
                                  Vulkan::CommandBuffer& cmd,
+                                 const Vulkan::CommandBufferSavedState& state,
                                  uint32_t subsetIndex,
                                  uint32_t subsetCount) const {
 	const size_t size       = _queues[int(type)].Size();
 	const size_t beginIndex = (size * subsetIndex) / subsetCount;
 	const size_t endIndex   = (size * (subsetIndex + 1)) / subsetCount;
-	DispatchRange(type, cmd, beginIndex, endIndex);
+	DispatchRange(type, cmd, state, beginIndex, endIndex);
 }
 
 void RenderQueue::PushRenderables(const RenderContext& context, const VisibilityList& renderables) {

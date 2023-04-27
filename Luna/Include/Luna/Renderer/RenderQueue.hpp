@@ -53,10 +53,15 @@ class RenderQueue {
 	}
 
 	void* Allocate(size_t size, size_t alignment = 64);
-	void Dispatch(RenderQueueType type, Vulkan::CommandBuffer& cmd) const;
-	void DispatchRange(RenderQueueType type, Vulkan::CommandBuffer& cmd, size_t begin, size_t end) const;
+	void Dispatch(RenderQueueType type, Vulkan::CommandBuffer& cmd, const Vulkan::CommandBufferSavedState& state) const;
+	void DispatchRange(RenderQueueType type,
+	                   Vulkan::CommandBuffer& cmd,
+	                   const Vulkan::CommandBufferSavedState& state,
+	                   size_t begin,
+	                   size_t end) const;
 	void DispatchSubset(RenderQueueType type,
 	                    Vulkan::CommandBuffer& cmd,
+	                    const Vulkan::CommandBufferSavedState& state,
 	                    uint32_t subsetIndex,
 	                    uint32_t subsetCount) const;
 	void PushRenderables(const RenderContext& context, const VisibilityList& renderables);

@@ -4,6 +4,7 @@
 #include <Luna/Renderer/RenderContext.hpp>
 #include <Luna/Renderer/RenderGraph.hpp>
 #include <Luna/Renderer/RenderPass.hpp>
+#include <Luna/Renderer/RenderRunner.hpp>
 #include <Luna/Renderer/Renderer.hpp>
 #include <Luna/Renderer/SceneRenderer.hpp>
 #include <Luna/Renderer/Swapchain.hpp>
@@ -60,6 +61,7 @@ static struct RendererState {
 	RenderGraphState GraphState;
 	Hash GraphHash = 0;
 	RenderGraph Graph;
+	std::array<RenderRunnerHandle, RendererSuiteTypeCount> Runners;
 } State;
 
 bool Renderer::Initialize() {
@@ -71,12 +73,18 @@ bool Renderer::Initialize() {
 	State.Context = MakeHandle<Vulkan::Context>(instanceExtensions, deviceExtensions);
 	State.Device  = MakeHandle<Vulkan::Device>(*State.Context);
 
+	State.Runners[int(RendererSuiteType::ForwardOpaque)]      = MakeHandle<RenderRunner>(RendererType::GeneralForward);
+	State.Runners[int(RendererSuiteType::ForwardTransparent)] = MakeHandle<RenderRunner>(RendererType::GeneralForward);
+	State.Runners[int(RendererSuiteType::PrepassDepth)]       = MakeHandle<RenderRunner>(RendererType::DepthOnly);
+	State.Runners[int(RendererSuiteType::Deferred)]           = MakeHandle<RenderRunner>(RendererType::GeneralDeferred);
+
 	return true;
 }
 
 void Renderer::Shutdown() {
 	ZoneScopedN("Renderer::Shutdown");
 
+	for (auto& runner : State.Runners) { runner.Reset(); }
 	State.Graph.Reset();
 	State.Device.Reset();
 	State.Context.Reset();
@@ -84,6 +92,10 @@ void Renderer::Shutdown() {
 
 Vulkan::Device& Renderer::GetDevice() {
 	return *State.Device;
+}
+
+RenderRunner& Renderer::GetRunner(RendererSuiteType type) {
+	return *State.Runners[int(type)];
 }
 
 static bool IsViewValid(int viewIndex) {
@@ -109,7 +121,9 @@ static void AddSceneView(int viewIndex) {
 	pass.SetDepthStencilOutput(Prefix("Depth"), depth);
 	pass.AddColorOutput(attName, color);
 
-	auto renderer = MakeHandle<SceneRenderer>(view.Context);
+	SceneRendererFlags flags = SceneRendererFlagBits::ForwardOpaque | SceneRendererFlagBits::ForwardTransparent;
+
+	auto renderer = MakeHandle<SceneRenderer>(view.Context, flags);
 	pass.SetRenderPassInterface(renderer);
 }
 

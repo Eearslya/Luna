@@ -101,6 +101,7 @@ class Threading final {
 
 	static void SetThreadID(uint32_t thread);
 	static uint32_t GetThreadID();
+	static uint32_t GetThreadIDFromSys(const std::string& idStr);
 
  private:
 	static void FreeTaskDependencies(TaskDependencies* dependencies);

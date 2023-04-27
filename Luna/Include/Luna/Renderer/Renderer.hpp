@@ -1,10 +1,8 @@
 #pragma once
 
+#include <Luna/Renderer/Common.hpp>
+
 namespace Luna {
-namespace Vulkan {
-class Device;
-class ImageView;
-}  // namespace Vulkan
 class Camera;
 class EditorCamera;
 class Scene;
@@ -16,6 +14,7 @@ class Renderer final {
 	static void Shutdown();
 
 	static Vulkan::Device& GetDevice();
+	static RenderRunner& GetRunner(RendererSuiteType type);
 	static const Vulkan::ImageView& GetSceneView(int view);
 	static int RegisterSceneView();
 	static void Render(double deltaTime);

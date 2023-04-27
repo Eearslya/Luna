@@ -2,6 +2,7 @@
 
 #include <Luna/Assets/Asset.hpp>
 #include <Luna/Assets/AssetRegistry.hpp>
+#include <atomic>
 
 namespace Luna {
 class AssetManager final {
@@ -9,6 +10,7 @@ class AssetManager final {
 	static void Initialize();
 	static void Shutdown();
 
+	static void EnqueueAssetLoad(const AssetMetadata& metadata);
 	static const AssetMetadata& GetAssetMetadata(const Path& assetPath);
 	static const AssetMetadata& GetAssetMetadata(AssetHandle handle);
 	static Path GetFilesystemPath(const AssetMetadata& metadata);
@@ -42,13 +44,17 @@ class AssetManager final {
 	}
 
 	template <typename T>
-	static IntrusivePtr<T> GetAsset(AssetHandle handle) {
+	static IntrusivePtr<T> GetAsset(AssetHandle handle, bool async = false) {
 		auto& metadata = GetAssetMetadata(handle);
 		if (!metadata.IsValid()) { return {}; }
 
 		IntrusivePtr<Asset> asset = {};
 		if (LoadedAssets.find(metadata.Handle) == LoadedAssets.end()) {
-			if (LoadAsset(metadata, asset)) { LoadedAssets[metadata.Handle] = asset; }
+			if (async) {
+				EnqueueAssetLoad(metadata);
+			} else {
+				if (LoadAsset(metadata, asset)) { LoadedAssets[metadata.Handle] = asset; }
+			}
 		} else {
 			asset = LoadedAssets[metadata.Handle];
 		}
@@ -61,6 +67,8 @@ class AssetManager final {
  private:
 	static std::unordered_map<AssetHandle, IntrusivePtr<Asset>> LoadedAssets;
 	static AssetRegistry Registry;
+	static std::mutex AsyncLock;
+	static std::vector<AssetHandle> AsyncRequests;
 
 	static void LoadAssets();
 	static void LoadRegistry();

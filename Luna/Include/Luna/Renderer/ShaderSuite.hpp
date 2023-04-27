@@ -1,15 +1,15 @@
 #pragma once
 
 #include <Luna/Renderer/Common.hpp>
+#include <Luna/Renderer/ShaderManager.hpp>
 #include <Luna/Utility/Path.hpp>
-#include <Luna/Vulkan/ShaderManager.hpp>
 
 namespace Luna {
 class ShaderSuiteResolver {
  public:
 	virtual ~ShaderSuiteResolver() noexcept = default;
 
-	virtual void Resolve(Vulkan::Device& device, ShaderSuite& suite, RendererType type, RenderableType drawable) const;
+	virtual void Resolve(ShaderSuite& suite, RendererType type, RenderableType drawable) const;
 };
 
 struct VariantSignatureKey {};
@@ -22,19 +22,18 @@ class ShaderSuite {
 
 	void BakeBaseDefines();
 	Vulkan::Program* GetProgram(VariantSignatureKey signature);
-	void InitCompute(Vulkan::ShaderManager& manager, const Path& computePath);
-	void InitGraphics(Vulkan::ShaderManager& manager, const Path& vertexPath, const Path& fragmentPath);
+	void InitCompute(const Path& computePath);
+	void InitGraphics(const Path& vertexPath, const Path& fragmentPath);
 
  private:
 	struct Variant : IntrusiveHashMapEnabled<Variant> {
-		Variant(Vulkan::Program* cachedProgram, Vulkan::ShaderProgramVariant* indirectVariant);
+		Variant(Vulkan::Program* cachedProgram, ShaderProgramVariant* indirectVariant);
 
-		Vulkan::Program* CachedProgram                = nullptr;
-		Vulkan::ShaderProgramVariant* IndirectVariant = nullptr;
+		Vulkan::Program* CachedProgram        = nullptr;
+		ShaderProgramVariant* IndirectVariant = nullptr;
 	};
 
-	Vulkan::ShaderManager* _manager;
-	Vulkan::ShaderProgram* _program = nullptr;
+	ShaderProgram* _program = nullptr;
 	std::vector<std::pair<std::string, int>> _baseDefines;
 	Hash _baseDefinesHash = 0;
 	ThreadSafeIntrusiveHashMapReadCached<Variant> _variants;

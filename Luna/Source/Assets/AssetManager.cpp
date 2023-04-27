@@ -7,6 +7,7 @@
 #include <Luna/Scene/Scene.hpp>
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Utility/Serialization.hpp>
+#include <Luna/Utility/Threading.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <nlohmann/json.hpp>
@@ -17,6 +18,8 @@ namespace Luna {
 static bool Initialized = false;
 std::unordered_map<AssetHandle, IntrusivePtr<Asset>> AssetManager::LoadedAssets;
 AssetRegistry AssetManager::Registry = {};
+std::mutex AssetManager::AsyncLock;
+std::vector<AssetHandle> AssetManager::AsyncRequests;
 
 static const AssetMetadata NullMetadata = {};
 
@@ -33,10 +36,32 @@ void AssetManager::Initialize() {
 }
 
 void AssetManager::Shutdown() {
+	std::lock_guard<std::mutex> lock(AsyncLock);
+	if (!AsyncRequests.empty()) { Threading::WaitIdle(); }
+
 	SaveRegistry();
 	LoadedAssets.clear();
 	Registry.Clear();
 	Initialized = false;
+}
+
+void AssetManager::EnqueueAssetLoad(const AssetMetadata& metadata) {
+	std::lock_guard<std::mutex> lock(AsyncLock);
+
+	const auto it = std::find(AsyncRequests.begin(), AsyncRequests.end(), metadata.Handle);
+	if (it != AsyncRequests.end()) { return; }
+	AsyncRequests.push_back(metadata.Handle);
+
+	auto group = Threading::CreateTaskGroup();
+	group->Enqueue([metadata]() {
+		IntrusivePtr<Asset> asset;
+		if (LoadAsset(metadata, asset)) { LoadedAssets[metadata.Handle] = asset; }
+
+		std::lock_guard<std::mutex> lock(AsyncLock);
+		const auto it = std::find(AsyncRequests.begin(), AsyncRequests.end(), metadata.Handle);
+		if (it != AsyncRequests.end()) { AsyncRequests.erase(it); }
+	});
+	group->Flush();
 }
 
 const AssetMetadata& AssetManager::GetAssetMetadata(const Path& assetPath) {

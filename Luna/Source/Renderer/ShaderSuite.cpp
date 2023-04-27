@@ -1,18 +1,14 @@
+#include <Luna/Renderer/Renderer.hpp>
 #include <Luna/Renderer/ShaderSuite.hpp>
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Vulkan/Device.hpp>
-#include <Luna/Vulkan/ShaderManager.hpp>
 
 namespace Luna {
-void ShaderSuiteResolver::Resolve(Vulkan::Device& device,
-                                  ShaderSuite& suite,
-                                  RendererType type,
-                                  RenderableType drawable) const {
+void ShaderSuiteResolver::Resolve(ShaderSuite& suite, RendererType type, RenderableType drawable) const {
 	if (type == RendererType::GeneralForward || type == RendererType::GeneralDeferred) {
 		switch (drawable) {
 			case RenderableType::Mesh:
-				suite.InitGraphics(
-					device.GetShaderManager(), "res://Shaders/StaticMesh.vert.glsl", "res://Shaders/StaticMesh.frag.glsl");
+				suite.InitGraphics("res://Shaders/StaticMesh.vert.glsl", "res://Shaders/StaticMesh.frag.glsl");
 				break;
 
 			default:
@@ -21,8 +17,7 @@ void ShaderSuiteResolver::Resolve(Vulkan::Device& device,
 	} else if (type == RendererType::DepthOnly) {
 		switch (drawable) {
 			case RenderableType::Mesh:
-				suite.InitGraphics(
-					device.GetShaderManager(), "res://Shaders/StaticMesh.vert.glsl", "res://Shaders/StaticMeshDepth.frag.glsl");
+				suite.InitGraphics("res://Shaders/StaticMesh.vert.glsl", "res://Shaders/StaticMeshDepth.frag.glsl");
 				break;
 
 			default:
@@ -64,20 +59,18 @@ Vulkan::Program* ShaderSuite::GetProgram(VariantSignatureKey signature) {
 	}
 }
 
-void ShaderSuite::InitCompute(Vulkan::ShaderManager& manager, const Path& computePath) {
-	_manager = &manager;
-	_program = _manager->RegisterCompute(computePath);
+void ShaderSuite::InitCompute(const Path& computePath) {
+	_program = ShaderManager::RegisterCompute(computePath);
 	_baseDefines.clear();
 	_variants.Clear();
 }
 
-void ShaderSuite::InitGraphics(Vulkan::ShaderManager& manager, const Path& vertexPath, const Path& fragmentPath) {
-	_manager = &manager;
-	_program = _manager->RegisterGraphics(vertexPath, fragmentPath);
+void ShaderSuite::InitGraphics(const Path& vertexPath, const Path& fragmentPath) {
+	_program = ShaderManager::RegisterGraphics(vertexPath, fragmentPath);
 	_baseDefines.clear();
 	_variants.Clear();
 }
 
-ShaderSuite::Variant::Variant(Vulkan::Program* cachedProgram, Vulkan::ShaderProgramVariant* indirectVariant)
+ShaderSuite::Variant::Variant(Vulkan::Program* cachedProgram, ShaderProgramVariant* indirectVariant)
 		: CachedProgram(cachedProgram), IndirectVariant(indirectVariant) {}
 }  // namespace Luna

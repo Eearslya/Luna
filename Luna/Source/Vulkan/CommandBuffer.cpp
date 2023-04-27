@@ -117,6 +117,76 @@ void CommandBuffer::EndZone() {
 	_tracingDepth--;
 }
 
+void CommandBuffer::RestoreState(const CommandBufferSavedState& state) {
+	for (uint32_t i = 0; i < MaxDescriptorSets; ++i) {
+		if (state.Flags & (uint32_t(CommandBufferSaveStateFlagBits::Bindings0) << i)) {
+			if (memcmp(state.Bindings.Bindings[i], _bindings.Bindings[i], sizeof(_bindings.Bindings[i]))) {
+				memcpy(_bindings.Bindings[i], state.Bindings.Bindings[i], sizeof(_bindings.Bindings[i]));
+				_dirtySets |= 1u << i;
+			}
+		}
+	}
+
+	if (state.Flags & CommandBufferSaveStateFlagBits::PushConstant &&
+	    memcmp(state.Bindings.PushConstantData, _bindings.PushConstantData, sizeof(_bindings.PushConstantData))) {
+		memcpy(_bindings.PushConstantData, state.Bindings.PushConstantData, sizeof(_bindings.PushConstantData));
+		_dirty |= CommandBufferDirtyFlagBits::PushConstants;
+	}
+
+	if (state.Flags & CommandBufferSaveStateFlagBits::Viewport &&
+	    memcpy(&_viewport, &state.Viewport, sizeof(_viewport))) {
+		_viewport = state.Viewport;
+		_dirty |= CommandBufferDirtyFlagBits::Viewport;
+	}
+
+	if (state.Flags & CommandBufferSaveStateFlagBits::Scissor && memcpy(&_scissor, &state.Scissor, sizeof(_scissor))) {
+		_scissor = state.Scissor;
+		_dirty |= CommandBufferDirtyFlagBits::Scissor;
+	}
+
+	if (state.Flags & CommandBufferSaveStateFlagBits::RenderState) {
+		if (memcmp(&state.StaticState, &_pipelineState.StaticState, sizeof(_pipelineState.StaticState))) {
+			memcpy(&_pipelineState.StaticState, &state.StaticState, sizeof(_pipelineState.StaticState));
+			_dirty |= CommandBufferDirtyFlagBits::StaticState;
+		}
+		if (memcmp(&state.PotentialStaticState,
+		           &_pipelineState.PotentialStaticState,
+		           sizeof(_pipelineState.PotentialStaticState))) {
+			memcpy(
+				&_pipelineState.PotentialStaticState, &state.PotentialStaticState, sizeof(_pipelineState.PotentialStaticState));
+			_dirty |= CommandBufferDirtyFlagBits::StaticState;
+		}
+		if (memcmp(&state.DynamicState, &_dynamicState, sizeof(_dynamicState))) {
+			memcpy(&_dynamicState, &state.DynamicState, sizeof(_dynamicState));
+			_dirty |= CommandBufferDirtyFlagBits::StencilReference | CommandBufferDirtyFlagBits::DepthBias;
+		}
+	}
+}
+
+CommandBufferSavedState CommandBuffer::SaveState(CommandBufferSaveStateFlags flags) const {
+	CommandBufferSavedState state;
+	state.Flags = flags;
+
+	for (uint32_t i = 0; i < MaxDescriptorSets; ++i) {
+		if (flags & (uint32_t(CommandBufferSaveStateFlagBits::Bindings0) << i)) {
+			memcpy(state.Bindings.Bindings[i], _bindings.Bindings[i], sizeof(_bindings.Bindings[i]));
+		}
+	}
+
+	if (flags & CommandBufferSaveStateFlagBits::Viewport) { state.Viewport = _viewport; }
+	if (flags & CommandBufferSaveStateFlagBits::Scissor) { state.Scissor = _scissor; }
+	if (flags & CommandBufferSaveStateFlagBits::RenderState) {
+		memcpy(&state.StaticState, &_pipelineState.StaticState, sizeof(_pipelineState.StaticState));
+		state.PotentialStaticState = _pipelineState.PotentialStaticState;
+		state.DynamicState         = _dynamicState;
+	}
+	if (flags & CommandBufferSaveStateFlagBits::PushConstant) {
+		memcpy(state.Bindings.PushConstantData, _bindings.PushConstantData, sizeof(_bindings.PushConstantData));
+	}
+
+	return state;
+}
+
 void CommandBuffer::TouchSwapchain(vk::PipelineStageFlags2 stages) {
 	_swapchainStages |= stages;
 }
@@ -423,6 +493,10 @@ void CommandBuffer::SetColorBlend(vk::BlendFactor srcColor, vk::BlendOp op, vk::
 	SetStaticState(DstColorBlend, dstColor);
 }
 
+void CommandBuffer::SetColorWriteMask(uint32_t mask) {
+	SetStaticState(WriteMask, mask);
+}
+
 void CommandBuffer::SetCullMode(vk::CullModeFlagBits mode) {
 	SetStaticState(CullMode, mode);
 }
@@ -431,8 +505,16 @@ void CommandBuffer::SetDepthCompareOp(vk::CompareOp op) {
 	SetStaticState(DepthCompare, op);
 }
 
+void CommandBuffer::SetDepthTest(bool test) {
+	SetStaticState(DepthTest, test);
+}
+
 void CommandBuffer::SetDepthWrite(bool write) {
 	SetStaticState(DepthWrite, write);
+}
+
+void CommandBuffer::SetFrontFace(vk::FrontFace face) {
+	SetStaticState(FrontFace, face);
 }
 
 void CommandBuffer::Dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) {

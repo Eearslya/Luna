@@ -124,6 +124,17 @@ struct DeferredPipelineCompile {
 	::Luna::Hash GetHash(uint32_t& activeVBOs) const;
 };
 
+struct CommandBufferSavedState {
+	CommandBufferSaveStateFlags Flags;
+	ResourceBindings Bindings;
+	vk::Viewport Viewport;
+	vk::Rect2D Scissor;
+
+	PipelineState StaticState;
+	PotentialState PotentialStaticState;
+	DynamicState DynamicState;
+};
+
 struct CommandBufferDeleter {
 	void operator()(CommandBuffer* cmdBuf);
 };
@@ -171,6 +182,8 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void BeginZone(const std::string& name);
 	void End();
 	void EndZone();
+	void RestoreState(const CommandBufferSavedState& state);
+	CommandBufferSavedState SaveState(CommandBufferSaveStateFlags flags) const;
 	void TouchSwapchain(vk::PipelineStageFlags2 stages);
 
 	void Barrier(const vk::DependencyInfo& dep);
@@ -235,9 +248,12 @@ class CommandBuffer : public IntrusivePtrEnabled<CommandBuffer, CommandBufferDel
 	void SetAlphaBlend(vk::BlendFactor srcAlpha, vk::BlendOp op, vk::BlendFactor dstAlpha);
 	void SetBlendEnable(bool enable);
 	void SetColorBlend(vk::BlendFactor srcColor, vk::BlendOp op, vk::BlendFactor dstColor);
+	void SetColorWriteMask(uint32_t mask);
 	void SetCullMode(vk::CullModeFlagBits mode);
 	void SetDepthCompareOp(vk::CompareOp op);
+	void SetDepthTest(bool test);
 	void SetDepthWrite(bool write);
+	void SetFrontFace(vk::FrontFace face);
 
 	void Dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ);
 	void Draw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);

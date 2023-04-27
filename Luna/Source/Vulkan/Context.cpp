@@ -1,4 +1,5 @@
 #include <Luna/Utility/Log.hpp>
+#include <Luna/Utility/Threading.hpp>
 #include <Luna/Vulkan/Context.hpp>
 #include <algorithm>
 #include <unordered_map>
@@ -39,6 +40,31 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugCallback(VkDebugUtilsMessageSev
 		default:
 			Log::Debug("Vulkan", "Vulkan: {}", data->pMessage);
 			break;
+	}
+
+	// Additional information for threading validation errors.
+	if (data->messageIdNumber == 0x141cb623) {
+		// First we parse the message to find the thread IDs it's complaining about.
+		const std::string message      = data->pMessage;
+		const auto firstThreadStart    = message.find("in thread ") + 10;
+		const auto firstThreadEnd      = message.find(" ", firstThreadStart);
+		const auto secondThreadStart   = message.find("thread ", firstThreadEnd) + 7;
+		const std::string firstThread  = message.substr(firstThreadStart, firstThreadEnd - firstThreadStart);
+		const std::string secondThread = message.substr(secondThreadStart);
+		const uint32_t firstIndex      = Threading::GetThreadIDFromSys(firstThread);
+		const uint32_t secondIndex     = Threading::GetThreadIDFromSys(secondThread);
+
+		const auto LogThread = [](const std::string& id, uint32_t index) {
+			if (index == 0) {
+				Log::Error("Vulkan", "- Thread {} is main thread.", id);
+			} else if (index == std::numeric_limits<uint32_t>::max()) {
+				Log::Error("Vulkan", "- Thread {} is not one of ours.", id);
+			} else {
+				Log::Error("Vulkan", "- Thread {} is worker thread {}.", id, index);
+			}
+		};
+		LogThread(firstThread, firstIndex);
+		LogThread(secondThread, secondIndex);
 	}
 
 	return VK_FALSE;

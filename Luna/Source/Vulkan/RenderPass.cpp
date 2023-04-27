@@ -744,6 +744,7 @@ ImageHandle TransientAttachmentAllocator::RequestAttachment(
 	imageCI.ArrayLayers = layers;
 	node                = _attachments.Emplace(hash, _device.CreateImage(imageCI));
 	node->Image->SetInternalSync();
+	node->Image->GetView().SetInternalSync();
 
 	return node->Image;
 }

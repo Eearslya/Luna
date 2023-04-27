@@ -1,6 +1,6 @@
 #pragma once
 
-#include <glm/glm.hpp>
+#include <Luna/Renderer/RenderParameters.hpp>
 
 namespace Luna {
 class RenderContext {
@@ -31,6 +31,18 @@ class RenderContext {
 	}
 	float ZFar() const {
 		return _zFar;
+	}
+
+	CameraParameters GetCamera() const {
+		return CameraParameters{.ViewProjection    = _viewProjection,
+		                        .InvViewProjection = _invViewProjection,
+		                        .Projection        = _projection,
+		                        .InvProjection     = _invProjection,
+		                        .View              = _view,
+		                        .InvView           = _invView,
+		                        .CameraPosition    = _position,
+		                        .ZNear             = _zNear,
+		                        .ZFar              = _zFar};
 	}
 
 	void SetCamera(const glm::mat4& projection, const glm::mat4& view) {

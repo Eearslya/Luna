@@ -14,15 +14,16 @@ class Renderer;
 class RendererSuite;
 class RenderGraph;
 class RenderPass;
+class RenderRunner;
 class RenderQueue;
 struct RenderQueueData;
 class RenderScene;
 class ShaderSuite;
 
 // Handle Declarations.
-using EnvironmentHandle = IntrusivePtr<Environment>;
-using RenderableHandle  = IntrusivePtr<Renderable>;
-using RendererHandle    = IntrusivePtr<Renderer>;
+using EnvironmentHandle  = IntrusivePtr<Environment>;
+using RenderableHandle   = IntrusivePtr<Renderable>;
+using RenderRunnerHandle = IntrusivePtr<RenderRunner>;
 
 /**
  * Describes an image attachment for a Render Pass.

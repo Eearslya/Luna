@@ -1,6 +1,7 @@
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Utility/Threading.hpp>
 #include <Tracy/Tracy.hpp>
+#include <sstream>
 
 namespace Luna {
 static struct ThreadingState {
@@ -18,6 +19,7 @@ static struct ThreadingState {
 
 	std::atomic_bool Running = false;
 	std::vector<std::thread> WorkerThreads;
+	std::vector<std::string> SysThreadIDs;
 } State;
 
 static thread_local uint32_t ThreadID = ~0u;
@@ -29,6 +31,14 @@ void Threading::SetThreadID(uint32_t thread) {
 
 uint32_t Threading::GetThreadID() {
 	return ThreadID;
+}
+
+uint32_t Threading::GetThreadIDFromSys(const std::string& idStr) {
+	for (int i = 0; i < State.SysThreadIDs.size(); ++i) {
+		if (State.SysThreadIDs[i] == idStr) { return i; }
+	}
+
+	return std::numeric_limits<uint32_t>::max();
 }
 
 void TaskDependenciesDeleter::operator()(TaskDependencies* deps) {
@@ -160,10 +170,14 @@ bool Threading::Initialize() {
 
 	SetThreadID(0);
 	SysThreadID = std::this_thread::get_id();
+	std::ostringstream oss;
+	oss << SysThreadID;
+	State.SysThreadIDs.push_back(oss.str());
 
 	const auto threadCount = std::thread::hardware_concurrency();
 	Log::Debug("Threading", "Starting {} worker threads.", threadCount);
 	State.Running = true;
+	State.SysThreadIDs.resize(threadCount + 1);
 	for (int i = 0; i < threadCount; ++i) {
 		State.WorkerThreads.emplace_back([i]() { WorkerThread(i + 1); });
 	}
@@ -242,6 +256,9 @@ void Threading::WorkerThread(int threadID) {
 
 	SetThreadID(threadID);
 	SysThreadID = std::this_thread::get_id();
+	std::ostringstream oss;
+	oss << SysThreadID;
+	State.SysThreadIDs[threadID] = oss.str();
 
 	while (State.Running) {
 		Task* task = nullptr;

@@ -70,6 +70,18 @@ enum class CommandBufferType {
 	AsyncGraphics = QueueTypeCount
 };
 
+enum class CommandBufferSaveStateFlagBits {
+	Bindings0    = 1 << 0,
+	Bindings1    = 1 << 1,
+	Bindings2    = 1 << 2,
+	Bindings3    = 1 << 3,
+	Viewport     = 1 << 4,
+	Scissor      = 1 << 5,
+	RenderState  = 1 << 6,
+	PushConstant = 1 << 7
+};
+using CommandBufferSaveStateFlags = Bitmask<CommandBufferSaveStateFlagBits>;
+
 enum class ImageCreateFlagBits {
 	GenerateMipmaps              = 1 << 0,
 	ForceArray                   = 1 << 1,
@@ -191,6 +203,8 @@ template <>
 struct Luna::EnableBitmaskOperators<Luna::Vulkan::BufferCreateFlagBits> : std::true_type {};
 template <>
 struct Luna::EnableBitmaskOperators<Luna::Vulkan::CommandBufferDirtyFlagBits> : std::true_type {};
+template <>
+struct Luna::EnableBitmaskOperators<Luna::Vulkan::CommandBufferSaveStateFlagBits> : std::true_type {};
 template <>
 struct Luna::EnableBitmaskOperators<Luna::Vulkan::ImageCreateFlagBits> : std::true_type {};
 template <>

@@ -2,8 +2,11 @@
 #include <Luna/Assets/Mesh.hpp>
 #include <Luna/Editor/Editor.hpp>
 #include <Luna/Renderer/RenderContext.hpp>
+#include <Luna/Renderer/RenderRunner.hpp>
+#include <Luna/Renderer/Renderer.hpp>
 #include <Luna/Renderer/SceneRenderer.hpp>
 #include <Luna/Renderer/ShaderManager.hpp>
+#include <Luna/Renderer/StaticMesh.hpp>
 #include <Luna/Scene/Entity.hpp>
 #include <Luna/Scene/MeshRendererComponent.hpp>
 #include <Luna/Scene/Scene.hpp>
@@ -25,7 +28,8 @@ struct CameraData {
 	float ZFar;
 };
 
-SceneRenderer::SceneRenderer(const RenderContext& context) : _context(context) {}
+SceneRenderer::SceneRenderer(const RenderContext& context, SceneRendererFlags flags)
+		: _context(context), _flags(flags) {}
 
 bool SceneRenderer::GetClearColor(uint32_t attachment, vk::ClearColorValue* value) const {
 	if (value) { *value = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f); }
@@ -53,7 +57,7 @@ void SceneRenderer::BuildRenderPass(Vulkan::CommandBuffer& cmd) {
 
 	const auto& registry = Editor::GetActiveScene().GetRegistry();
 	const auto& view     = registry.view<MeshRendererComponent>();
-	if (view.size() > 0) {
+	if (false && view.size() > 0) {
 		auto shader =
 			ShaderManager::RegisterGraphics("res://Shaders/DummyTri.vert.glsl", "res://Shaders/DummyTri.frag.glsl");
 		auto variant = shader->RegisterVariant();
@@ -67,8 +71,6 @@ void SceneRenderer::BuildRenderPass(Vulkan::CommandBuffer& cmd) {
 		cmd.SetVertexAttribute(3, 1, vk::Format::eR32G32Sfloat, offsetof(Mesh::Vertex, Texcoord0));
 		cmd.SetVertexAttribute(4, 1, vk::Format::eR32G32Sfloat, offsetof(Mesh::Vertex, Texcoord1));
 		cmd.SetVertexAttribute(5, 1, vk::Format::eR32G32B32Sfloat, offsetof(Mesh::Vertex, Color0));
-		cmd.SetVertexAttribute(6, 1, vk::Format::eR32G32B32A32Uint, offsetof(Mesh::Vertex, Joints0));
-		cmd.SetVertexAttribute(7, 1, vk::Format::eR32G32B32A32Sfloat, offsetof(Mesh::Vertex, Weights0));
 
 		for (const auto entityId : view) {
 			const Entity entity(entityId, Editor::GetActiveScene());
@@ -89,6 +91,19 @@ void SceneRenderer::BuildRenderPass(Vulkan::CommandBuffer& cmd) {
 		}
 	}
 
+	if (_flags & SceneRendererFlagBits::ForwardZPrePass) {
+		Renderer::GetRunner(Luna::RendererSuiteType::PrepassDepth)
+			.Flush(cmd, _depthQueue, _context, Luna::RendererFlushFlagBits::NoColor);
+	}
+
+	if (_flags & SceneRendererFlagBits::ForwardOpaque) {
+		Luna::RendererFlushFlags flush = {};
+		if (_flags & SceneRendererFlagBits::ForwardZPrePass) {
+			flush |= Luna::RendererFlushFlagBits::DepthStencilReadOnly | Luna::RendererFlushFlagBits::DepthTestEqual;
+		}
+		Renderer::GetRunner(Luna::RendererSuiteType::ForwardOpaque).Flush(cmd, _opaqueQueue, _context, flush);
+	}
+
 	// XZ Grid
 	{
 		auto shader = ShaderManager::RegisterGraphics("res://Shaders/Fullscreen.vert.glsl", "res://Shaders/Grid.frag.glsl");
@@ -102,6 +117,70 @@ void SceneRenderer::BuildRenderPass(Vulkan::CommandBuffer& cmd) {
 		cmd.SetAlphaBlend(vk::BlendFactor::eZero, vk::BlendOp::eAdd, vk::BlendFactor::eOne);
 		cmd.SetColorBlend(vk::BlendFactor::eSrcAlpha, vk::BlendOp::eAdd, vk::BlendFactor::eOneMinusSrcAlpha);
 		cmd.Draw(3);
+	}
+}
+
+void SceneRenderer::EnqueuePrepareRenderPass(RenderGraph& graph, TaskComposer& composer) {
+	auto& setup = composer.BeginPipelineStage();
+	setup.Enqueue([&]() {
+		_opaqueVisible.clear();
+		_transparentVisible.clear();
+
+		if (_flags & SceneRendererFlagBits::ForwardZPrePass) {
+			Renderer::GetRunner(Luna::RendererSuiteType::PrepassDepth).Begin(_depthQueue);
+		} else if (_flags & SceneRendererFlagBits::Depth) {
+		}
+
+		if (_flags & SceneRendererFlagBits::ForwardOpaque) {
+			Renderer::GetRunner(Luna::RendererSuiteType::ForwardOpaque).Begin(_opaqueQueue);
+		} else if (_flags & SceneRendererFlagBits::DeferredGBuffer) {
+			Renderer::GetRunner(Luna::RendererSuiteType::Deferred).Begin(_opaqueQueue);
+		}
+
+		if (_flags & SceneRendererFlagBits::ForwardTransparent) {
+			Renderer::GetRunner(Luna::RendererSuiteType::ForwardTransparent).Begin(_transparentQueue);
+		}
+	});
+
+	if (_flags & (SceneRendererFlagBits::ForwardOpaque | SceneRendererFlagBits::ForwardZPrePass)) {
+		// Gather Opaque renderables
+		auto& gather = composer.BeginPipelineStage();
+		gather.Enqueue([&]() {
+			const auto& registry = Editor::GetActiveScene().GetRegistry();
+			const auto& view     = registry.view<MeshRendererComponent>();
+			for (auto entityId : view) {
+				const Entity entity(entityId, Editor::GetActiveScene());
+				const auto transform      = entity.GetGlobalTransform();
+				const auto& cMeshRenderer = entity.GetComponent<MeshRendererComponent>();
+				const auto& meshMeta      = AssetManager::GetAssetMetadata(cMeshRenderer.MeshAsset);
+				if (!meshMeta.IsValid()) { continue; }
+
+				IntrusivePtr<Mesh> mesh = AssetManager::GetAsset<Mesh>(cMeshRenderer.MeshAsset, true);
+				if (!mesh || !mesh->PositionBuffer) { continue; }
+
+				for (uint32_t i = 0; i < mesh->Submeshes.size(); ++i) {
+					_opaqueVisible.push_back(RenderableInfo{MakeHandle<StaticMesh>(mesh, i), transform});
+				}
+			}
+		});
+
+		if (_flags & SceneRendererFlagBits::ForwardZPrePass) {
+			// Push Opaque renderables
+			auto& push = composer.BeginPipelineStage();
+			push.Enqueue([&]() {
+				_depthQueue.PushDepthRenderables(_context, _opaqueVisible);
+				_depthQueue.Sort();
+			});
+		}
+
+		if (_flags & SceneRendererFlagBits::ForwardOpaque) {
+			// Push Opaque renderables
+			auto& push = composer.BeginPipelineStage();
+			push.Enqueue([&]() {
+				_opaqueQueue.PushRenderables(_context, _opaqueVisible);
+				_opaqueQueue.Sort();
+			});
+		}
 	}
 }
 }  // namespace Luna

@@ -18,7 +18,7 @@ struct StaticSubmeshInstanceInfo {
 	mat4 Model;
 };
 
-layout(set = 2, binding = 1, std140) uniform InstanceData {
+layout(set = 1, binding = 0, std140) uniform InstanceData {
 	StaticSubmeshInstanceInfo Instance[128];
 };
 
@@ -32,7 +32,7 @@ void main() {
 #endif
 
 	vec3 worldPosition = worldTransform * vec4(inPosition, 1.0f);
-	gl_Position = Transform.ViewProjection * vec4(worldPosition, 1.0f);
+	gl_Position = Camera.ViewProjection * vec4(worldPosition, 1.0f);
 
 	outTexcoord0 = inTexcoord0;
 
