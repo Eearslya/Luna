@@ -1,6 +1,7 @@
 #include <imgui_internal.h>
 
 #include <Luna/Assets/AssetManager.hpp>
+#include <Luna/Assets/Material.hpp>
 #include <Luna/Assets/Mesh.hpp>
 #include <Luna/Editor/Editor.hpp>
 #include <Luna/Editor/EditorContent.hpp>
@@ -13,6 +14,7 @@
 #include <Luna/UI/UI.hpp>
 #include <Luna/Utility/Log.hpp>
 #include <functional>
+#include <glm/gtc/type_ptr.hpp>
 #include <optional>
 
 namespace Luna {
@@ -334,6 +336,8 @@ void SceneHeirarchyWindow::DrawComponents(Entity& entity) {
 
 	DrawComponent<MeshRendererComponent>(
 		entity, ICON_FA_CIRCLE_NODES " Mesh Renderer", [](Entity entity, auto& cMeshRenderer) -> bool {
+			IntrusivePtr<Mesh> mesh;
+
 			if (ImGui::BeginTable("MeshRendererComponent_Properties", 2, ImGuiTableFlags_BordersInnerV)) {
 				ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_NoResize | ImGuiTableColumnFlags_WidthFixed, 85.0f);
 
@@ -341,9 +345,55 @@ void SceneHeirarchyWindow::DrawComponents(Entity& entity) {
 				ImGui::Text("Mesh");
 				ImGui::TableNextColumn();
 				AssetMetadata meshMeta;
-				if (AssetButton<Mesh>("Mesh", cMeshRenderer.MeshAsset, meshMeta)) {}
+				if (AssetButton<Mesh>("Mesh", cMeshRenderer.MeshAsset, meshMeta)) {
+					mesh = AssetManager::GetAsset<Mesh>(meshMeta.Handle, true);
+				}
 
 				ImGui::EndTable();
+			}
+
+			if (mesh) {
+				if (cMeshRenderer.MaterialAssets.size() != mesh->Submeshes.size()) {
+					cMeshRenderer.MaterialAssets.resize(mesh->Submeshes.size());
+				}
+
+				for (size_t i = 0; i < mesh->Submeshes.size(); ++i) {
+					IntrusivePtr<Material> material;
+
+					const std::string tableId = fmt::format("MeshRendererComponent_Material{}_Properties", i);
+					if (ImGui::BeginTable(tableId.c_str(), 2, ImGuiTableFlags_BordersInnerV)) {
+						ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_NoResize | ImGuiTableColumnFlags_WidthFixed, 85.0f);
+
+						ImGui::TableNextColumn();
+						ImGui::Text("Material");
+						ImGui::TableNextColumn();
+
+						const std::string matId = "Material" + std::to_string(i);
+						AssetMetadata materialMeta;
+						if (AssetButton<Material>(matId.c_str(), cMeshRenderer.MaterialAssets[i], materialMeta)) {
+							material = AssetManager::GetAsset<Material>(materialMeta.Handle, true);
+						}
+
+						if (material) {
+							ImGui::TableNextColumn();
+							ImGui::Separator();
+							ImGui::TableNextColumn();
+							ImGui::Separator();
+
+							ImGui::TableNextColumn();
+							ImGui::Text("Albedo");
+							ImGui::TableNextColumn();
+							ImGui::ColorEdit4("##BaseColorFactor", glm::value_ptr(material->BaseColorFactor));
+
+							ImGui::TableNextColumn();
+							ImGui::Text("Emissive");
+							ImGui::TableNextColumn();
+							ImGui::ColorEdit3("##EmissiveFactor", glm::value_ptr(material->EmissiveFactor));
+						}
+
+						ImGui::EndTable();
+					}
+				}
 			}
 
 			return false;

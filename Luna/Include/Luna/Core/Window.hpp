@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Luna/Core/Input.hpp>
 #include <Luna/Utility/Delegate.hpp>
 #include <Luna/Utility/IntrusivePtr.hpp>
 #include <glm/glm.hpp>
@@ -36,6 +37,7 @@ class Window final {
 	void Maximize();
 	void Minimize();
 	void Restore();
+	void SetCursor(MouseCursor cursor);
 	void SetPosition(const glm::ivec2& pos);
 	void SetSize(const glm::ivec2& size);
 	void SetTitle(const std::string& title);
@@ -46,5 +48,6 @@ class Window final {
  private:
 	GLFWwindow* _window = nullptr;
 	IntrusivePtr<Swapchain> _swapchain;
+	MouseCursor _cursor = MouseCursor::Arrow;
 };
 }  // namespace Luna

@@ -1,6 +1,7 @@
 #include <mikktspace.h>
 
 #include <Luna/Assets/AssetManager.hpp>
+#include <Luna/Assets/Material.hpp>
 #include <Luna/Assets/Mesh.hpp>
 #include <Luna/Editor/MeshGltfImporter.hpp>
 #include <Luna/Platform/Filesystem.hpp>
@@ -397,6 +398,7 @@ static MeshProcessingSteps GetProcessingSteps(VertexAttributes attributes) {
 static bool ParseGltf(GltfContext& context);
 static bool LoadBuffers(GltfContext& context);
 static bool LoadMeshes(GltfContext& context);
+static bool LoadMaterials(GltfContext& context);
 
 bool MeshGltfImporter::Import(const Path& sourcePath) {
 	GltfContext context;
@@ -410,6 +412,7 @@ bool MeshGltfImporter::Import(const Path& sourcePath) {
 	if (!ParseGltf(context)) { return false; }
 	if (!LoadBuffers(context)) { return false; }
 	if (!LoadMeshes(context)) { return false; }
+	if (!LoadMaterials(context)) { return false; }
 
 	return true;
 }
@@ -649,6 +652,33 @@ bool LoadMeshes(GltfContext& context) {
 		mesh->AttributeSize    = vertexSize;
 
 		AssetManager::SaveAsset(AssetManager::GetAssetMetadata(mesh->Handle), mesh);
+	}
+
+	return true;
+}
+
+bool LoadMaterials(GltfContext& context) {
+	const size_t materialCount = context.Asset->materials.size();
+
+	for (size_t i = 0; i < materialCount; ++i) {
+		const auto& gltfMaterial = context.Asset->materials[i];
+
+		auto materialName = "Material " + std::to_string(i);
+		if (!gltfMaterial.name.empty()) { materialName = gltfMaterial.name; }
+		auto material =
+			AssetManager::CreateAsset<Material>(context.AssetFolder / "Materials" / (materialName + ".lmaterial"));
+
+		if (gltfMaterial.pbrData) {
+			const auto& pbr           = *gltfMaterial.pbrData;
+			material->BaseColorFactor = glm::make_vec4(pbr.baseColorFactor.data());
+			material->MetallicFactor  = pbr.metallicFactor;
+			material->RoughnessFactor = pbr.roughnessFactor;
+		}
+
+		material->AlphaCutoff    = gltfMaterial.alphaCutoff;
+		material->EmissiveFactor = glm::make_vec3(gltfMaterial.emissiveFactor.data());
+
+		AssetManager::SaveAsset(AssetManager::GetAssetMetadata(material->Handle), material);
 	}
 
 	return true;

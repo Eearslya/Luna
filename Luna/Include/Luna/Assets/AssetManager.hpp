@@ -17,7 +17,7 @@ class AssetManager final {
 	static AssetHandle ImportAsset(const Path& assetPath);
 	static bool LoadAsset(const AssetMetadata& metadata, IntrusivePtr<Asset>& asset);
 	static void RenameAsset(const AssetMetadata& metadata, const std::string& newName);
-	static void SaveAsset(const AssetMetadata& metadata, const IntrusivePtr<Asset>& asset);
+	static bool SaveAsset(const AssetMetadata& metadata, const IntrusivePtr<Asset>& asset);
 	static void SaveLoaded();
 	static void UnloadAsset(const AssetMetadata& metadata);
 
@@ -39,6 +39,9 @@ class AssetManager final {
 		auto asset    = MakeHandle<T>(std::forward<Args>(args)...);
 		asset->Handle = metadata.Handle;
 		SaveAsset(metadata, asset);
+
+		const auto it = LoadedAssets.find(metadata.Handle);
+		if (it != LoadedAssets.end()) { LoadedAssets.erase(it); }
 
 		return asset;
 	}

@@ -31,6 +31,7 @@ static struct EditorState {
 	std::unique_ptr<SceneWindow> SceneWindow;
 	IntrusivePtr<Scene> Scene;
 	AssetHandle SceneHandle;
+	bool DemoWindow = false;
 } State;
 
 static void CloseProject();
@@ -88,6 +89,7 @@ void Editor::Update(double deltaTime) {
 
 		if (ImGui::BeginMenu("Window")) {
 			if (ImGui::MenuItem("Asset Registry")) { State.NewWindows.emplace_back(new AssetRegistryWindow); }
+			if (ImGui::MenuItem("ImGui Demo Window", nullptr, State.DemoWindow)) { State.DemoWindow = !State.DemoWindow; }
 
 			ImGui::EndMenu();
 		}
@@ -104,6 +106,8 @@ void Editor::Update(double deltaTime) {
 		std::remove_if(State.Windows.begin(), State.Windows.end(), [](auto& windowPtr) { return windowPtr->Closed(); }),
 		State.Windows.end());
 	for (auto& window : State.Windows) { window->Update(deltaTime); }
+
+	if (State.DemoWindow) { ImGui::ShowDemoWindow(&State.DemoWindow); }
 
 	UI::EndDockspace();
 }

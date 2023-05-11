@@ -131,6 +131,13 @@ void Window::Minimize() {
 	glfwIconifyWindow(_window);
 }
 
+void Window::SetCursor(MouseCursor cursor) {
+	if (_cursor != cursor) {
+		glfwSetCursor(_window, WindowManager::GetCursor(cursor));
+		_cursor = cursor;
+	}
+}
+
 void Window::SetPosition(const glm::ivec2& pos) {
 	glfwSetWindowPos(_window, pos.x, pos.y);
 }

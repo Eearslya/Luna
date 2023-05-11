@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Luna/Core/WindowManager.hpp>
 #include <Luna/Utility/Delegate.hpp>
 #include <Luna/Utility/EnumClass.hpp>
 #include <filesystem>
@@ -155,6 +156,7 @@ class Input {
 	static bool GetCursorHidden();
 	static glm::dvec2 GetCursorPosition();
 	static InputAction GetKey(Key key);
+	static void SetCursorShape(MouseCursor cursor);
 	static void SetCursorHidden(bool hidden);
 	static void SetCursorPosition(const glm::dvec2& position);
 

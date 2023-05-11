@@ -1,3 +1,5 @@
+#include <Luna/Assets/AssetManager.hpp>
+#include <Luna/Assets/Material.hpp>
 #include <Luna/Renderer/RenderQueue.hpp>
 #include <Luna/Renderer/ShaderSuite.hpp>
 #include <Luna/Renderer/StaticMesh.hpp>
@@ -13,6 +15,7 @@ struct StaticMeshRenderInfo {
 	vk::DeviceSize IndexCount             = 0;
 	vk::DeviceSize FirstVertex            = 0;
 	vk::DeviceSize FirstIndex             = 0;
+	Material::MaterialData MaterialData   = {};
 };
 
 struct StaticMeshInstanceInfo {
@@ -44,11 +47,31 @@ static void RenderStaticMesh(Vulkan::CommandBuffer& cmd, const RenderQueueData* 
 			instanceData[j]          = instanceInfo;
 		}
 
+		auto* materialData = cmd.AllocateTypedUniformData<Material::MaterialData>(1, 1, 1);
+		*materialData      = renderInfo.MaterialData;
+
 		cmd.DrawIndexed(renderInfo.IndexCount, toRender, renderInfo.FirstIndex, renderInfo.FirstVertex);
 	}
 }
 
-StaticMesh::StaticMesh(IntrusivePtr<Mesh> mesh, uint32_t submeshIndex) : _mesh(mesh), _submeshIndex(submeshIndex) {}
+StaticMesh::StaticMesh(IntrusivePtr<Mesh> mesh, uint32_t submeshIndex, IntrusivePtr<Material> material)
+		: _mesh(mesh), _submeshIndex(submeshIndex), _material(material) {
+	Hasher h;
+	h(_mesh->PositionBuffer->GetCookie());
+	h(_mesh->AttributeBuffer->GetCookie());
+	h(_mesh->TotalVertexCount);
+	h(_mesh->TotalIndexCount);
+	if (_material) {
+		h(_material->Handle);
+	} else {
+		h(uint64_t(0));
+	}
+	h(_mesh->Submeshes[_submeshIndex].VertexCount);
+	h(_mesh->Submeshes[_submeshIndex].IndexCount);
+	h(_mesh->Submeshes[_submeshIndex].FirstVertex);
+	h(_mesh->Submeshes[_submeshIndex].FirstIndex);
+	_instanceKey = h.Get();
+}
 
 void StaticMesh::Enqueue(const RenderContext& context, const RenderableInfo& self, RenderQueue& queue) const {
 	RenderQueueType queueType = RenderQueueType::Opaque;
@@ -56,7 +79,7 @@ void StaticMesh::Enqueue(const RenderContext& context, const RenderableInfo& sel
 	auto* instanceInfo      = queue.AllocateOne<StaticMeshInstanceInfo>();
 	instanceInfo->Transform = self.Transform;
 
-	auto* renderInfo = queue.Push<StaticMeshRenderInfo>(queueType, 0, 0, RenderStaticMesh, instanceInfo);
+	auto* renderInfo = queue.Push<StaticMeshRenderInfo>(queueType, _instanceKey, 0, RenderStaticMesh, instanceInfo);
 	if (renderInfo) {
 		renderInfo->Program         = queue.GetShaderSuites()[int(RenderableType::Mesh)].GetProgram({});
 		renderInfo->PositionBuffer  = _mesh->PositionBuffer.Get();
@@ -66,6 +89,12 @@ void StaticMesh::Enqueue(const RenderContext& context, const RenderableInfo& sel
 		renderInfo->IndexCount      = _mesh->Submeshes[_submeshIndex].IndexCount;
 		renderInfo->FirstVertex     = _mesh->Submeshes[_submeshIndex].FirstVertex;
 		renderInfo->FirstIndex      = _mesh->Submeshes[_submeshIndex].FirstIndex;
+
+		if (_material) {
+			renderInfo->MaterialData = _material->Data();
+		} else {
+			renderInfo->MaterialData = Material::MaterialData{};
+		}
 	}
 }
 

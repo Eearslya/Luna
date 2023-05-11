@@ -69,8 +69,8 @@ bool UIManager::Initialize() {
 	ImGuiIO& io = ImGui::GetIO();
 
 	// Basic config flags.
-	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
 	// Custom theming
 	{
@@ -201,13 +201,34 @@ bool UIManager::Initialize() {
 		io.KeyMap[ImGuiKey_Escape]      = int(Key::Escape);
 		io.KeyMap[ImGuiKey_KeyPadEnter] = int(Key::NumpadEnter);
 		io.KeyMap[ImGuiKey_A]           = int(Key::A);
+		io.KeyMap[ImGuiKey_B]           = int(Key::B);
 		io.KeyMap[ImGuiKey_C]           = int(Key::C);
+		io.KeyMap[ImGuiKey_D]           = int(Key::D);
+		io.KeyMap[ImGuiKey_E]           = int(Key::E);
+		io.KeyMap[ImGuiKey_F]           = int(Key::F);
+		io.KeyMap[ImGuiKey_G]           = int(Key::G);
+		io.KeyMap[ImGuiKey_H]           = int(Key::H);
+		io.KeyMap[ImGuiKey_I]           = int(Key::I);
+		io.KeyMap[ImGuiKey_J]           = int(Key::J);
+		io.KeyMap[ImGuiKey_K]           = int(Key::K);
+		io.KeyMap[ImGuiKey_L]           = int(Key::L);
+		io.KeyMap[ImGuiKey_M]           = int(Key::M);
+		io.KeyMap[ImGuiKey_N]           = int(Key::N);
+		io.KeyMap[ImGuiKey_O]           = int(Key::O);
+		io.KeyMap[ImGuiKey_P]           = int(Key::P);
+		io.KeyMap[ImGuiKey_Q]           = int(Key::Q);
+		io.KeyMap[ImGuiKey_R]           = int(Key::R);
+		io.KeyMap[ImGuiKey_S]           = int(Key::S);
+		io.KeyMap[ImGuiKey_T]           = int(Key::T);
+		io.KeyMap[ImGuiKey_U]           = int(Key::U);
 		io.KeyMap[ImGuiKey_V]           = int(Key::V);
+		io.KeyMap[ImGuiKey_W]           = int(Key::W);
 		io.KeyMap[ImGuiKey_X]           = int(Key::X);
 		io.KeyMap[ImGuiKey_Y]           = int(Key::Y);
 		io.KeyMap[ImGuiKey_Z]           = int(Key::Z);
 	}
 
+	io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors;
 	io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
 	UIState.Program = ShaderManager::RegisterGraphics("res://Shaders/ImGui.vert.glsl", "res://Shaders/ImGui.frag.glsl")
 	                    ->RegisterVariant()
@@ -244,6 +265,7 @@ bool UIManager::Initialize() {
 	Input::OnMouseButton += [](MouseButton button, InputAction action, InputMods mods) {
 		ImGuiIO& io = ImGui::GetIO();
 
+		io.AddMouseButtonEvent(int(button), action == InputAction::Press);
 		if (action == InputAction::Press && int(button) < ImGuiMouseButton_COUNT) {
 			UIState.MouseJustPressed[int(button)] = true;
 		}
@@ -256,8 +278,7 @@ bool UIManager::Initialize() {
 	Input::OnMouseScrolled += [](const glm::dvec2& scroll) {
 		ImGuiIO& io = ImGui::GetIO();
 
-		io.MouseWheelH += scroll.x;
-		io.MouseWheel += scroll.y;
+		io.AddMouseWheelEvent(scroll.x, scroll.y);
 	};
 
 	return true;
@@ -296,6 +317,43 @@ void UIManager::BeginFrame(double deltaTime) {
 		for (int i = 0; i < ImGuiMouseButton_COUNT; ++i) {
 			io.MouseDown[i] = UIState.MouseJustPressed[i] || Input::GetButton(MouseButton(i)) == InputAction::Press;
 			UIState.MouseJustPressed[i] = false;
+		}
+
+		auto cursor = ImGui::GetMouseCursor();
+		switch (cursor) {
+			case ImGuiMouseCursor_None:
+			case ImGuiMouseCursor_Arrow:
+			default:
+				Input::SetCursorShape(MouseCursor::Arrow);
+				break;
+
+			case ImGuiMouseCursor_TextInput:
+				Input::SetCursorShape(MouseCursor::IBeam);
+				break;
+
+			case ImGuiMouseCursor_ResizeAll:
+				Input::SetCursorShape(MouseCursor::ResizeAll);
+				break;
+
+			case ImGuiMouseCursor_ResizeNS:
+				Input::SetCursorShape(MouseCursor::ResizeNS);
+				break;
+
+			case ImGuiMouseCursor_ResizeEW:
+				Input::SetCursorShape(MouseCursor::ResizeEW);
+				break;
+
+			case ImGuiMouseCursor_ResizeNESW:
+				Input::SetCursorShape(MouseCursor::ResizeNESW);
+				break;
+
+			case ImGuiMouseCursor_ResizeNWSE:
+				Input::SetCursorShape(MouseCursor::ResizeNWSE);
+				break;
+
+			case ImGuiMouseCursor_Hand:
+				Input::SetCursorShape(MouseCursor::Hand);
+				break;
 		}
 
 		io.DeltaTime = deltaTime;

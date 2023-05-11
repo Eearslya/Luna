@@ -27,6 +27,10 @@ InputAction Input::GetKey(Key key) {
 	return static_cast<InputAction>(glfwGetKey(Engine::GetMainWindow()->GetHandle(), static_cast<int>(key)));
 }
 
+void Input::SetCursorShape(MouseCursor cursor) {
+	Engine::GetMainWindow()->SetCursor(cursor);
+}
+
 void Input::SetCursorHidden(bool hidden) {
 	if (State.CursorHidden != hidden) {
 		State.CursorHidden = hidden;

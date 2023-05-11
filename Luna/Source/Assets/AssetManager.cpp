@@ -1,5 +1,6 @@
 #include <Luna/Assets/AssetFile.hpp>
 #include <Luna/Assets/AssetManager.hpp>
+#include <Luna/Assets/Material.hpp>
 #include <Luna/Assets/Mesh.hpp>
 #include <Luna/Platform/Filesystem.hpp>
 #include <Luna/Project/Project.hpp>
@@ -149,6 +150,18 @@ bool AssetManager::LoadAsset(const AssetMetadata& metadata, IntrusivePtr<Asset>&
 			Scene* scene = reinterpret_cast<Scene*>(asset.Get());
 
 			return scene->Deserialize(file.Json);
+		} else if (metadata.Type == AssetType::Material) {
+			asset                   = MakeHandle<Material>();
+			Material& material      = *reinterpret_cast<Material*>(asset.Get());
+			const auto materialData = json::parse(file.Json);
+
+			material.BaseColorFactor = materialData.at("BaseColorFactor").get<glm::vec4>();
+			material.EmissiveFactor  = materialData.at("EmissiveFactor").get<glm::vec3>();
+			material.AlphaCutoff     = materialData.at("AlphaCutoff").get<float>();
+			material.MetallicFactor  = materialData.at("MetallicFactor").get<float>();
+			material.RoughnessFactor = materialData.at("RoughnessFactor").get<float>();
+
+			return true;
 		}
 	} catch (const std::exception& e) {
 		Log::Error("AssetManager",
@@ -175,10 +188,10 @@ void AssetManager::RenameAsset(const AssetMetadata& metadata, const std::string&
 	if (backend->MoveYield(newPath, metadata.FilePath)) { meta.FilePath = newPath; }
 }
 
-void AssetManager::SaveAsset(const AssetMetadata& metadata, const IntrusivePtr<Asset>& asset) {
+bool AssetManager::SaveAsset(const AssetMetadata& metadata, const IntrusivePtr<Asset>& asset) {
 	if (metadata.Type == AssetType::Mesh) {
 		const Mesh* mesh = reinterpret_cast<const Mesh*>(asset.Get());
-		if (mesh->BufferData.empty()) { return; }
+		if (mesh->BufferData.empty()) { return true; }
 
 		json assetData;
 		assetData["Bounds"]           = mesh->Bounds;
@@ -203,15 +216,31 @@ void AssetManager::SaveAsset(const AssetMetadata& metadata, const IntrusivePtr<A
 		file.Type   = AssetType::Mesh;
 		file.Binary = mesh->BufferData;
 		file.Json   = assetData.dump();
-		file.Save(metadata.FilePath);
+		return file.Save(metadata.FilePath);
 	} else if (metadata.Type == AssetType::Scene) {
 		const Scene* scene = reinterpret_cast<const Scene*>(asset.Get());
 
 		AssetFile file;
 		file.Type = AssetType::Scene;
 		file.Json = scene->Serialize();
-		file.Save(metadata.FilePath);
+		return file.Save(metadata.FilePath);
+	} else if (metadata.Type == AssetType::Material) {
+		const Material* material = reinterpret_cast<const Material*>(asset.Get());
+
+		json materialData;
+		materialData["BaseColorFactor"] = material->BaseColorFactor;
+		materialData["EmissiveFactor"]  = material->EmissiveFactor;
+		materialData["AlphaCutoff"]     = material->AlphaCutoff;
+		materialData["MetallicFactor"]  = material->MetallicFactor;
+		materialData["RoughnessFactor"] = material->RoughnessFactor;
+
+		AssetFile file;
+		file.Type = AssetType::Material;
+		file.Json = materialData.dump();
+		return file.Save(metadata.FilePath);
 	}
+
+	return false;
 }
 
 void AssetManager::SaveLoaded() {

@@ -1,4 +1,5 @@
 #include <Luna/Assets/AssetManager.hpp>
+#include <Luna/Assets/Material.hpp>
 #include <Luna/Assets/Mesh.hpp>
 #include <Luna/Editor/Editor.hpp>
 #include <Luna/Renderer/RenderContext.hpp>
@@ -63,6 +64,8 @@ void SceneRenderer::BuildRenderPass(Vulkan::CommandBuffer& cmd) {
 		auto variant = shader->RegisterVariant();
 		auto program = variant->GetProgram();
 
+		Material defaultMaterial;
+
 		cmd.SetOpaqueState();
 		cmd.SetProgram(program);
 		cmd.SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
@@ -85,7 +88,15 @@ void SceneRenderer::BuildRenderPass(Vulkan::CommandBuffer& cmd) {
 			cmd.SetIndexBuffer(*mesh->PositionBuffer, mesh->TotalVertexCount * 12, vk::IndexType::eUint32);
 			cmd.PushConstants(glm::value_ptr(transform), 0, sizeof(transform));
 
-			for (const auto& submesh : mesh->Submeshes) {
+			for (size_t i = 0; i < mesh->Submeshes.size(); ++i) {
+				const auto& submesh             = mesh->Submeshes[i];
+				Material* material              = &defaultMaterial;
+				IntrusivePtr<Material> matAsset = AssetManager::GetAsset<Material>(cMeshRenderer.MaterialAssets[i]);
+				if (matAsset) { material = matAsset.Get(); }
+
+				auto* materialData = cmd.AllocateTypedUniformData<Material::MaterialData>(1, 0, 1);
+				*materialData      = material->Data();
+
 				cmd.DrawIndexed(submesh.IndexCount, 1, submesh.FirstIndex, submesh.FirstVertex, 0);
 			}
 		}
@@ -159,7 +170,12 @@ void SceneRenderer::EnqueuePrepareRenderPass(RenderGraph& graph, TaskComposer& c
 				if (!mesh || !mesh->PositionBuffer) { continue; }
 
 				for (uint32_t i = 0; i < mesh->Submeshes.size(); ++i) {
-					_opaqueVisible.push_back(RenderableInfo{MakeHandle<StaticMesh>(mesh, i), transform});
+					IntrusivePtr<Material> material;
+					if (cMeshRenderer.MaterialAssets.size() > i) {
+						material = AssetManager::GetAsset<Material>(cMeshRenderer.MaterialAssets[i]);
+					}
+
+					_opaqueVisible.push_back(RenderableInfo{MakeHandle<StaticMesh>(mesh, i, material), transform});
 				}
 			}
 		});
