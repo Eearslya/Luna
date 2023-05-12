@@ -4,6 +4,15 @@
 using json = nlohmann::json;
 
 namespace glm {
+void from_json(const json& j, uvec2& v) {
+	v.x = j.at(0).get<unsigned int>();
+	v.y = j.at(1).get<unsigned int>();
+}
+
+void to_json(json& j, const uvec2& v) {
+	j = json::array({v.x, v.y});
+}
+
 void from_json(const json& j, vec3& v) {
 	v.x = j.at(0).get<float>();
 	v.y = j.at(1).get<float>();

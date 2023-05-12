@@ -83,6 +83,13 @@ struct BufferInfo {
 	}
 };
 
+struct DefaultImages {
+	Vulkan::ImageHandle Black2D;
+	Vulkan::ImageHandle Gray2D;
+	Vulkan::ImageHandle Normal2D;
+	Vulkan::ImageHandle White2D;
+};
+
 /**
  * Describes the actual, physical dimensions and characteristics of a resource.
  */

@@ -18,6 +18,7 @@ class SceneWindow final : public Observer {
 	void Invalidate();
 
 	bool _cameraControl  = false;
+	int _gizmoMode       = 0;
 	bool _focusNextFrame = false;
 	int _sceneView       = -1;
 	int _windowIndex;

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <imgui.h>
+//
+#include <ImGuizmo.h>
 
 #include <Luna/UI/IconsFontAwesome6.hpp>
 
@@ -18,5 +20,9 @@ bool CollapsingHeader(const char* label,
                       ImGuiTreeNodeFlags flags = 0,
                       const char* buttonLabel  = nullptr);
 void RenderFrameRounded(ImVec2 p_min, ImVec2 p_max, ImU32 fill_col, bool border, float rounding, ImDrawFlags drawFlags);
+
+void BeginButtonGroup(int count);
+bool GroupedButton(const char* label, bool selected = false, bool disabled = false);
+void EndButtonGroup();
 }  // namespace UI
 }  // namespace Luna

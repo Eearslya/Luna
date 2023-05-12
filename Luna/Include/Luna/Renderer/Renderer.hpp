@@ -13,6 +13,7 @@ class Renderer final {
 	static bool Initialize();
 	static void Shutdown();
 
+	static DefaultImages& GetDefaultImages();
 	static Vulkan::Device& GetDevice();
 	static RenderRunner& GetRunner(RendererSuiteType type);
 	static const Vulkan::ImageView& GetSceneView(int view);

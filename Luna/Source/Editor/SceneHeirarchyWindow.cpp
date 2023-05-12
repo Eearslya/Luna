@@ -3,6 +3,7 @@
 #include <Luna/Assets/AssetManager.hpp>
 #include <Luna/Assets/Material.hpp>
 #include <Luna/Assets/Mesh.hpp>
+#include <Luna/Assets/Texture.hpp>
 #include <Luna/Editor/Editor.hpp>
 #include <Luna/Editor/EditorContent.hpp>
 #include <Luna/Editor/SceneHeirarchyWindow.hpp>
@@ -47,6 +48,8 @@ void SceneHeirarchyWindow::Update(double deltaTime) {
 		}
 	}
 	ImGui::End();
+
+	Editor::SetSelectedEntity(_selected);
 
 	ImGui::SetNextWindowSizeConstraints(ImVec2(350.0f, -1.0f), ImVec2(std::numeric_limits<float>::infinity(), -1.0f));
 	if (ImGui::Begin("Inspector##SceneInspectorWindow") && _selected) {
@@ -93,6 +96,14 @@ static bool AssetButton(const char* id, AssetHandle& handle, AssetMetadata& meta
 	switch (T::GetAssetType()) {
 		case AssetType::Mesh:
 			assetIcon = ICON_FA_CIRCLE_NODES;
+			break;
+
+		case AssetType::Material:
+			assetIcon = ICON_FA_PAINTBRUSH;
+			break;
+
+		case AssetType::Texture:
+			assetIcon = ICON_FA_IMAGE;
 			break;
 
 		default:
@@ -374,6 +385,8 @@ void SceneHeirarchyWindow::DrawComponents(Entity& entity) {
 							material = AssetManager::GetAsset<Material>(materialMeta.Handle, true);
 						}
 
+						const auto TextureId = [&matId](const std::string& name) { return matId + "-Texture" + name; };
+
 						if (material) {
 							ImGui::TableNextColumn();
 							ImGui::Separator();
@@ -383,10 +396,34 @@ void SceneHeirarchyWindow::DrawComponents(Entity& entity) {
 							ImGui::TableNextColumn();
 							ImGui::Text("Albedo");
 							ImGui::TableNextColumn();
+							AssetMetadata albedoMeta;
+							AssetButton<Texture>(TextureId("Albedo").c_str(), material->Albedo, albedoMeta);
+
+							ImGui::TableNextColumn();
+							ImGui::Text("Albedo Factor");
+							ImGui::TableNextColumn();
 							ImGui::ColorEdit4("##BaseColorFactor", glm::value_ptr(material->BaseColorFactor));
 
 							ImGui::TableNextColumn();
+							ImGui::Text("PBR");
+							ImGui::TableNextColumn();
+							AssetMetadata pbrMeta;
+							AssetButton<Texture>(TextureId("PBR").c_str(), material->PBR, pbrMeta);
+
+							ImGui::TableNextColumn();
+							ImGui::Text("Normal");
+							ImGui::TableNextColumn();
+							AssetMetadata normalMeta;
+							AssetButton<Texture>(TextureId("Normal").c_str(), material->Normal, normalMeta);
+
+							ImGui::TableNextColumn();
 							ImGui::Text("Emissive");
+							ImGui::TableNextColumn();
+							AssetMetadata emissiveMeta;
+							AssetButton<Texture>(TextureId("Emissive").c_str(), material->Emissive, emissiveMeta);
+
+							ImGui::TableNextColumn();
+							ImGui::Text("Emissive Factor");
 							ImGui::TableNextColumn();
 							ImGui::ColorEdit3("##EmissiveFactor", glm::value_ptr(material->EmissiveFactor));
 						}

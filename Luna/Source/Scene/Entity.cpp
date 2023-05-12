@@ -49,6 +49,11 @@ void Entity::Rotate(const glm::vec3& rDelta) {
 	Transform().Rotation += rDelta;
 }
 
+void Entity::RotateAround(const glm::vec3& point, const glm::quat& rotation, TransformSpace space) {
+	auto& transform            = Transform();
+	glm::vec3 parentSpacePoint = glm::vec3(0);
+}
+
 void Entity::Scale(const glm::vec3& sDelta) {
 	Transform().Scale *= sDelta;
 }

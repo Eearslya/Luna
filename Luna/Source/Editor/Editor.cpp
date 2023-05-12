@@ -30,6 +30,7 @@ static struct EditorState {
 	std::vector<std::unique_ptr<EditorWindow>> NewWindows;
 	std::unique_ptr<SceneWindow> SceneWindow;
 	IntrusivePtr<Scene> Scene;
+	Entity SelectedEntity;
 	AssetHandle SceneHandle;
 	bool DemoWindow = false;
 } State;
@@ -75,6 +76,8 @@ void Editor::Update(double deltaTime) {
 		UpdateProjectBrowser();
 		return;
 	}
+
+	if (!State.SelectedEntity) { State.SelectedEntity = {}; }
 
 	UI::BeginDockspace(true);
 
@@ -125,6 +128,10 @@ Scene& Editor::GetActiveScene() {
 	return *State.Scene;
 }
 
+Entity& Editor::GetSelectedEntity() {
+	return State.SelectedEntity;
+}
+
 void Editor::RequestAsset(const Path& assetPath) {
 	const auto extension = assetPath.Extension();
 
@@ -148,6 +155,10 @@ void Editor::RequestAsset(const Path& assetPath) {
 			}
 		}
 	}
+}
+
+void Editor::SetSelectedEntity(const Entity& entity) {
+	State.SelectedEntity = entity;
 }
 
 void CloseProject() {

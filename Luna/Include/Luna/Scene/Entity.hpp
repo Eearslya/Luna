@@ -7,6 +7,8 @@
 namespace Luna {
 struct TransformComponent;
 
+enum class TransformSpace { Local, Parent, World };
+
 class Entity {
  public:
 	Entity() = default;
@@ -40,6 +42,7 @@ class Entity {
 	Entity GetParent() const;
 
 	void Rotate(const glm::vec3& rDelta);
+	void RotateAround(const glm::vec3& point, const glm::quat& rotation, TransformSpace space);
 	void Scale(const glm::vec3& sDelta);
 	void Scale(float sDelta);
 	void SetParent(Entity newParent);

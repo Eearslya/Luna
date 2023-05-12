@@ -1,6 +1,8 @@
 #include <Luna/Assets/AssetManager.hpp>
 #include <Luna/Assets/Material.hpp>
+#include <Luna/Assets/Texture.hpp>
 #include <Luna/Renderer/RenderQueue.hpp>
+#include <Luna/Renderer/Renderer.hpp>
 #include <Luna/Renderer/ShaderSuite.hpp>
 #include <Luna/Renderer/StaticMesh.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
@@ -16,6 +18,10 @@ struct StaticMeshRenderInfo {
 	vk::DeviceSize FirstVertex            = 0;
 	vk::DeviceSize FirstIndex             = 0;
 	Material::MaterialData MaterialData   = {};
+	const Vulkan::ImageView* Albedo       = nullptr;
+	const Vulkan::ImageView* Normal       = nullptr;
+	const Vulkan::ImageView* PBR          = nullptr;
+	const Vulkan::ImageView* Emissive     = nullptr;
 };
 
 struct StaticMeshInstanceInfo {
@@ -49,6 +55,11 @@ static void RenderStaticMesh(Vulkan::CommandBuffer& cmd, const RenderQueueData* 
 
 		auto* materialData = cmd.AllocateTypedUniformData<Material::MaterialData>(1, 1, 1);
 		*materialData      = renderInfo.MaterialData;
+
+		cmd.SetSrgbTexture(1, 2, *renderInfo.Albedo, Vulkan::StockSampler::DefaultGeometryFilterWrap);
+		cmd.SetUnormTexture(1, 3, *renderInfo.Normal, Vulkan::StockSampler::DefaultGeometryFilterWrap);
+		cmd.SetUnormTexture(1, 4, *renderInfo.PBR, Vulkan::StockSampler::DefaultGeometryFilterWrap);
+		cmd.SetSrgbTexture(1, 5, *renderInfo.Emissive, Vulkan::StockSampler::DefaultGeometryFilterWrap);
 
 		cmd.DrawIndexed(renderInfo.IndexCount, toRender, renderInfo.FirstIndex, renderInfo.FirstVertex);
 	}
@@ -90,10 +101,27 @@ void StaticMesh::Enqueue(const RenderContext& context, const RenderableInfo& sel
 		renderInfo->FirstVertex     = _mesh->Submeshes[_submeshIndex].FirstVertex;
 		renderInfo->FirstIndex      = _mesh->Submeshes[_submeshIndex].FirstIndex;
 
+		const auto MatTexture = [&](AssetHandle textureAsset,
+		                            const Vulkan::ImageHandle& placeholder) -> const Vulkan::ImageView* {
+			auto texture = AssetManager::GetAsset<Texture>(textureAsset, true);
+			if (!texture) { return &placeholder->GetView(); }
+			return &texture->Image->GetView();
+		};
+
+		const auto& def = Renderer::GetDefaultImages();
+
 		if (_material) {
 			renderInfo->MaterialData = _material->Data();
+			renderInfo->Albedo       = MatTexture(_material->Albedo, def.White2D);
+			renderInfo->Normal       = MatTexture(_material->Normal, def.Normal2D);
+			renderInfo->PBR          = MatTexture(_material->PBR, def.White2D);
+			renderInfo->Emissive     = MatTexture(_material->Emissive, def.White2D);
 		} else {
 			renderInfo->MaterialData = Material::MaterialData{};
+			renderInfo->Albedo       = &def.White2D->GetView();
+			renderInfo->Normal       = &def.Normal2D->GetView();
+			renderInfo->PBR          = &def.White2D->GetView();
+			renderInfo->Emissive     = &def.White2D->GetView();
 		}
 	}
 }

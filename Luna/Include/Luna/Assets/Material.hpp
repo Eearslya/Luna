@@ -26,6 +26,11 @@ class Material : public Asset {
 		                    .RoughnessFactor = RoughnessFactor};
 	}
 
+	AssetHandle Albedo   = 0;
+	AssetHandle Normal   = 0;
+	AssetHandle PBR      = 0;
+	AssetHandle Emissive = 0;
+
 	glm::vec4 BaseColorFactor = glm::vec4(1, 1, 1, 1);
 	glm::vec3 EmissiveFactor  = glm::vec3(0, 0, 0);
 	float AlphaCutoff         = 0.5f;

@@ -1,4 +1,6 @@
 #include <imgui.h>
+//
+#include <ImGuizmo.h>
 
 #include <Luna/Core/Engine.hpp>
 #include <Luna/Core/Input.hpp>
@@ -361,6 +363,8 @@ void UIManager::BeginFrame(double deltaTime) {
 
 	UIState.NextTexture = 0;
 	ImGui::NewFrame();
+	ImGuizmo::BeginFrame();
+	ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 
 	if (UIState.AlertDialogState.Active) {
 		const std::string dialogId = fmt::format("{}##UIManagerAlertDialog", UIState.AlertDialogState.Title);

@@ -1,8 +1,10 @@
 #include <mikktspace.h>
+#include <stb_image.h>
 
 #include <Luna/Assets/AssetManager.hpp>
 #include <Luna/Assets/Material.hpp>
 #include <Luna/Assets/Mesh.hpp>
+#include <Luna/Assets/Texture.hpp>
 #include <Luna/Editor/MeshGltfImporter.hpp>
 #include <Luna/Platform/Filesystem.hpp>
 #include <Luna/Utility/Path.hpp>
@@ -106,6 +108,13 @@ struct Buffer {
 	std::vector<uint8_t> Data;
 };
 
+struct Image {
+	std::string Name;
+	uint32_t Width;
+	uint32_t Height;
+	std::vector<uint8_t> Pixels;
+};
+
 struct GltfContext {
 	Path SourcePath;
 	Path GltfPath;
@@ -113,6 +122,7 @@ struct GltfContext {
 	Path AssetFolder;
 	std::unique_ptr<fastgltf::Asset> Asset;
 	std::vector<Buffer> Buffers;
+	std::vector<Image> Images;
 };
 
 struct Vertex {
@@ -398,6 +408,8 @@ static MeshProcessingSteps GetProcessingSteps(VertexAttributes attributes) {
 static bool ParseGltf(GltfContext& context);
 static bool LoadBuffers(GltfContext& context);
 static bool LoadMeshes(GltfContext& context);
+static bool LoadImages(GltfContext& context);
+static bool LoadTextures(GltfContext& context);
 static bool LoadMaterials(GltfContext& context);
 
 bool MeshGltfImporter::Import(const Path& sourcePath) {
@@ -412,6 +424,8 @@ bool MeshGltfImporter::Import(const Path& sourcePath) {
 	if (!ParseGltf(context)) { return false; }
 	if (!LoadBuffers(context)) { return false; }
 	if (!LoadMeshes(context)) { return false; }
+	if (!LoadImages(context)) { return false; }
+	if (!LoadTextures(context)) { return false; }
 	if (!LoadMaterials(context)) { return false; }
 
 	return true;
@@ -448,6 +462,7 @@ bool ParseGltf(GltfContext& context) {
 	context.Asset = loaded->getParsedAsset();
 
 	context.Buffers.resize(context.Asset->buffers.size());
+	context.Images.resize(context.Asset->images.size());
 
 	return true;
 }
@@ -652,6 +667,72 @@ bool LoadMeshes(GltfContext& context) {
 		mesh->AttributeSize    = vertexSize;
 
 		AssetManager::SaveAsset(AssetManager::GetAssetMetadata(mesh->Handle), mesh);
+	}
+
+	return true;
+}
+
+bool LoadImages(GltfContext& context) {
+	const size_t imageCount = context.Asset->images.size();
+
+	for (size_t i = 0; i < imageCount; ++i) {
+		const auto& gltfImage = context.Asset->images[i];
+		auto& image           = context.Images[i];
+
+		std::vector<uint8_t> imageData;
+		std::visit(Overloaded{[](auto& arg) {},
+		                      [&](const fastgltf::sources::Vector& vector) { imageData = vector.bytes; },
+		                      [&](const fastgltf::sources::URI& uri) {
+														const Path path = context.GltfFolder / std::string(uri.uri.path());
+														image.Name      = path.Stem();
+														auto map        = Filesystem::OpenReadOnlyMapping(path);
+														if (!map) { return; }
+														const uint8_t* dataStart = map->Data<uint8_t>() + uri.fileByteOffset;
+														imageData                = std::vector<uint8_t>(dataStart, dataStart + map->GetSize());
+													},
+		                      [&](const fastgltf::sources::BufferView& bufferView) {
+														const auto& gltfBufferView = context.Asset->bufferViews[bufferView.bufferViewIndex];
+														const auto& buffer         = context.Buffers[gltfBufferView.bufferIndex];
+														const uint8_t* dataStart   = buffer.Data.data() + gltfBufferView.byteOffset;
+														imageData = std::vector<uint8_t>(dataStart, dataStart + gltfBufferView.byteLength);
+													}},
+		           gltfImage.data);
+
+		if (imageData.size() == 0) { return false; }
+
+		int width, height, components;
+		stbi_uc* pixels =
+			stbi_load_from_memory(imageData.data(), imageData.size(), &width, &height, &components, STBI_rgb_alpha);
+		if (pixels == nullptr) { return false; }
+
+		image.Width  = width;
+		image.Height = height;
+		image.Pixels = std::vector<uint8_t>(pixels, pixels + (width * height * 4));
+
+		stbi_image_free(pixels);
+	}
+
+	return true;
+}
+
+bool LoadTextures(GltfContext& context) {
+	const size_t textureCount = context.Asset->textures.size();
+
+	for (size_t i = 0; i < textureCount; ++i) {
+		const auto& gltfTexture = context.Asset->textures[i];
+		if (!gltfTexture.imageIndex) { return false; }
+
+		const auto& image = context.Images[*gltfTexture.imageIndex];
+
+		auto textureName = "Texture " + std::to_string(i);
+		if (!image.Name.empty()) { textureName = image.Name; }
+		auto texture = AssetManager::CreateAsset<Texture>(context.AssetFolder / "Textures" / (textureName + ".ltexture"));
+
+		texture->Format    = vk::Format::eR8G8B8A8Srgb;
+		texture->Size      = glm::uvec2(image.Width, image.Height);
+		texture->ImageData = image.Pixels;
+
+		AssetManager::SaveAsset(AssetManager::GetAssetMetadata(texture->Handle), texture);
 	}
 
 	return true;

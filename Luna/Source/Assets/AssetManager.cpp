@@ -2,6 +2,7 @@
 #include <Luna/Assets/AssetManager.hpp>
 #include <Luna/Assets/Material.hpp>
 #include <Luna/Assets/Mesh.hpp>
+#include <Luna/Assets/Texture.hpp>
 #include <Luna/Platform/Filesystem.hpp>
 #include <Luna/Project/Project.hpp>
 #include <Luna/Renderer/Renderer.hpp>
@@ -11,6 +12,7 @@
 #include <Luna/Utility/Threading.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/Device.hpp>
+#include <Luna/Vulkan/Image.hpp>
 #include <nlohmann/json.hpp>
 
 using nlohmann::json;
@@ -155,11 +157,32 @@ bool AssetManager::LoadAsset(const AssetMetadata& metadata, IntrusivePtr<Asset>&
 			Material& material      = *reinterpret_cast<Material*>(asset.Get());
 			const auto materialData = json::parse(file.Json);
 
+			material.Albedo          = materialData.at("Albedo").get<uint64_t>();
+			material.Normal          = materialData.at("Normal").get<uint64_t>();
+			material.PBR             = materialData.at("PBR").get<uint64_t>();
+			material.Emissive        = materialData.at("Emissive").get<uint64_t>();
 			material.BaseColorFactor = materialData.at("BaseColorFactor").get<glm::vec4>();
 			material.EmissiveFactor  = materialData.at("EmissiveFactor").get<glm::vec3>();
 			material.AlphaCutoff     = materialData.at("AlphaCutoff").get<float>();
 			material.MetallicFactor  = materialData.at("MetallicFactor").get<float>();
 			material.RoughnessFactor = materialData.at("RoughnessFactor").get<float>();
+
+			return true;
+		} else if (metadata.Type == AssetType::Texture) {
+			asset                  = MakeHandle<Texture>();
+			Texture& texture       = *reinterpret_cast<Texture*>(asset.Get());
+			const auto textureData = json::parse(file.Json);
+
+			texture.Format = static_cast<vk::Format>(textureData.at("Format").get<uint32_t>());
+			texture.Size   = textureData.at("Size").get<glm::uvec2>();
+
+			if (file.Binary.size() > 0) {
+				auto& device = Renderer::GetDevice();
+				auto imageCI = Vulkan::ImageCreateInfo::Immutable2D(texture.Format, texture.Size.x, texture.Size.y, true);
+				imageCI.MiscFlags |= Vulkan::ImageCreateFlagBits::MutableSrgb;
+				const Vulkan::ImageInitialData imageData{.Data = file.Binary.data()};
+				texture.Image = device.CreateImage(imageCI, &imageData);
+			}
 
 			return true;
 		}
@@ -214,7 +237,7 @@ bool AssetManager::SaveAsset(const AssetMetadata& metadata, const IntrusivePtr<A
 
 		AssetFile file;
 		file.Type   = AssetType::Mesh;
-		file.Binary = mesh->BufferData;
+		file.Binary = std::move(mesh->BufferData);
 		file.Json   = assetData.dump();
 		return file.Save(metadata.FilePath);
 	} else if (metadata.Type == AssetType::Scene) {
@@ -228,6 +251,10 @@ bool AssetManager::SaveAsset(const AssetMetadata& metadata, const IntrusivePtr<A
 		const Material* material = reinterpret_cast<const Material*>(asset.Get());
 
 		json materialData;
+		materialData["Albedo"]          = uint64_t(material->Albedo);
+		materialData["Normal"]          = uint64_t(material->Normal);
+		materialData["PBR"]             = uint64_t(material->PBR);
+		materialData["Emissive"]        = uint64_t(material->Emissive);
 		materialData["BaseColorFactor"] = material->BaseColorFactor;
 		materialData["EmissiveFactor"]  = material->EmissiveFactor;
 		materialData["AlphaCutoff"]     = material->AlphaCutoff;
@@ -237,6 +264,19 @@ bool AssetManager::SaveAsset(const AssetMetadata& metadata, const IntrusivePtr<A
 		AssetFile file;
 		file.Type = AssetType::Material;
 		file.Json = materialData.dump();
+		return file.Save(metadata.FilePath);
+	} else if (metadata.Type == AssetType::Texture) {
+		const Texture* texture = reinterpret_cast<const Texture*>(asset.Get());
+		if (texture->ImageData.empty()) { return true; }
+
+		json assetData;
+		assetData["Format"] = uint32_t(texture->Format);
+		assetData["Size"]   = texture->Size;
+
+		AssetFile file;
+		file.Type   = AssetType::Texture;
+		file.Binary = std::move(texture->ImageData);
+		file.Json   = assetData.dump();
 		return file.Save(metadata.FilePath);
 	}
 

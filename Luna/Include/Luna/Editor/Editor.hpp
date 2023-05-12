@@ -3,6 +3,7 @@
 #include <Luna/Utility/Path.hpp>
 
 namespace Luna {
+class Entity;
 class Scene;
 
 class Editor final {
@@ -12,6 +13,8 @@ class Editor final {
 	static void Shutdown();
 
 	static Scene& GetActiveScene();
+	static Entity& GetSelectedEntity();
 	static void RequestAsset(const Path& assetPath);
+	static void SetSelectedEntity(const Entity& entity);
 };
 }  // namespace Luna

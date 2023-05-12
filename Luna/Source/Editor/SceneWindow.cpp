@@ -12,9 +12,12 @@
 #include <Luna/Utility/Threading.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Device.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/matrix_decompose.hpp>
 
 namespace Luna {
 SceneWindow::SceneWindow(int index) : _windowIndex(index), _windowSize(0.0f, 0.0f) {
+	_gizmoMode   = ImGuizmo::TRANSLATE;
 	_sceneView   = Renderer::RegisterSceneView();
 	_windowTitle = "Scene##SceneWindow" + std::to_string(_windowIndex);
 
@@ -81,6 +84,70 @@ void SceneWindow::Update(double deltaTime) {
 
 		Renderer::UpdateSceneView(_sceneView, int(imWindowSize.x), int(imWindowSize.y), camera);
 		ImGui::Image(UIManager::SceneView(_sceneView), imWindowSize);
+
+		auto gizmoButtons = ImGui::GetWindowContentRegionMin();
+		gizmoButtons.x += 8.0f;
+		gizmoButtons.y += 8.0f;
+		ImGui::SetCursorPos(gizmoButtons);
+
+		UI::BeginButtonGroup(3);
+		if (UI::GroupedButton(ICON_FA_ARROWS_UP_DOWN_LEFT_RIGHT, _gizmoMode == ImGuizmo::TRANSLATE)) {
+			_gizmoMode = ImGuizmo::TRANSLATE;
+		}
+		if (UI::GroupedButton(ICON_FA_ARROW_ROTATE_RIGHT, _gizmoMode == ImGuizmo::ROTATE)) {
+			_gizmoMode = ImGuizmo::ROTATE;
+		}
+		if (UI::GroupedButton(ICON_FA_UP_RIGHT_AND_DOWN_LEFT_FROM_CENTER, _gizmoMode == ImGuizmo::SCALE)) {
+			_gizmoMode = ImGuizmo::SCALE;
+		}
+		UI::EndButtonGroup();
+
+		auto selected = Editor::GetSelectedEntity();
+		if (selected) {
+			const auto windowPos = ImGui::GetWindowPos();
+			auto windowMax       = ImGui::GetWindowContentRegionMax();
+			auto windowMin       = ImGui::GetWindowContentRegionMin();
+			windowMax.x += windowPos.x;
+			windowMax.y += windowPos.y;
+			windowMin.x += windowPos.x;
+			windowMin.y += windowPos.y;
+			const ImVec2 windowSize(windowMax.x - windowMin.x, windowMax.y - windowMin.y);
+
+			auto transform  = selected.GetGlobalTransform();
+			glm::mat4 delta = glm::mat4(1.0f);
+			const auto view = camera.GetView();
+			auto proj       = camera.GetProjection();
+			proj[0].y *= -1.0f;
+			proj[1].y *= -1.0f;
+			proj[2].y *= -1.0f;
+			proj[3].y *= -1.0f;
+			ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
+			ImGuizmo::SetRect(windowMin.x, windowMin.y, windowSize.x, windowSize.y);
+			if (ImGuizmo::Manipulate(glm::value_ptr(view),
+			                         glm::value_ptr(proj),
+			                         ImGuizmo::OPERATION(_gizmoMode),
+			                         ImGuizmo::LOCAL,
+			                         glm::value_ptr(transform),
+			                         glm::value_ptr(delta),
+			                         nullptr,
+			                         nullptr,
+			                         nullptr)) {
+				glm::vec3 translate;
+				glm::quat rotate;
+				glm::vec3 scale;
+				glm::vec3 skew;
+				glm::vec4 perspective;
+				glm::decompose(delta, scale, rotate, translate, skew, perspective);
+
+				if (_gizmoMode == ImGuizmo::TRANSLATE) {
+					selected.Translate(translate);
+				} else if (_gizmoMode == ImGuizmo::ROTATE) {
+					selected.Rotate(glm::eulerAngles(rotate));
+				} else if (_gizmoMode == ImGuizmo::SCALE) {
+					selected.Scale(scale);
+				}
+			}
+		}
 	}
 
 	ImGui::End();

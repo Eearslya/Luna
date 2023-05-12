@@ -1,6 +1,8 @@
 #include <imgui_internal.h>
 
 #include <Luna/UI/UI.hpp>
+#include <string>
+#include <vector>
 
 using namespace ImGui;
 
@@ -114,5 +116,42 @@ void RenderFrameRounded(
 	}
 }
 
+static int ButtonGroupCount         = 0;
+static int CurrentButtonGroupButton = 0;
+
+void BeginButtonGroup(int count) {
+	ButtonGroupCount         = count;
+	CurrentButtonGroupButton = 0;
+	ImGui::BeginGroup();
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(-1, 0));
+}
+
+bool GroupedButton(const char* label, bool selected, bool disabled) {
+	ImDrawFlags flags = ImDrawFlags_RoundCornersNone;
+	if (ButtonGroupCount == 1) {
+		flags = ImDrawFlags_RoundCornersAll;
+	} else if (CurrentButtonGroupButton == 0) {
+		flags = ImDrawFlags_RoundCornersLeft;
+	} else if (CurrentButtonGroupButton == (ButtonGroupCount - 1)) {
+		flags = ImDrawFlags_RoundCornersRight;
+	}
+
+	if (selected) { ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_TitleBgActive)); }
+	if (disabled) { ImGui::BeginDisabled(); }
+	const bool clicked = ButtonExRounded(label, {}, 0, flags);
+	if (disabled) { ImGui::EndDisabled(); }
+	if (selected) { ImGui::PopStyleColor(); }
+
+	if (CurrentButtonGroupButton != (ButtonGroupCount - 1)) { ImGui::SameLine(); }
+
+	CurrentButtonGroupButton++;
+
+	return clicked;
+}
+
+void EndButtonGroup() {
+	ImGui::PopStyleVar();
+	ImGui::EndGroup();
+}
 }  // namespace UI
 }  // namespace Luna

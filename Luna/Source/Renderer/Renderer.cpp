@@ -17,6 +17,7 @@
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Context.hpp>
 #include <Luna/Vulkan/Device.hpp>
+#include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
 #include <Tracy/Tracy.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -62,6 +63,7 @@ static struct RendererState {
 	Hash GraphHash = 0;
 	RenderGraph Graph;
 	std::array<RenderRunnerHandle, RendererSuiteTypeCount> Runners;
+	DefaultImages DefaultImages;
 } State;
 
 bool Renderer::Initialize() {
@@ -78,16 +80,67 @@ bool Renderer::Initialize() {
 	State.Runners[int(RendererSuiteType::PrepassDepth)]       = MakeHandle<RenderRunner>(RendererType::DepthOnly);
 	State.Runners[int(RendererSuiteType::Deferred)]           = MakeHandle<RenderRunner>(RendererType::GeneralDeferred);
 
+	// Create placeholder textures.
+	{
+		// All textures will be 4x4 to allow for minimum texel size.
+		constexpr uint32_t width    = 4;
+		constexpr uint32_t height   = 4;
+		constexpr size_t pixelCount = width * height;
+		uint32_t pixels[pixelCount];
+
+		const Vulkan::ImageCreateInfo imageCI2D = {
+			.Domain        = Vulkan::ImageDomain::Physical,
+			.Width         = width,
+			.Height        = height,
+			.Depth         = 1,
+			.MipLevels     = 1,
+			.ArrayLayers   = 1,
+			.Format        = vk::Format::eR8G8B8A8Unorm,
+			.InitialLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+			.Type          = vk::ImageType::e2D,
+			.Usage         = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eInputAttachment,
+			.Samples       = vk::SampleCountFlagBits::e1,
+			.MiscFlags     = Vulkan::ImageCreateFlagBits::MutableSrgb,
+		};
+
+		Vulkan::ImageInitialData initialImages[6];
+		for (int i = 0; i < 6; ++i) { initialImages[i] = Vulkan::ImageInitialData{.Data = &pixels}; }
+
+		// Black images
+		std::fill(pixels, pixels + pixelCount, 0xff000000);
+		State.DefaultImages.Black2D = State.Device->CreateImage(imageCI2D, initialImages);
+
+		// Gray images
+		std::fill(pixels, pixels + pixelCount, 0xff808080);
+		State.DefaultImages.Gray2D = State.Device->CreateImage(imageCI2D, initialImages);
+
+		// Normal images
+		std::fill(pixels, pixels + pixelCount, 0xffff8080);
+		State.DefaultImages.Normal2D = State.Device->CreateImage(imageCI2D, initialImages);
+
+		// White images
+		std::fill(pixels, pixels + pixelCount, 0xffffffff);
+		State.DefaultImages.White2D = State.Device->CreateImage(imageCI2D, initialImages);
+	}
+
 	return true;
 }
 
 void Renderer::Shutdown() {
 	ZoneScopedN("Renderer::Shutdown");
 
+	State.DefaultImages.White2D.Reset();
+	State.DefaultImages.Normal2D.Reset();
+	State.DefaultImages.Gray2D.Reset();
+	State.DefaultImages.Black2D.Reset();
 	for (auto& runner : State.Runners) { runner.Reset(); }
 	State.Graph.Reset();
 	State.Device.Reset();
 	State.Context.Reset();
+}
+
+DefaultImages& Renderer::GetDefaultImages() {
+	return State.DefaultImages;
 }
 
 Vulkan::Device& Renderer::GetDevice() {
