@@ -8,6 +8,7 @@
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
+#include <Tracy/Tracy.hpp>
 #include <glm/glm.hpp>
 
 namespace Luna {
@@ -19,6 +20,8 @@ RenderGraph::RenderGraph() {}
 RenderGraph::~RenderGraph() noexcept {}
 
 void RenderGraph::Bake() {
+	ZoneScopedN("RenderGraph::Bake");
+
 	// Allow the Render Passes a chance to set up their dependencies.
 	for (auto& pass : _passes) { pass->SetupDependencies(); }
 
@@ -106,6 +109,8 @@ void RenderGraph::Bake() {
 }
 
 void RenderGraph::EnqueueRenderPasses(Vulkan::Device& device, TaskComposer& composer) {
+	ZoneScopedN("RenderGraph::EnqueueRenderPasses");
+
 	const size_t count = _physicalPasses.size();
 	_passSubmissionStates.clear();
 	_passSubmissionStates.resize(count);
@@ -503,11 +508,15 @@ void RenderGraph::SetBackbufferSource(const std::string& name) {
 }
 
 void RenderGraph::BuildAliases() {
+	ZoneScopedN("RenderGraph::BuildAliases");
+
 	_physicalAliases.resize(_physicalDimensions.size());
 	std::fill(_physicalAliases.begin(), _physicalAliases.end(), RenderResource::Unused);
 }
 
 void RenderGraph::BuildBarriers() {
+	ZoneScopedN("RenderGraph::BuildBarriers");
+
 	// Here we handle the memory barriers and dependencies to keep our graph executing properly.
 	// Each resource may need a flush barrier, an invalidate barrier, or both.
 	// An Invalidate barrier is used for inputs, to invalidate the cache and ensure all pending writes have finished
@@ -720,6 +729,8 @@ void RenderGraph::BuildBarriers() {
 }
 
 void RenderGraph::BuildPhysicalBarriers() {
+	ZoneScopedN("RenderGraph::BuildPhysicalBarriers");
+
 	auto barrierIt = _passBarriers.begin();
 
 	const auto FlushAccessToInvalidate = [](vk::AccessFlags2 flags) -> vk::AccessFlags2 {
@@ -865,6 +876,8 @@ void RenderGraph::BuildPhysicalBarriers() {
 }
 
 void RenderGraph::BuildPhysicalPasses() {
+	ZoneScopedN("RenderGraph::BuildPhysicalPasses");
+
 	_physicalPasses.clear();
 
 	PhysicalPass physicalPass;
@@ -1012,6 +1025,8 @@ void RenderGraph::BuildPhysicalPasses() {
 }
 
 void RenderGraph::BuildPhysicalResources() {
+	ZoneScopedN("RenderGraph::BuildPhysicalResources");
+
 	uint32_t physicalIndex = 0;  // The next index to assign to a physical resource.
 
 	for (const auto& passIndex : _passStack) {
@@ -1299,6 +1314,8 @@ void RenderGraph::BuildPhysicalResources() {
 }
 
 void RenderGraph::BuildRenderPassInfo() {
+	ZoneScopedN("RenderGraph::BuildRenderPassInfo");
+
 	for (uint32_t physicalPassIndex = 0; physicalPassIndex < _physicalPasses.size(); ++physicalPassIndex) {
 		auto& physicalPass = _physicalPasses[physicalPassIndex];
 
@@ -1473,6 +1490,8 @@ void RenderGraph::BuildRenderPassInfo() {
 }
 
 void RenderGraph::BuildTransients() {
+	ZoneScopedN("RenderGraph::BuildTransients");
+
 	std::vector<uint32_t> physicalPassUsed(_physicalDimensions.size(), RenderPass::Unused);
 
 	// First, strip away the transient flag for anything that is not allowed to be transient.
@@ -1581,6 +1600,8 @@ void RenderGraph::EnqueueRenderPass(Vulkan::Device& device,
 }
 
 void RenderGraph::FilterPasses() {
+	ZoneScopedN("RenderGraph::FilterPasses");
+
 	std::unordered_set<uint32_t> seen;
 	auto outputIt = _passStack.begin();
 	for (auto it = _passStack.begin(); it != _passStack.end(); ++it) {
@@ -1630,6 +1651,8 @@ bool RenderGraph::NeedsInvalidate(const Barrier& barrier, const PipelineEvent& e
 }
 
 void RenderGraph::PerformScaleRequests(Vulkan::CommandBuffer& cmd, const std::vector<ScaledClearRequest>& requests) {
+	ZoneScopedN("RenderGraph::PerformScaleRequests");
+
 	if (requests.empty()) { return; }
 
 	std::vector<std::pair<std::string, int>> defines;
@@ -1657,6 +1680,8 @@ void RenderGraph::PerformScaleRequests(Vulkan::CommandBuffer& cmd, const std::ve
 }
 
 void RenderGraph::PhysicalPassEnqueueComputeCommands(const PhysicalPass& physicalPass, PassSubmissionState& state) {
+	ZoneScopedN("RenderGraph::PhysicalPassEnqueueComputeCommands");
+
 	auto& cmd = *state.Cmd;
 
 	auto& pass = *_passes[physicalPass.Passes.front()];
@@ -1664,6 +1689,8 @@ void RenderGraph::PhysicalPassEnqueueComputeCommands(const PhysicalPass& physica
 }
 
 void RenderGraph::PhysicalPassEnqueueGraphicsCommands(const PhysicalPass& physicalPass, PassSubmissionState& state) {
+	ZoneScopedN("RenderGraph::PhysicalPassEnqueueGraphicsCommands");
+
 	auto& cmd = *state.Cmd;
 
 	for (auto& clearReq : physicalPass.ColorClearRequests) {
@@ -1701,6 +1728,8 @@ void RenderGraph::PhysicalPassHandleCPU(Vulkan::Device& device,
                                         const PhysicalPass& physicalPass,
                                         PassSubmissionState& state,
                                         TaskComposer& incomingComposer) {
+	ZoneScopedN("RenderGraph::PhysicalPassHandleCPU");
+
 	GetQueueType(state.QueueType, state.Graphics, _passes[physicalPass.Passes.front()]->GetQueue());
 
 	PhysicalPassInvalidateAttachments(physicalPass);
@@ -1729,6 +1758,8 @@ void RenderGraph::PhysicalPassHandleCPU(Vulkan::Device& device,
 }
 
 void RenderGraph::PhysicalPassHandleFlushBarrier(const Barrier& barrier, PassSubmissionState& state) {
+	ZoneScopedN("RenderGraph::PhysicalPassHandleFlushBarrier");
+
 	auto& event =
 		barrier.History ? _physicalHistoryEvents[barrier.ResourceIndex] : _physicalEvents[barrier.ResourceIndex];
 
@@ -1751,6 +1782,8 @@ void RenderGraph::PhysicalPassHandleFlushBarrier(const Barrier& barrier, PassSub
 }
 
 void RenderGraph::PhysicalPassHandleGPU(Vulkan::Device& device, const PhysicalPass& pass, PassSubmissionState& state) {
+	ZoneScopedN("RenderGraph::PhysicalPassHandleGPU");
+
 	auto group = Threading::CreateTaskGroup();
 
 	group->Enqueue([&]() {
@@ -1881,6 +1914,8 @@ void RenderGraph::PhysicalPassTransferOwnership(const PhysicalPass& physicalPass
 void RenderGraph::ReorderPasses() {}
 
 void RenderGraph::SetupPhysicalBuffer(uint32_t attachment) {
+	ZoneScopedN("RenderGraph::SetupPhysicalBuffer");
+
 	auto& att = _physicalDimensions[attachment];
 
 	Vulkan::BufferCreateInfo bufferCI(Vulkan::BufferDomain::Device, att.BufferInfo.Size, att.BufferInfo.Usage);
@@ -1899,6 +1934,8 @@ void RenderGraph::SetupPhysicalBuffer(uint32_t attachment) {
 }
 
 void RenderGraph::SetupPhysicalImage(uint32_t attachment) {
+	ZoneScopedN("RenderGraph::SetupPhysicalImage");
+
 	auto& att = _physicalDimensions[attachment];
 
 	if (_physicalAliases[attachment] != RenderResource::Unused) {
@@ -1960,6 +1997,8 @@ void RenderGraph::SetupPhysicalImage(uint32_t attachment) {
 }
 
 void RenderGraph::SwapchainScalePass() {
+	ZoneScopedN("RenderGraph::SwapchainScalePass");
+
 	uint32_t resourceIndex = _resourceToIndex[_backbufferSource];
 	auto& sourceResource   = *_resources[resourceIndex];
 	const uint32_t index   = sourceResource.GetPhysicalIndex();
@@ -2098,6 +2137,8 @@ void RenderGraph::TraverseDependencies(const RenderPass& pass, uint32_t depth) {
 }
 
 void RenderGraph::ValidatePasses() {
+	ZoneScopedN("RenderGraph::ValidatePasses");
+
 	for (auto& passPtr : _passes) {
 		auto& pass = *passPtr;
 

@@ -14,6 +14,7 @@
 #include <Luna/Scene/TransformComponent.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Image.hpp>
+#include <Tracy/Tracy.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 namespace Luna {
@@ -45,6 +46,8 @@ bool SceneRenderer::GetClearDepthStencil(vk::ClearDepthStencilValue* value) cons
 }
 
 void SceneRenderer::BuildRenderPass(Vulkan::CommandBuffer& cmd) {
+	ZoneScopedN("SceneRenderer::BuildRenderPass");
+
 	CameraData* cam        = cmd.AllocateTypedUniformData<CameraData>(0, 0, 1);
 	cam->Projection        = _context.Projection();
 	cam->View              = _context.View();
@@ -103,11 +106,15 @@ void SceneRenderer::BuildRenderPass(Vulkan::CommandBuffer& cmd) {
 	}
 
 	if (_flags & SceneRendererFlagBits::ForwardZPrePass) {
+		ZoneScopedN("Z Pre-Pass");
+
 		Renderer::GetRunner(Luna::RendererSuiteType::PrepassDepth)
 			.Flush(cmd, _depthQueue, _context, Luna::RendererFlushFlagBits::NoColor);
 	}
 
 	if (_flags & SceneRendererFlagBits::ForwardOpaque) {
+		ZoneScopedN("Forward Opaque");
+
 		Luna::RendererFlushFlags flush = {};
 		if (_flags & SceneRendererFlagBits::ForwardZPrePass) {
 			flush |= Luna::RendererFlushFlagBits::DepthStencilReadOnly | Luna::RendererFlushFlagBits::DepthTestEqual;
@@ -117,6 +124,8 @@ void SceneRenderer::BuildRenderPass(Vulkan::CommandBuffer& cmd) {
 
 	// XZ Grid
 	{
+		ZoneScopedN("Grid");
+
 		auto shader = ShaderManager::RegisterGraphics("res://Shaders/Fullscreen.vert.glsl", "res://Shaders/Grid.frag.glsl");
 		auto variant = shader->RegisterVariant();
 		auto program = variant->GetProgram();
@@ -157,6 +166,8 @@ void SceneRenderer::EnqueuePrepareRenderPass(RenderGraph& graph, TaskComposer& c
 		// Gather Opaque renderables
 		auto& gather = composer.BeginPipelineStage();
 		gather.Enqueue([&]() {
+			ZoneScopedN("SceneRenderer::Gather");
+
 			const auto& registry = Editor::GetActiveScene().GetRegistry();
 			const auto& view     = registry.view<MeshRendererComponent>();
 			for (auto entityId : view) {

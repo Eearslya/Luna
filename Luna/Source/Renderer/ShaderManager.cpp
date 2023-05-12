@@ -4,6 +4,7 @@
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Sampler.hpp>
 #include <Luna/Vulkan/Shader.hpp>
+#include <Tracy/Tracy.hpp>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -81,6 +82,8 @@ void ShaderTemplate::RegisterDependencies() {
 }
 
 const ShaderTemplateVariant* ShaderTemplate::RegisterVariant(const std::vector<std::pair<std::string, int>>& defines) {
+	ZoneScopedN("ShaderTemplate::RegisterVariant");
+
 	Hasher h;
 	h(defines.size());
 	for (const auto& def : defines) {

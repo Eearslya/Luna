@@ -2,11 +2,14 @@
 #include <Luna/Renderer/GlslCompiler.hpp>
 #include <Luna/Utility/Log.hpp>
 #include <Luna/Utility/String.hpp>
+#include <Tracy/Tracy.hpp>
 #include <shaderc/shaderc.hpp>
 
 namespace Luna {
 std::vector<uint32_t> GlslCompiler::Compile(std::string& error,
                                             const std::vector<std::pair<std::string, int>>& defines) {
+	ZoneScopedN("GlslCompiler::Compile");
+
 	shaderc::Compiler compiler;
 	shaderc::CompileOptions options;
 	if (_processedSource.empty()) {
@@ -59,6 +62,8 @@ std::vector<uint32_t> GlslCompiler::Compile(std::string& error,
 }
 
 bool GlslCompiler::Preprocess() {
+	ZoneScopedN("GlslCompiler::Preprocess");
+
 	_dependencies.clear();
 	_processedSource.clear();
 

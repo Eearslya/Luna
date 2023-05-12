@@ -181,6 +181,8 @@ static void AddSceneView(int viewIndex) {
 }
 
 static void BakeRenderGraph() {
+	ZoneScopedN("Renderer::BakeRenderGraph");
+
 	auto physicalBuffers = State.Graph.ConsumePhysicalBuffers();
 	State.Graph.Reset();
 	State.Device->NextFrame();
@@ -254,22 +256,45 @@ void Renderer::Render(double deltaTime) {
 	auto& device = *State.Device;
 	device.NextFrame();
 
-	if (Engine::GetMainWindow() && Engine::GetMainWindow()->GetSwapchain().Acquire()) {
-		const auto windowSize   = Engine::GetMainWindow()->GetFramebufferSize();
-		State.GraphState.Width  = uint32_t(windowSize.x);
-		State.GraphState.Height = uint32_t(windowSize.y);
-		const auto stateHash    = Hasher(State.GraphState).Get();
-		if (stateHash != State.GraphHash) {
-			BakeRenderGraph();
-			State.GraphHash = stateHash;
+	if (!Engine::GetMainWindow()) { return; }
+
+	bool acquired = false;
+	{
+		ZoneScopedN("Swapchain Acquire");
+		acquired = Engine::GetMainWindow()->GetSwapchain().Acquire();
+	}
+
+	if (acquired) {
+		{
+			ZoneScopedN("RenderGraph Update");
+
+			const auto windowSize   = Engine::GetMainWindow()->GetFramebufferSize();
+			State.GraphState.Width  = uint32_t(windowSize.x);
+			State.GraphState.Height = uint32_t(windowSize.y);
+			const auto stateHash    = Hasher(State.GraphState).Get();
+			if (stateHash != State.GraphHash) {
+				BakeRenderGraph();
+				State.GraphHash = stateHash;
+			}
 		}
 
 		TaskComposer composer;
-		State.Graph.SetupAttachments(&State.Device->GetSwapchainView());
-		State.Graph.EnqueueRenderPasses(*State.Device, composer);
-		composer.GetOutgoingTask()->Wait();
 
-		Engine::GetMainWindow()->GetSwapchain().Present();
+		{
+			ZoneScopedN("RenderGraph Enqueue");
+			State.Graph.SetupAttachments(&State.Device->GetSwapchainView());
+			State.Graph.EnqueueRenderPasses(*State.Device, composer);
+		}
+
+		{
+			ZoneScopedN("RenderGraph Execute");
+			composer.GetOutgoingTask()->Wait();
+		}
+
+		{
+			ZoneScopedN("Swapchain Present");
+			Engine::GetMainWindow()->GetSwapchain().Present();
+		}
 	}
 }
 
