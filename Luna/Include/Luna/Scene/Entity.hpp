@@ -37,6 +37,7 @@ class Entity {
 
 	std::vector<Entity> GetChildren() const;
 	glm::mat4 GetGlobalTransform() const;
+	UUID GetId() const;
 	glm::mat4 GetLocalTransform() const;
 	const std::string& GetName() const;
 	Entity GetParent() const;

@@ -1,4 +1,5 @@
 #include <Luna/Scene/Entity.hpp>
+#include <Luna/Scene/IdComponent.hpp>
 #include <Luna/Scene/NameComponent.hpp>
 #include <Luna/Scene/RelationshipComponent.hpp>
 #include <Luna/Scene/TransformComponent.hpp>
@@ -29,6 +30,10 @@ glm::mat4 Entity::GetGlobalTransform() const {
 	} else {
 		return GetLocalTransform();
 	}
+}
+
+UUID Entity::GetId() const {
+	return GetComponent<IdComponent>().Id;
 }
 
 glm::mat4 Entity::GetLocalTransform() const {

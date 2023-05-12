@@ -40,11 +40,28 @@ void SceneHeirarchyWindow::Update(double deltaTime) {
 		if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::IsWindowHovered() && ImGui::IsWindowFocused()) {
 			_selected = {};
 		}
+		const auto itemSize = ImGui::GetItemRectSize();
 
 		if (ImGui::BeginPopupContextWindow(nullptr, ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
 			if (ImGui::MenuItem("Create Entity")) { _selected = scene.CreateEntity(); }
 
 			ImGui::EndPopup();
+		}
+
+		const auto windowMin = ImGui::GetWindowContentRegionMin();
+		const auto windowMax = ImGui::GetWindowContentRegionMax();
+		ImGui::SetCursorPosX(windowMin.x);
+		ImGui::Dummy(ImVec2(windowMax.x - windowMin.x, 16.0f));
+
+		const ImRect dropRect(ImGui::GetItemRectMin(), windowMax);
+		if (ImGui::BeginDragDropTargetCustom(dropRect, ImGui::GetID("ParentEntityToRoot"))) {
+			const ImGuiPayload* payload = ImGui::GetDragDropPayload();
+			if (payload->IsDataType("Entity")) {
+				const UUID payloadId = *static_cast<const UUID*>(payload->Data);
+				if (ImGui::AcceptDragDropPayload("Entity")) { scene.MoveEntity(scene.GetEntityById(payloadId), {}); }
+			}
+
+			ImGui::EndDragDropTarget();
 		}
 	}
 	ImGui::End();
@@ -112,12 +129,14 @@ static bool AssetButton(const char* id, AssetHandle& handle, AssetMetadata& meta
 	const std::string buttonText = fmt::format("{} {}", assetIcon, fileDisplay);
 	ImGui::Button(buttonText.c_str());
 	if (ImGui::BeginDragDropTarget()) {
-		const ImGuiPayload* payload  = ImGui::GetDragDropPayload();
-		const EditorContent* content = static_cast<const EditorContent*>(payload->Data);
+		const ImGuiPayload* payload = ImGui::GetDragDropPayload();
+		if (payload->IsDataType("EditorContent")) {
+			const EditorContent* content = static_cast<const EditorContent*>(payload->Data);
 
-		const auto& metadata = AssetManager::GetAssetMetadata(content->ContentPath);
-		if (metadata.IsValid() && metadata.Type == T::GetAssetType()) {
-			if (ImGui::AcceptDragDropPayload("EditorContent")) { newAsset = metadata; }
+			const auto& metadata = AssetManager::GetAssetMetadata(content->ContentPath);
+			if (metadata.IsValid() && metadata.Type == T::GetAssetType()) {
+				if (ImGui::AcceptDragDropPayload("EditorContent")) { newAsset = metadata; }
+			}
 		}
 
 		ImGui::EndDragDropTarget();
@@ -449,13 +468,31 @@ void SceneHeirarchyWindow::DrawEntity(Entity& entity) {
 
 	const auto& cName         = entity.GetComponent<NameComponent>();
 	const auto& cRelationship = entity.GetComponent<RelationshipComponent>();
+	const UUID id             = entity.GetId();
 
 	const bool hasChildren = cRelationship.FirstChild != entt::null;
 	if (!hasChildren) { flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_Bullet; }
 
 	const bool open = ImGui::TreeNodeEx(nodeId, flags, "%s", cName.Name.c_str());
 	if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) { _selected = entity; }
+	if (ImGui::BeginDragDropSource()) {
+		ImGui::SetDragDropPayload("Entity", &id, sizeof(id));
+		ImGui::Text("%s", cName.Name.c_str());
 
+		ImGui::EndDragDropSource();
+	}
+	if (ImGui::BeginDragDropTarget()) {
+		const ImGuiPayload* payload = ImGui::GetDragDropPayload();
+		if (payload->IsDataType("Entity")) {
+			const UUID payloadId = *static_cast<const UUID*>(payload->Data);
+
+			if (id != payloadId && ImGui::AcceptDragDropPayload("Entity")) {
+				scene.MoveEntity(entity, scene.GetEntityById(payloadId));
+			}
+		}
+
+		ImGui::EndDragDropTarget();
+	}
 	if (ImGui::BeginPopupContextItem()) {
 		if (ImGui::MenuItem("Delete")) { deleted = true; }
 

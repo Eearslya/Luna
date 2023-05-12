@@ -1,4 +1,5 @@
 #include <Luna/Scene/Entity.hpp>
+#include <Luna/Scene/IdComponent.hpp>
 #include <Luna/Scene/MeshRendererComponent.hpp>
 #include <Luna/Scene/NameComponent.hpp>
 #include <Luna/Scene/RelationshipComponent.hpp>
@@ -59,6 +60,7 @@ Entity Scene::CreateChildEntity(Entity parent, const std::string& name) {
 	std::string entityName = name.empty() ? "Entity" : name;
 
 	entity.AddComponent<NameComponent>(entityName);
+	entity.AddComponent<IdComponent>();
 	entity.AddComponent<TransformComponent>();
 	entity.AddComponent<RelationshipComponent>();
 
@@ -91,7 +93,19 @@ void Scene::DestroyEntity(Entity entity) {
 	}
 }
 
+Entity Scene::GetEntityById(UUID id) {
+	const auto view = _registry.view<IdComponent>();
+	for (const auto entityId : view) {
+		const IdComponent& cId = view.get<IdComponent>(entityId);
+		if (cId.Id == id) { return Entity(entityId, *this); }
+	}
+
+	return {};
+}
+
 void Scene::MoveEntity(Entity entity, Entity newParent) {
+	if (!entity) { return; }
+
 	auto& cRelationship = entity.GetComponent<RelationshipComponent>();
 
 	Entity parent(cRelationship.Parent, *this);
@@ -161,9 +175,12 @@ bool Scene::Deserialize(const std::string& sceneJson) {
 		Entity entity = CreateEntity();
 		try {
 			entity.GetComponent<NameComponent>().Deserialize(entityData.at("NameComponent"));
+			entity.GetComponent<IdComponent>().Deserialize(entityData.at("IdComponent"));
 			entity.GetComponent<TransformComponent>().Deserialize(entityData.at("TransformComponent"));
 			relationships.push_back({entity, entityData.at("RelationshipComponent")});
 		} catch (const std::exception& e) { DestroyEntity(entity); }
+
+		if (!entity) { continue; }
 
 		if (entityData.contains("MeshRendererComponent")) {
 			auto& cMeshRenderer = entity.AddComponent<MeshRendererComponent>();
@@ -171,7 +188,15 @@ bool Scene::Deserialize(const std::string& sceneJson) {
 		}
 	}
 
-	for (auto& [entity, relationshipData] : relationships) {}
+	for (auto& [entity, relationshipData] : relationships) {
+		auto& cRelationship = entity.GetComponent<RelationshipComponent>();
+		UUID parent         = relationshipData["Parent"].get<uint64_t>();
+
+		if (parent != UUID(0)) {
+			Entity eParent = GetEntityById(parent);
+			entity.SetParent(eParent);
+		}
+	}
 
 	if (sceneData.contains("EditorCamera")) {
 		const auto& camData = sceneData.at("EditorCamera");
@@ -200,12 +225,22 @@ std::string Scene::Serialize() const {
 			entity.GetComponent<NameComponent>().Serialize(nameData);
 			entityData["NameComponent"] = nameData;
 
+			json idData;
+			entity.GetComponent<IdComponent>().Serialize(idData);
+			entityData["IdComponent"] = idData;
+
 			json transformData;
 			entity.GetComponent<TransformComponent>().Serialize(transformData);
 			entityData["TransformComponent"] = transformData;
 
 			json relationshipData;
-			const auto& cRelationship           = entity.GetComponent<RelationshipComponent>();
+			const auto& cRelationship = entity.GetComponent<RelationshipComponent>();
+			if (_registry.valid(cRelationship.Parent)) {
+				const auto& cId            = _registry.get<IdComponent>(entityId);
+				relationshipData["Parent"] = uint64_t(cId.Id);
+			} else {
+				relationshipData["Parent"] = uint64_t(0);
+			}
 			entityData["RelationshipComponent"] = relationshipData;
 		} catch (const std::exception& e) {
 			Log::Error("Scene", "Failed to serialize required entity components.");

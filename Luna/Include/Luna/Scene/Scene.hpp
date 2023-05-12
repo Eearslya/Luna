@@ -40,6 +40,7 @@ class Scene final : public Asset {
 	Entity CreateEntity(const std::string& name = "");
 	Entity CreateChildEntity(Entity parent, const std::string& name = "");
 	void DestroyEntity(Entity entity);
+	Entity GetEntityById(UUID id);
 	void MoveEntity(Entity entity, Entity newParent);
 	void SetName(const std::string& name);
 
