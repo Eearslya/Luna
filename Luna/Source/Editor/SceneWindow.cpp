@@ -126,7 +126,7 @@ void SceneWindow::Update(double deltaTime) {
 			if (ImGuizmo::Manipulate(glm::value_ptr(view),
 			                         glm::value_ptr(proj),
 			                         ImGuizmo::OPERATION(_gizmoMode),
-			                         ImGuizmo::LOCAL,
+			                         ImGuizmo::WORLD,
 			                         glm::value_ptr(transform),
 			                         glm::value_ptr(delta),
 			                         nullptr,
