@@ -40,7 +40,7 @@ bool SceneRenderer::GetClearColor(uint32_t attachment, vk::ClearColorValue* valu
 }
 
 bool SceneRenderer::GetClearDepthStencil(vk::ClearDepthStencilValue* value) const {
-	if (value) { *value = vk::ClearDepthStencilValue(1.0f, 0); }
+	if (value) { *value = vk::ClearDepthStencilValue(0.0f, 0); }
 
 	return true;
 }
@@ -71,6 +71,7 @@ void SceneRenderer::BuildRenderPass(Vulkan::CommandBuffer& cmd) {
 
 		cmd.SetOpaqueState();
 		cmd.SetProgram(program);
+		cmd.SetDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
 		cmd.SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
 		cmd.SetVertexAttribute(1, 1, vk::Format::eR32G32B32Sfloat, offsetof(Mesh::Vertex, Normal));
 		cmd.SetVertexAttribute(2, 1, vk::Format::eR32G32B32A32Sfloat, offsetof(Mesh::Vertex, Tangent));
@@ -132,6 +133,7 @@ void SceneRenderer::BuildRenderPass(Vulkan::CommandBuffer& cmd) {
 
 		cmd.SetOpaqueState();
 		cmd.SetProgram(program);
+		cmd.SetDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
 		cmd.SetCullMode(vk::CullModeFlagBits::eNone);
 		cmd.SetBlendEnable(true);
 		cmd.SetAlphaBlend(vk::BlendFactor::eZero, vk::BlendOp::eAdd, vk::BlendFactor::eOne);

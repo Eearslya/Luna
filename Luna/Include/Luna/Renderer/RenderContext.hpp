@@ -58,8 +58,12 @@ class RenderContext {
 		const glm::mat2 invZW(glm::vec2(_invProjection[2].z, _invProjection[2].w),
 		                      glm::vec2(_invProjection[3].z, _invProjection[3].w));
 		const auto Project = [](const glm::vec2& zw) -> float { return -zw.x / zw.y; };
-		_zNear             = Project(invZW * glm::vec2(0, 1));
-		_zFar              = Project(invZW * glm::vec2(1, 1));
+		_zNear             = Project(invZW * glm::vec2(1, 1));
+		_zFar              = Project(invZW * glm::vec2(0, 1));
+
+		auto near = _invProjection * glm::vec4(0, 0, 1, 1);
+		near /= near.w;
+		_zNear = -near.z;
 	}
 
  private:

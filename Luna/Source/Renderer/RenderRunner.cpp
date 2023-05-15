@@ -47,6 +47,7 @@ void RenderRunner::FlushSubset(Vulkan::CommandBuffer& cmd,
 	*camera                  = context.GetCamera();
 
 	cmd.SetOpaqueState();
+	cmd.SetDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
 
 	if (flush & RendererFlushFlagBits::FrontFaceClockwise) { cmd.SetFrontFace(vk::FrontFace::eClockwise); }
 	if (flush & RendererFlushFlagBits::NoColor) { cmd.SetColorWriteMask(0); }

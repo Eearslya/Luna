@@ -42,8 +42,8 @@ vec4 Grid(vec3 fragPos, float scale, bool drawAxes) {
 
 void main() {
 	vec2 clipPos = inUV * 2.0f - 1.0f;
-	vec3 clipNear = Unproject(vec3(clipPos, 0.0f));
-	vec3 clipFar = Unproject(vec3(clipPos, 1.0f));
+	vec3 clipNear = Unproject(vec3(clipPos, 1.0f));
+	vec3 clipFar = Unproject(vec3(clipPos, 0.000001f));
 
 	float t = -clipNear.y / (clipFar.y - clipNear.y);
 	if (t <= 0.0f) { discard; }
@@ -51,13 +51,13 @@ void main() {
 	vec3 fragPos = clipNear + t * (clipFar - clipNear);
 	vec4 clipSpacePos = Camera.ViewProjection * vec4(fragPos.xyz, 1.0f);
 	float clipSpaceDepth = clipSpacePos.z / clipSpacePos.w;
-	float linearDepth = (2.0 * Camera.ZNear * Camera.ZFar) / (Camera.ZFar + Camera.ZNear - clipSpaceDepth * (Camera.ZFar - Camera.ZNear));
-	linearDepth /= Camera.ZFar;
 	gl_FragDepth = clipSpaceDepth;
 
 	vec4 grid = Grid(fragPos, 1.0f, true);
 	outColor = grid;
 
-	float fade = max(0, (0.4f - linearDepth));
+	const float fadeDistance = 25.0f;
+	float linearDepth = Camera.ZNear / clipSpaceDepth;
+	float fade = 1.0 - min(1.0, linearDepth / fadeDistance);
 	outColor.a *= fade;
 }
