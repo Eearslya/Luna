@@ -8,5 +8,7 @@ class Engine final {
 	static bool Initialize();
 	static int Run();
 	static void Shutdown();
+
+	static double GetTime();
 };
 }  // namespace Luna
