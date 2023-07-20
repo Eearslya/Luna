@@ -23,6 +23,7 @@ bool Engine::Initialize() {
 
 	State.Window = std::make_unique<Window>("Luna", 1600, 900, false);
 	if (!State.Window) { return false; }
+	State.Window->Maximize();
 
 	State.Window->Show();
 
