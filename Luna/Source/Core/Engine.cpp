@@ -3,7 +3,6 @@
 #include <Luna/Core/Threading.hpp>
 #include <Luna/Core/Window.hpp>
 #include <Luna/Core/WindowManager.hpp>
-#include <Luna/Utility/Path.hpp>
 
 namespace Luna {
 static struct EngineState {

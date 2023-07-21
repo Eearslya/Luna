@@ -41,18 +41,12 @@ bool Path::IsRoot() const {
 
 Path Path::Normalized() const {
 	std::vector<std::string> parts;
+
 	for (const auto& part : *this) {
-		if (part == ".") { continue; }
-
-		parts.push_back(std::string(part));
-	}
-
-	for (int i = parts.size() - 1; i >= 1; --i) {
-		const auto& self = parts[i];
-		if (self == "..") {
-			parts.erase(parts.begin() + i);
-			parts.erase(parts.begin() + i - 1);
-			--i;
+		if (part == "..") {
+			if (!parts.empty()) { parts.pop_back(); }
+		} else if (part != ".") {
+			parts.push_back(std::string(part));
 		}
 	}
 
