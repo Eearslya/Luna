@@ -3,10 +3,12 @@
 #include <Luna/Core/Threading.hpp>
 #include <Luna/Core/Window.hpp>
 #include <Luna/Core/WindowManager.hpp>
+#include <Luna/Utility/Path.hpp>
 
 namespace Luna {
 static struct EngineState {
-	bool Running = false;
+	bool Initialized = false;
+	bool Running     = false;
 	std::unique_ptr<Window> Window;
 } State;
 
@@ -29,10 +31,14 @@ bool Engine::Initialize() {
 
 	State.Window->Show();
 
+	State.Initialized = true;
+
 	return true;
 }
 
 int Engine::Run() {
+	if (!State.Initialized) { return -1; }
+
 	State.Running = true;
 	while (State.Running) { Update(); }
 
