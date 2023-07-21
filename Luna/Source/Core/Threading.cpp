@@ -117,6 +117,55 @@ void TaskGroup::Wait() {
 	Dependencies->Condition.wait(lock, [this]() { return Dependencies->Done; });
 }
 
+/* ========================
+** ===== TaskComposer =====
+*  ======================== */
+
+void TaskComposer::AddOutgoingDependency(TaskGroup& task) {
+	Threading::AddDependency(task, *GetOutgoingTask());
+}
+
+TaskGroup& TaskComposer::BeginPipelineStage() {
+	auto newGroup        = Threading::CreateTaskGroup();
+	auto newDependencies = Threading::CreateTaskGroup();
+	if (_current) { Threading::AddDependency(*newDependencies, *_current); }
+	if (_nextStageDependencies) { Threading::AddDependency(*newDependencies, *_nextStageDependencies); }
+	_nextStageDependencies.Reset();
+	Threading::AddDependency(*newGroup, *newDependencies);
+
+	_current              = std::move(newGroup);
+	_incomingDependencies = std::move(newDependencies);
+
+	return *_current;
+}
+
+TaskGroupHandle TaskComposer::GetDeferredEnqueueHandle() {
+	if (!_nextStageDependencies) { _nextStageDependencies = Threading::CreateTaskGroup(); }
+
+	return _nextStageDependencies;
+}
+
+TaskGroup& TaskComposer::GetGroup() {
+	return bool(_current) ? *_current : BeginPipelineStage();
+}
+
+TaskGroupHandle TaskComposer::GetOutgoingTask() {
+	BeginPipelineStage();
+	auto ret = std::move(_incomingDependencies);
+	_incomingDependencies.Reset();
+	_current.Reset();
+
+	return ret;
+}
+
+TaskGroupHandle TaskComposer::GetPipelineStageDependency() {
+	return _incomingDependencies;
+}
+
+void TaskComposer::SetIncomingTask(TaskGroupHandle group) {
+	_current = std::move(group);
+}
+
 /* =====================
 ** ===== Threading =====
 *  ===================== */
@@ -148,7 +197,14 @@ void Threading::Shutdown() {
 	for (auto& thread : State.WorkerThreads) { thread.join(); }
 }
 
-void Threading::AddDependency(TaskGroup& dependee, TaskGroup& dependency) {}
+void Threading::AddDependency(TaskGroup& dependee, TaskGroup& dependency) {
+	if (dependee.Flushed || dependency.Flushed) {
+		throw std::logic_error("Cannot add a dependency if either group has already been flushed");
+	}
+
+	dependency.Dependencies->Pending.push_back(dependee.Dependencies);
+	dependee.Dependencies->DependencyCount.fetch_add(1, std::memory_order_relaxed);
+}
 
 TaskGroupHandle Threading::CreateTaskGroup() {
 	TaskGroupHandle group(State.TaskGroupPool.Allocate());
