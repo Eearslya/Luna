@@ -3,8 +3,10 @@
 // Standard Library Includes
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <utility>

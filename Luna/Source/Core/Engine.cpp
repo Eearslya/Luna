@@ -1,5 +1,6 @@
 #include <Luna/Core/Engine.hpp>
 #include <Luna/Core/Log.hpp>
+#include <Luna/Core/Threading.hpp>
 #include <Luna/Core/Window.hpp>
 #include <Luna/Core/WindowManager.hpp>
 
@@ -19,6 +20,7 @@ bool Engine::Initialize() {
 	Log::SetLevel(Log::Level::Trace);
 	Log::Info("Luna", "Luna Engine initializing...");
 
+	if (!Threading::Initialize()) { return false; }
 	if (!WindowManager::Initialize()) { return false; }
 
 	State.Window = std::make_unique<Window>("Luna", 1600, 900, false);
@@ -40,6 +42,7 @@ int Engine::Run() {
 void Engine::Shutdown() {
 	State.Window.reset();
 	WindowManager::Shutdown();
+	Threading::Shutdown();
 	Log::Shutdown();
 }
 
