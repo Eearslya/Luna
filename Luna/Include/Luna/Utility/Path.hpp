@@ -22,6 +22,7 @@ class Path {
 	[[nodiscard]] bool ValidateBounds() const;
 
 	[[nodiscard]] Path Normalized() const;
+	[[nodiscard]] const std::string& String() const;
 
 	[[nodiscard]] std::string_view Extension() const;
 	[[nodiscard]] std::string_view Filename() const;
@@ -36,9 +37,11 @@ class Path {
 
 	[[nodiscard]] Path operator/(const char* path) const;
 	[[nodiscard]] Path operator/(std::string_view path) const;
+	[[nodiscard]] Path operator/(const std::string& other) const;
 	[[nodiscard]] Path operator/(const Path& other) const;
 	Path& operator/=(const char* path);
 	Path& operator/=(std::string_view path);
+	Path& operator/=(const std::string& other);
 	Path& operator/=(const Path& other);
 
 	PathIterator begin() const;
@@ -71,8 +74,16 @@ class PathIterator {
 	std::string_view _element             = {};
 	const Path* _parent                   = nullptr;
 };
-
 }  // namespace Luna
+
+namespace std {
+template <>
+struct hash<Luna::Path> {
+	size_t operator()(const Luna::Path& path) const {
+		return std::hash<std::string>{}(path.String());
+	}
+};
+}  // namespace std
 
 template <>
 struct fmt::formatter<Luna::Path> : fmt::formatter<std::string> {

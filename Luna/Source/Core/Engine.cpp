@@ -1,4 +1,5 @@
 #include <Luna/Core/Engine.hpp>
+#include <Luna/Core/Filesystem.hpp>
 #include <Luna/Core/Log.hpp>
 #include <Luna/Core/Threading.hpp>
 #include <Luna/Core/Window.hpp>
@@ -12,6 +13,7 @@ static struct EngineState {
 } State;
 
 static void Update() {
+	Filesystem::Update();
 	WindowManager::Update();
 	if (State.Window->IsCloseRequested()) { State.Running = false; }
 }
@@ -22,6 +24,7 @@ bool Engine::Initialize() {
 	Log::Info("Luna", "Luna Engine initializing...");
 
 	if (!Threading::Initialize()) { return false; }
+	if (!Filesystem::Initialize()) { return false; }
 	if (!WindowManager::Initialize()) { return false; }
 
 	State.Window = std::make_unique<Window>("Luna", 1600, 900, false);
@@ -47,6 +50,7 @@ int Engine::Run() {
 void Engine::Shutdown() {
 	State.Window.reset();
 	WindowManager::Shutdown();
+	Filesystem::Shutdown();
 	Threading::Shutdown();
 	Log::Shutdown();
 }

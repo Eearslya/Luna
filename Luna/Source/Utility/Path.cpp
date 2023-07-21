@@ -55,6 +55,10 @@ Path Path::Normalized() const {
 	return newPathStr;
 }
 
+const std::string& Path::String() const {
+	return _pathStr;
+}
+
 bool Path::ValidateBounds() const {
 	const auto normalized = Normalized();
 	int depth             = 0;
@@ -144,6 +148,10 @@ Path Path::operator/(std::string_view path) const {
 	return *this / Path(path);
 }
 
+Path Path::operator/(const std::string& path) const {
+	return *this / Path(path);
+}
+
 Path Path::operator/(const Path& other) const {
 	if (other.Empty()) { return *this; }
 	if (other.IsRoot() || other.IsAbsolute()) { return other; }
@@ -160,6 +168,10 @@ Path& Path::operator/=(const char* path) {
 }
 
 Path& Path::operator/=(std::string_view path) {
+	return *this /= Path(path);
+}
+
+Path& Path::operator/=(const std::string& path) {
 	return *this /= Path(path);
 }
 
