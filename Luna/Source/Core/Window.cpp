@@ -1,5 +1,6 @@
 #include <GLFW/glfw3.h>
 
+#include <Luna/Core/Input.hpp>
 #include <Luna/Core/Window.hpp>
 
 namespace Luna {
@@ -18,6 +19,21 @@ Window::Window(const std::string& title, int width, int height, bool show) {
 	glfwSetWindowUserPointer(_window, this);
 
 	if (glfwGetWindowAttrib(_window, GLFW_MAXIMIZED) == GLFW_FALSE) { CenterPosition(); }
+
+	glfwSetCharCallback(_window, [](GLFWwindow* window, unsigned int c) { Input::CharEvent(c); });
+	glfwSetCursorPosCallback(_window, [](GLFWwindow* window, double x, double y) { Input::MouseMovedEvent({x, y}); });
+	glfwSetDropCallback(_window, [](GLFWwindow* window, int pathCount, const char** paths) {
+		std::vector<std::filesystem::path> files;
+		for (int i = 0; i < pathCount; ++i) { files.emplace_back(paths[i]); }
+		Input::DropEvent(files);
+	});
+	glfwSetKeyCallback(_window, [](GLFWwindow* window, int key, int scancode, int action, int mods) {
+		Input::KeyEvent(Key(key), InputAction(action), InputMods(mods));
+	});
+	glfwSetMouseButtonCallback(_window, [](GLFWwindow* window, int button, int action, int mods) {
+		Input::MouseButtonEvent(MouseButton(button), InputAction(action), InputMods(mods));
+	});
+	glfwSetScrollCallback(_window, [](GLFWwindow* window, double x, double y) { Input::MouseScrolledEvent({x, y}); });
 
 	if (show) {
 		glfwShowWindow(_window);

@@ -3,6 +3,8 @@
 #include <Luna/Common.hpp>
 
 namespace Luna {
+class Window;
+
 class Engine final {
  public:
 	static bool Initialize();
@@ -10,5 +12,6 @@ class Engine final {
 	static void Shutdown();
 
 	static double GetTime();
+	static Window* GetMainWindow();
 };
 }  // namespace Luna

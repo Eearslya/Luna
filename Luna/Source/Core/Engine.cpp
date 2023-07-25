@@ -58,4 +58,8 @@ void Engine::Shutdown() {
 double Engine::GetTime() {
 	return WindowManager::GetTime();
 }
+
+Window* Engine::GetMainWindow() {
+	return State.Window.get();
+}
 }  // namespace Luna

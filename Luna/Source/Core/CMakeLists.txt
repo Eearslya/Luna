@@ -1,6 +1,7 @@
 target_sources(Luna PRIVATE
   Engine.cpp
   Filesystem.cpp
+  Input.cpp
   Log.cpp
   Threading.cpp
   Window.cpp
