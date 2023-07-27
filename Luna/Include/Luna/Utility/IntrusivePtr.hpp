@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Luna/Common.hpp>
+#include <atomic>
 #include <type_traits>
 
 namespace Luna {

@@ -4,18 +4,23 @@
 #include <Luna/Core/Threading.hpp>
 #include <Luna/Core/Window.hpp>
 #include <Luna/Core/WindowManager.hpp>
+#include <Luna/Renderer/Renderer.hpp>
 
 namespace Luna {
 static struct EngineState {
 	bool Initialized = false;
 	bool Running     = false;
 	std::unique_ptr<Window> Window;
+
+	uint64_t FrameCount = 0;
 } State;
 
 static void Update() {
 	Filesystem::Update();
 	WindowManager::Update();
 	if (State.Window->IsCloseRequested()) { State.Running = false; }
+
+	++State.FrameCount;
 }
 
 bool Engine::Initialize() {
@@ -26,6 +31,7 @@ bool Engine::Initialize() {
 	if (!Threading::Initialize()) { return false; }
 	if (!Filesystem::Initialize()) { return false; }
 	if (!WindowManager::Initialize()) { return false; }
+	if (!Renderer::Initialize()) { return false; }
 
 	State.Window = std::make_unique<Window>("Luna", 1600, 900, false);
 	if (!State.Window) { return false; }
@@ -41,7 +47,8 @@ bool Engine::Initialize() {
 int Engine::Run() {
 	if (!State.Initialized) { return -1; }
 
-	State.Running = true;
+	State.FrameCount = 0;
+	// State.Running    = true;
 	while (State.Running) { Update(); }
 
 	return 0;
@@ -49,6 +56,7 @@ int Engine::Run() {
 
 void Engine::Shutdown() {
 	State.Window.reset();
+	Renderer::Shutdown();
 	WindowManager::Shutdown();
 	Filesystem::Shutdown();
 	Threading::Shutdown();

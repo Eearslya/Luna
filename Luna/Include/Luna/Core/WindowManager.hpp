@@ -24,6 +24,7 @@ class WindowManager final {
 	static void Shutdown();
 
 	static GLFWcursor* GetCursor(MouseCursor cursor);
+	static std::vector<const char*> GetRequiredInstanceExtensions();
 	static double GetTime();
 };
 };  // namespace Luna

@@ -99,6 +99,7 @@ bool WindowManager::Initialize() {
 	glfwSetErrorCallback(GlfwErrorCallback);
 
 	if (!glfwInit()) { return false; }
+	if (!glfwVulkanSupported()) { return false; }
 
 	State.Cursors[int(MouseCursor::Arrow)]     = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
 	State.Cursors[int(MouseCursor::IBeam)]     = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR);
@@ -152,6 +153,13 @@ void WindowManager::Shutdown() {
 
 GLFWcursor* WindowManager::GetCursor(MouseCursor cursor) {
 	return State.Cursors[int(cursor)];
+}
+
+std::vector<const char*> WindowManager::GetRequiredInstanceExtensions() {
+	uint32_t extensionCount     = 0;
+	const char** extensionNames = glfwGetRequiredInstanceExtensions(&extensionCount);
+
+	return std::vector<const char*>(extensionNames, extensionNames + extensionCount);
 }
 
 double WindowManager::GetTime() {
