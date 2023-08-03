@@ -15,28 +15,43 @@ static const char* VulkanEnumToString(const T value) {
 	static_assert(IsVulkanEnum<T>, "VulkanEnumToString can only be used on Luna::Vulkan enums");
 }
 
-#define DefineVulkanEnum(Name, ValueCount, ...)        \
-	enum class Name { __VA_ARGS__ };                     \
-	constexpr static const int Name##Count = ValueCount; \
-	template <>                                          \
-	struct VulkanEnumEnabled<Name> : std::true_type {};  \
-	template <>                                          \
-	const char* VulkanEnumToString<Name>(const Name value)
-
-DefineVulkanEnum(QueueType, 3, Graphics, Transfer, Compute) {
-	switch (value) {
-		case QueueType::Graphics:
-			return "Graphics";
-		case QueueType::Transfer:
-			return "Transfer";
-		case QueueType::Compute:
-			return "Compute";
+#define BeginVulkanEnum(Name, ValueCount, ...)             \
+	enum class Name { __VA_ARGS__ };                         \
+	constexpr static const int Name##Count = ValueCount;     \
+	template <>                                              \
+	struct VulkanEnumEnabled<Name> : std::true_type {};      \
+	template <>                                              \
+	const char* VulkanEnumToString<Name>(const Name value) { \
+		switch (value) {
+#define EnumCase(Name, Value) \
+	case Name::Value:           \
+		return #Value;
+#define EndVulkanEnum() \
+	}                     \
+	return "Unknown";     \
 	}
 
-	return "Unknown";
-}
+BeginVulkanEnum(QueueType, 3, Graphics, Transfer, Compute);
+EnumCase(QueueType, Graphics);
+EnumCase(QueueType, Transfer);
+EnumCase(QueueType, Compute);
+EndVulkanEnum();
 
-#undef DefineVulkanEnum
+BeginVulkanEnum(CommandBufferType,
+                4,
+                Generic       = int(QueueType::Graphics),
+                AsyncCompute  = int(QueueType::Compute),
+                AsyncTransfer = int(QueueType::Transfer),
+                AsyncGraphics = int(QueueTypeCount));
+EnumCase(CommandBufferType, Generic);
+EnumCase(CommandBufferType, AsyncCompute);
+EnumCase(CommandBufferType, AsyncTransfer);
+EnumCase(CommandBufferType, AsyncGraphics);
+EndVulkanEnum();
+
+#undef EndVulkanEnum
+#undef EnumCase
+#undef BeginVulkanEnum
 }  // namespace Vulkan
 }  // namespace Luna
 

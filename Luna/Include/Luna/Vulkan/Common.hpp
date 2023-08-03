@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Luna/Common.hpp>
+#include <Luna/Utility/ObjectPool.hpp>
 #include <Luna/Vulkan/Enums.hpp>
+#include <Luna/Vulkan/InternalSync.hpp>
 #include <vulkan/vulkan.hpp>
 
 #define LUNA_VULKAN_DEBUG
@@ -13,16 +15,30 @@ namespace Vulkan {
 *  ============================ */
 template <typename T, typename Deleter = std::default_delete<T>>
 using VulkanObject = IntrusivePtrEnabled<T, Deleter, MultiThreadCounter>;
+template <typename T>
+using VulkanObjectPool = ThreadSafeObjectPool<T>;
 
 /* ================================
 ** ===== Forward Declarations =====
 *  ================================ */
+class CommandBuffer;
+struct CommandBufferDeleter;
+class CommandPool;
 class Context;
+class Device;
+class Fence;
+struct FenceDeleter;
+class Semaphore;
+struct SemaphoreDeleter;
 
 /* ===============================
 ** ===== Handle Declarations =====
 *  =============================== */
-using ContextHandle = IntrusivePtr<Context>;
+using CommandBufferHandle = IntrusivePtr<CommandBuffer>;
+using ContextHandle       = IntrusivePtr<Context>;
+using DeviceHandle        = IntrusivePtr<Device>;
+using FenceHandle         = IntrusivePtr<Fence>;
+using SemaphoreHandle     = IntrusivePtr<Semaphore>;
 
 /* ===========================
 ** ===== Data Structures =====
@@ -36,10 +52,13 @@ struct Extensions {
 #ifdef LUNA_VULKAN_DEBUG
 	bool ValidationFeatures = false;
 #endif
+
+	bool Synchronization2 = false;
 };
 
 struct DeviceFeatures {
 	vk::PhysicalDeviceFeatures Core;
+	vk::PhysicalDeviceSynchronization2Features Synchronization2;
 	vk::PhysicalDeviceVulkan12Features Vulkan12;
 };
 
@@ -121,6 +140,13 @@ struct Version {
 
 	uint32_t Value = 0;
 };
+
+/* ============================
+** ===== Helper Functions =====
+*  ============================ */
+vk::PipelineStageFlags DowngradePipelineStageFlags2(vk::PipelineStageFlags2 stages);
+vk::PipelineStageFlags DowngradeDstPipelineStageFlags2(vk::PipelineStageFlags2 stages);
+vk::PipelineStageFlags DowngradeSrcPipelineStageFlags2(vk::PipelineStageFlags2 stages);
 }  // namespace Vulkan
 }  // namespace Luna
 

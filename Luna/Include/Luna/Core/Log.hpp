@@ -16,6 +16,14 @@ class Log {
 	static void SetLevel(Level level);
 
 	template <typename... Args>
+	static void Assert(bool condition, std::string_view tag, const fmt::format_string<Args...>& format, Args&&... args) {
+		if (!condition) {
+			Output(Level::Fatal, tag, format, std::forward<Args>(args)...);
+			Shutdown();
+			std::exit(-1);
+		}
+	}
+	template <typename... Args>
 	static void Fatal(std::string_view tag, const fmt::format_string<Args...>& format, Args&&... args) {
 		Output(Level::Fatal, tag, format, std::forward<Args>(args)...);
 	}

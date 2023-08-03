@@ -1,2 +1,8 @@
 target_sources(Luna PRIVATE
-  Context.cpp)
+  CommandBuffer.cpp
+  CommandPool.cpp
+  Common.cpp
+  Context.cpp
+  Device.cpp
+  Fence.cpp
+  Semaphore.cpp)

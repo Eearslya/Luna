@@ -7,5 +7,7 @@ class Renderer final {
  public:
 	static bool Initialize();
 	static void Shutdown();
+
+	static void Render();
 };
 }  // namespace Luna

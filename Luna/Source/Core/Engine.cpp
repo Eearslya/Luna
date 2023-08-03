@@ -20,6 +20,8 @@ static void Update() {
 	WindowManager::Update();
 	if (State.Window->IsCloseRequested()) { State.Running = false; }
 
+	if (!State.Window->IsMinimized()) { Renderer::Render(); }
+
 	++State.FrameCount;
 }
 
@@ -48,6 +50,7 @@ int Engine::Run() {
 	if (!State.Initialized) { return -1; }
 
 	State.FrameCount = 0;
+	Update();
 	// State.Running    = true;
 	while (State.Running) { Update(); }
 
