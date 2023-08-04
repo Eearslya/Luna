@@ -1,4 +1,5 @@
 #include <Luna/Core/Threading.hpp>
+#include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/CommandPool.hpp>
 #include <Luna/Vulkan/Context.hpp>
@@ -23,6 +24,69 @@ Device::Device(Context& context)
 			_deviceInfo(context._deviceInfo),
 			_queueInfo(context._queueInfo),
 			_device(context._device) {
+	_nextCookie.store(0, std::memory_order_relaxed);
+
+	// Initialize Vulkan Memory Allocator
+	{
+#define VmaFn(name) .name = VULKAN_HPP_DEFAULT_DISPATCHER.name
+		VmaVulkanFunctions vmaFunctions = {
+			VmaFn(vkGetInstanceProcAddr),
+			VmaFn(vkGetDeviceProcAddr),
+			VmaFn(vkGetPhysicalDeviceProperties),
+			VmaFn(vkGetPhysicalDeviceMemoryProperties),
+			VmaFn(vkAllocateMemory),
+			VmaFn(vkFreeMemory),
+			VmaFn(vkMapMemory),
+			VmaFn(vkUnmapMemory),
+			VmaFn(vkFlushMappedMemoryRanges),
+			VmaFn(vkInvalidateMappedMemoryRanges),
+			VmaFn(vkBindBufferMemory),
+			VmaFn(vkBindImageMemory),
+			VmaFn(vkGetBufferMemoryRequirements),
+			VmaFn(vkGetImageMemoryRequirements),
+			VmaFn(vkCreateBuffer),
+			VmaFn(vkDestroyBuffer),
+			VmaFn(vkCreateImage),
+			VmaFn(vkDestroyImage),
+			VmaFn(vkCmdCopyBuffer),
+		};
+#undef VmaFn
+#define VmaFn(core) vmaFunctions.core##KHR = reinterpret_cast<PFN_##core##KHR>(VULKAN_HPP_DEFAULT_DISPATCHER.core)
+		VmaFn(vkGetBufferMemoryRequirements2);
+		VmaFn(vkGetImageMemoryRequirements2);
+		VmaFn(vkBindBufferMemory2);
+		VmaFn(vkBindImageMemory2);
+		VmaFn(vkGetPhysicalDeviceMemoryProperties2);
+#undef VmaFn
+		if (_extensions.Maintenance4) {
+			vmaFunctions.vkGetDeviceBufferMemoryRequirements = reinterpret_cast<PFN_vkGetDeviceBufferMemoryRequirements>(
+				VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceBufferMemoryRequirementsKHR);
+			vmaFunctions.vkGetDeviceImageMemoryRequirements = reinterpret_cast<PFN_vkGetDeviceImageMemoryRequirements>(
+				VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceImageMemoryRequirementsKHR);
+		}
+
+		VmaAllocatorCreateFlags allocatorFlags = VMA_ALLOCATOR_CREATE_EXTERNALLY_SYNCHRONIZED_BIT;
+		if (_deviceInfo.EnabledFeatures.Vulkan12.bufferDeviceAddress) {
+			allocatorFlags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+		}
+		const VmaAllocatorCreateInfo allocatorCI = {.flags                       = allocatorFlags,
+		                                            .physicalDevice              = _deviceInfo.PhysicalDevice,
+		                                            .device                      = _device,
+		                                            .preferredLargeHeapBlockSize = 0,
+		                                            .pAllocationCallbacks        = nullptr,
+		                                            .pDeviceMemoryCallbacks      = nullptr,
+		                                            .pHeapSizeLimit              = nullptr,
+		                                            .pVulkanFunctions            = &vmaFunctions,
+		                                            .instance                    = _instance,
+		                                            .vulkanApiVersion            = VK_API_VERSION_1_2};
+		const auto allocatorResult               = vmaCreateAllocator(&allocatorCI, &_allocator);
+		if (allocatorResult != VK_SUCCESS) {
+			Log::Error("Vulkan", "Failed to create memory allocator: {}", vk::to_string(vk::Result(allocatorResult)));
+			throw std::runtime_error("Failed to create memory allocator");
+		}
+	}
+
+	// Create Timeline Semaphores
 	if (_deviceInfo.EnabledFeatures.Vulkan12.timelineSemaphore) {
 		const vk::SemaphoreCreateInfo semaphoreCI;
 		const vk::SemaphoreTypeCreateInfo semaphoreType(vk::SemaphoreType::eTimeline, 0);
@@ -33,6 +97,7 @@ Device::Device(Context& context)
 		}
 	}
 
+	// Create Frame Contexts
 	CreateFrameContexts(2);
 }
 
@@ -51,11 +116,85 @@ Device::~Device() noexcept {
 	_frameContexts.clear();
 	for (auto& semaphore : _availableSemaphores) { _device.destroySemaphore(semaphore); }
 	for (auto& fence : _availableFences) { _device.destroyFence(fence); }
+
+	vmaDestroyAllocator(_allocator);
 }
 
 /* ==============================================
 ** ===== Public Object Management Functions =====
 *  ============================================== */
+BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo,
+                                  const void* initialData,
+                                  const std::string& debugName) {
+	const bool zeroInitialize = createInfo.Flags & BufferCreateFlagBits::ZeroInitialize;
+	if (createInfo.Size == 0) {
+		Log::Error("Vulkan", "Cannot create a buffer with a size of 0");
+
+		return {};
+	}
+
+	if (initialData && zeroInitialize) {
+		Log::Error("Vulkan", "Cannot create a buffer with initial data and zero-initialize flags at the same time");
+	}
+
+	BufferHandle handle;
+	try {
+		DeviceMemoryLock();
+		handle = BufferHandle(_bufferPool.Allocate(*this, createInfo, debugName));
+	} catch (const std::exception& e) {
+		Log::Error("Vulkan", "Failed to create buffer: {}", e.what());
+
+		return {};
+	}
+
+	// Zero-initialize or copy initial data for our buffer
+	if (initialData || zeroInitialize) {
+		void* mappedMemory = handle->Map();
+		if (mappedMemory) {
+			// If we have the buffer mapped, we can simply memcpy/memset.
+			if (initialData) {
+				std::memcpy(mappedMemory, initialData, createInfo.Size);
+			} else {
+				std::memset(mappedMemory, 0, createInfo.Size);
+			}
+		} else {
+			// Otherwise, we need to execute some device commands.
+			CommandBufferHandle cmd;
+
+			if (initialData) {
+				auto stagingCreateInfo = createInfo;
+				stagingCreateInfo.SetDomain(BufferDomain::Host).AddUsage(vk::BufferUsageFlagBits::eTransferSrc);
+
+				const std::string stagingBufferName =
+					debugName.empty() ? "Staging Buffer" : fmt::format("{} [Staging]", debugName);
+				const std::string commandBufferName = fmt::format("{} Copy", stagingBufferName);
+
+				auto stagingBuffer = CreateBuffer(stagingCreateInfo, initialData, stagingBufferName);
+
+				cmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer, commandBufferName);
+				cmd->CopyBuffer(*handle, *stagingBuffer);
+			} else {
+				const std::string commandBufferName =
+					debugName.empty() ? "Buffer Zero Initialize" : fmt::format("{} Zero Initialize", debugName);
+				cmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer, commandBufferName);
+				cmd->FillBuffer(*handle, 0);
+			}
+
+			const auto stages = Buffer::UsageToStages(createInfo.Usage);
+			cmd->BufferBarrier(*handle,
+			                   vk::PipelineStageFlagBits2::eTransfer,
+			                   vk::AccessFlagBits2::eTransferWrite,
+			                   Buffer::UsageToStages(createInfo.Usage),
+			                   Buffer::UsageToAccess(createInfo.Usage));
+
+			DeviceLock();
+			SubmitStaging(cmd, stages, true);
+		}
+	}
+
+	return handle;
+}
+
 void Device::SetObjectName(vk::ObjectType type, uint64_t handle, const std::string& name) {
 	if (!_extensions.DebugUtils) { return; }
 
@@ -135,6 +274,15 @@ void Device::ConsumeSemaphoreNoLock(vk::Semaphore semaphore) {
 	Frame().SemaphoresToConsume.push_back(semaphore);
 }
 
+void Device::DestroyBuffer(vk::Buffer buffer) {
+	DeviceLock();
+	DestroyBufferNoLock(buffer);
+}
+
+void Device::DestroyBufferNoLock(vk::Buffer buffer) {
+	Frame().BuffersToDestroy.push_back(buffer);
+}
+
 void Device::DestroySemaphore(vk::Semaphore semaphore) {
 	DeviceLock();
 	DestroySemaphoreNoLock(semaphore);
@@ -142,6 +290,16 @@ void Device::DestroySemaphore(vk::Semaphore semaphore) {
 
 void Device::DestroySemaphoreNoLock(vk::Semaphore semaphore) {
 	Frame().SemaphoresToDestroy.push_back(semaphore);
+}
+
+void Device::FreeAllocation(VmaAllocation allocation, bool mapped) {
+	DeviceLock();
+	FreeAllocationNoLock(allocation, mapped);
+}
+
+void Device::FreeAllocationNoLock(VmaAllocation allocation, bool mapped) {
+	Frame().AllocationsToFree.push_back(allocation);
+	if (mapped) { Frame().AllocationsToUnmap.push_back(allocation); }
 }
 
 void Device::FreeFence(vk::Fence fence) {
@@ -178,6 +336,19 @@ void Device::RecycleSemaphoreNoLock(vk::Semaphore semaphore) {
 /* =============================================
 ** ===== Private Synchronization Functions =====
 *  ============================================= */
+void Device::AddWaitSemaphoreNoLock(QueueType queueType,
+                                    SemaphoreHandle semaphore,
+                                    vk::PipelineStageFlags2 stages,
+                                    bool flush) {
+	if (flush) { FlushQueue(queueType); }
+
+	auto& queueData = _queueData[int(queueType)];
+	semaphore->SetPendingWait();
+	queueData.WaitSemaphores.push_back(semaphore);
+	queueData.WaitStages.push_back(stages);
+	queueData.NeedsFence = true;
+}
+
 void Device::EndFrameNoLock() {
 	for (const auto type : QueueFlushOrder) {
 		if (_queueData[int(type)].NeedsFence || !Frame().Submissions[int(type)].empty() ||
@@ -417,6 +588,36 @@ void Device::SubmitQueue(QueueType queueType, InternalFence* signalFence, std::v
 	if (!_deviceInfo.EnabledFeatures.Vulkan12.timelineSemaphore) { queueData.NeedsFence = true; }
 }
 
+void Device::SubmitStaging(CommandBufferHandle commandBuffer, vk::PipelineStageFlags2 stages, bool flush) {
+	// We perform all staging transfers/fills on the transfer queue, if available.
+	// Because this can be a separate queue, the only way to synchronize it with other queues is via semaphores.
+
+	// Determine which queues are different from the transfer queue. Only different queues will need semaphore sync. Any
+	// queues which are the same as transfer are handled by the pipeline barrier instead.
+	int semaphoreCount = 0;
+	if (!_queueInfo.SameQueue(QueueType::Transfer, QueueType::Graphics)) { semaphoreCount++; }
+	if (!_queueInfo.SameQueue(QueueType::Transfer, QueueType::Compute)) { semaphoreCount++; }
+
+	// Submit our staging work, signalling each of the semaphores given (or possibly no semaphores).
+	std::vector<SemaphoreHandle> semaphores(semaphoreCount);
+	SubmitNoLock(commandBuffer, nullptr, &semaphores);
+
+	// Set each semaphore as internally synchronized.
+	for (auto& semaphore : semaphores) { semaphore->SetInternalSync(); }
+
+	// Add a wait on our Graphics queue, if applicable.
+	if (!_queueInfo.SameQueue(QueueType::Transfer, QueueType::Graphics)) {
+		AddWaitSemaphoreNoLock(QueueType::Graphics, semaphores.back(), stages, true);
+		semaphores.pop_back();
+	}
+
+	// Add a wait on our Compute queue, if applicable.
+	if (!_queueInfo.SameQueue(QueueType::Transfer, QueueType::Compute)) {
+		AddWaitSemaphoreNoLock(QueueType::Compute, semaphores.back(), stages, true);
+		semaphores.pop_back();
+	}
+}
+
 /** Flushes all pending work and waits for the Vulkan device to be idle. */
 void Device::WaitIdleNoLock() {
 	// Flush all pending submissions, if we have any.
@@ -460,6 +661,10 @@ void Device::WaitIdleNoLock() {
 /* ====================================
 ** ===== Private Helper Functions =====
 *  ==================================== */
+uint64_t Device::AllocateCookie() {
+	return _nextCookie.fetch_add(16, std::memory_order_relaxed) + 16;
+}
+
 void Device::CreateFrameContexts(uint32_t count) {
 	DeviceFlush();
 	WaitIdleNoLock();
@@ -559,9 +764,19 @@ void Device::FrameContext::Begin() {
 		for (auto& pool : queuePools) { pool.Begin(); }
 	}
 
+	if (!AllocationsToFree.empty() || !AllocationsToUnmap.empty()) {
+		std::lock_guard<std::mutex> lock(Parent._lock.MemoryLock);
+		for (auto allocation : AllocationsToUnmap) { vmaUnmapMemory(Parent._allocator, allocation); }
+		for (auto allocation : AllocationsToFree) { vmaFreeMemory(Parent._allocator, allocation); }
+	}
+	AllocationsToFree.clear();
+	AllocationsToUnmap.clear();
+
 	// Clean up all deferred object deletions.
+	for (auto buffer : BuffersToDestroy) { device.destroyBuffer(buffer); }
 	for (auto semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
 	for (auto semaphore : SemaphoresToRecycle) { Parent.FreeSemaphore(semaphore); }
+	BuffersToDestroy.clear();
 	SemaphoresToDestroy.clear();
 	SemaphoresToRecycle.clear();
 

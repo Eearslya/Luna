@@ -6,9 +6,12 @@
 namespace Luna {
 namespace Vulkan {
 class Device : public VulkanObject<Device> {
+	friend class Buffer;
+	friend struct BufferDeleter;
 	friend class CommandPool;
 	friend class CommandBuffer;
 	friend struct CommandBufferDeleter;
+	friend class Cookie;
 	friend class Fence;
 	friend struct FenceDeleter;
 	friend class Semaphore;
@@ -21,6 +24,10 @@ class Device : public VulkanObject<Device> {
 	/* ==============================================
 	** ===== Public Object Management Functions =====
 	*  ============================================== */
+	[[nodiscard]] BufferHandle CreateBuffer(const BufferCreateInfo& createInfo,
+	                                        const void* initialData      = nullptr,
+	                                        const std::string& debugName = "");
+
 	/** Set the debug name for the given object. */
 	void SetObjectName(vk::ObjectType type, uint64_t handle, const std::string& name);
 	template <typename T>
@@ -74,6 +81,9 @@ class Device : public VulkanObject<Device> {
 		std::array<std::vector<CommandBufferHandle>, QueueTypeCount> Submissions;
 		std::array<uint64_t, QueueTypeCount> TimelineValues;
 
+		std::vector<VmaAllocation> AllocationsToFree;
+		std::vector<VmaAllocation> AllocationsToUnmap;
+		std::vector<vk::Buffer> BuffersToDestroy;
 		std::vector<vk::Fence> FencesToAwait;
 		std::vector<vk::Fence> FencesToRecycle;
 		std::vector<vk::Semaphore> SemaphoresToConsume;
@@ -104,8 +114,12 @@ class Device : public VulkanObject<Device> {
 	vk::Semaphore AllocateSemaphore();
 	void ConsumeSemaphore(vk::Semaphore semaphore);
 	void ConsumeSemaphoreNoLock(vk::Semaphore semaphore);
+	void DestroyBuffer(vk::Buffer buffer);
+	void DestroyBufferNoLock(vk::Buffer buffer);
 	void DestroySemaphore(vk::Semaphore semaphore);
 	void DestroySemaphoreNoLock(vk::Semaphore semaphore);
+	void FreeAllocation(VmaAllocation allocation, bool mapped);
+	void FreeAllocationNoLock(VmaAllocation allocation, bool mapped);
 	void FreeFence(vk::Fence fence);
 	void FreeSemaphore(vk::Semaphore semaphore);
 	void RecycleSemaphore(vk::Semaphore semaphore);
@@ -116,6 +130,10 @@ class Device : public VulkanObject<Device> {
 	/* =============================================
 	** ===== Private Synchronization Functions =====
 	*  ============================================= */
+	void AddWaitSemaphoreNoLock(QueueType queueType,
+	                            SemaphoreHandle semaphore,
+	                            vk::PipelineStageFlags2 stages,
+	                            bool flush);
 	void EndFrameNoLock();
 	void FlushQueue(QueueType queueType);
 	CommandBufferHandle RequestCommandBufferNoLock(uint32_t threadIndex,
@@ -123,11 +141,13 @@ class Device : public VulkanObject<Device> {
 	                                               const std::string& debugName);
 	void SubmitNoLock(CommandBufferHandle commandBuffer, FenceHandle* fence, std::vector<SemaphoreHandle>* semaphores);
 	void SubmitQueue(QueueType queueType, InternalFence* signalFence, std::vector<SemaphoreHandle>* semaphores);
+	void SubmitStaging(CommandBufferHandle commandBuffer, vk::PipelineStageFlags2 stages, bool flush);
 	void WaitIdleNoLock();
 
 	/* ====================================
 	** ===== Private Helper Functions =====
 	*  ==================================== */
+	uint64_t AllocateCookie();
 	void CreateFrameContexts(uint32_t count);
 	FrameContext& Frame();
 	QueueType GetQueueType(CommandBufferType type) const;
@@ -145,13 +165,16 @@ class Device : public VulkanObject<Device> {
 		std::mutex MemoryLock;
 		RWSpinLock ReadOnlyCache;
 	} _lock;
+	std::atomic_uint64_t _nextCookie;
 
 	uint32_t _currentFrameContext = 0;
 	std::vector<std::unique_ptr<FrameContext>> _frameContexts;
 
+	VmaAllocator _allocator = nullptr;
 	std::vector<vk::Fence> _availableFences;
 	std::vector<vk::Semaphore> _availableSemaphores;
 
+	VulkanObjectPool<Buffer> _bufferPool;
 	VulkanObjectPool<CommandBuffer> _commandBufferPool;
 	VulkanObjectPool<Fence> _fencePool;
 	VulkanObjectPool<Semaphore> _semaphorePool;

@@ -34,7 +34,7 @@ target_compile_definitions(Luna
   PRIVATE GLFW_INCLUDE_VULKAN VULKAN_HPP_DISPATCH_LOADER_DYNAMIC)
 target_include_directories(Luna PUBLIC "Include")
 target_link_libraries(Luna
-  PUBLIC glm spdlog Vulkan::Headers
+  PUBLIC glm spdlog Vulkan::Headers VulkanMemoryAllocator
   PRIVATE glfw)
 target_precompile_headers(Luna PRIVATE "Include/Luna/Common.hpp")
 

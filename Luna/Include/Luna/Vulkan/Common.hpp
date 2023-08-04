@@ -1,7 +1,10 @@
 #pragma once
 
+#include <vk_mem_alloc.h>
+
 #include <Luna/Common.hpp>
 #include <Luna/Utility/ObjectPool.hpp>
+#include <Luna/Vulkan/Cookie.hpp>
 #include <Luna/Vulkan/Enums.hpp>
 #include <Luna/Vulkan/InternalSync.hpp>
 #include <vulkan/vulkan.hpp>
@@ -21,6 +24,9 @@ using VulkanObjectPool = ThreadSafeObjectPool<T>;
 /* ================================
 ** ===== Forward Declarations =====
 *  ================================ */
+class Buffer;
+struct BufferCreateInfo;
+struct BufferDeleter;
 class CommandBuffer;
 struct CommandBufferDeleter;
 class CommandPool;
@@ -34,6 +40,7 @@ struct SemaphoreDeleter;
 /* ===============================
 ** ===== Handle Declarations =====
 *  =============================== */
+using BufferHandle        = IntrusivePtr<Buffer>;
 using CommandBufferHandle = IntrusivePtr<CommandBuffer>;
 using ContextHandle       = IntrusivePtr<Context>;
 using DeviceHandle        = IntrusivePtr<Device>;
@@ -53,6 +60,7 @@ struct Extensions {
 	bool ValidationFeatures = false;
 #endif
 
+	bool Maintenance4     = false;
 	bool Synchronization2 = false;
 };
 
@@ -144,6 +152,7 @@ struct Version {
 /* ============================
 ** ===== Helper Functions =====
 *  ============================ */
+vk::AccessFlags DowngradeAccessFlags2(vk::AccessFlags2 access);
 vk::PipelineStageFlags DowngradePipelineStageFlags2(vk::PipelineStageFlags2 stages);
 vk::PipelineStageFlags DowngradeDstPipelineStageFlags2(vk::PipelineStageFlags2 stages);
 vk::PipelineStageFlags DowngradeSrcPipelineStageFlags2(vk::PipelineStageFlags2 stages);

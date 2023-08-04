@@ -1,7 +1,36 @@
+#define VMA_IMPLEMENTATION
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnullability-completeness"
 #include <Luna/Vulkan/Common.hpp>
+#pragma clang diagnostic pop
 
 namespace Luna {
 namespace Vulkan {
+vk::AccessFlags DowngradeAccessFlags2(vk::AccessFlags2 access2) {
+	constexpr static const vk::AccessFlags2 baseAccess =
+		vk::AccessFlagBits2::eIndirectCommandRead | vk::AccessFlagBits2::eIndexRead |
+		vk::AccessFlagBits2::eVertexAttributeRead | vk::AccessFlagBits2::eUniformRead |
+		vk::AccessFlagBits2::eInputAttachmentRead | vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite |
+		vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite |
+		vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite |
+		vk::AccessFlagBits2::eTransferRead | vk::AccessFlagBits2::eTransferWrite | vk::AccessFlagBits2::eHostRead |
+		vk::AccessFlagBits2::eHostWrite | vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite |
+		vk::AccessFlagBits2::eAccelerationStructureReadKHR | vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
+
+	constexpr static const vk::AccessFlags2 shaderRead =
+		vk::AccessFlagBits2::eShaderSampledRead | vk::AccessFlagBits2::eShaderStorageRead;
+
+	constexpr static const vk::AccessFlags2 shaderWrite = vk::AccessFlagBits2::eShaderStorageWrite;
+
+	vk::AccessFlags access1(uint32_t(uint64_t(access2 & baseAccess)));
+
+	if (access2 & shaderRead) { access1 |= vk::AccessFlagBits::eShaderRead; }
+	if (access2 & shaderWrite) { access1 |= vk::AccessFlagBits::eShaderWrite; }
+
+	return access1;
+}
+
 vk::PipelineStageFlags DowngradePipelineStageFlags2(vk::PipelineStageFlags2 stage2) {
 	constexpr static const vk::PipelineStageFlags2 baseStages =
 		vk::PipelineStageFlagBits2::eTopOfPipe | vk::PipelineStageFlagBits2::eDrawIndirect |

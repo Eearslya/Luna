@@ -317,6 +317,7 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 	};
 	for (const auto& ext : requiredExtensions) { TryExtension(ext); }
 
+	_extensions.Maintenance4     = TryExtension(VK_KHR_MAINTENANCE_4_EXTENSION_NAME);
 	_extensions.Synchronization2 = TryExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
 
 	auto familyProps = _deviceInfo.QueueFamilies;

@@ -37,6 +37,11 @@ EnumCase(QueueType, Transfer);
 EnumCase(QueueType, Compute);
 EndVulkanEnum();
 
+BeginVulkanEnum(BufferDomain, 2, Device, Host);
+EnumCase(BufferDomain, Device);
+EnumCase(BufferDomain, Host);
+EndVulkanEnum();
+
 BeginVulkanEnum(CommandBufferType,
                 4,
                 Generic       = int(QueueType::Graphics),
@@ -52,6 +57,9 @@ EndVulkanEnum();
 #undef EndVulkanEnum
 #undef EnumCase
 #undef BeginVulkanEnum
+
+enum class BufferCreateFlagBits : uint32_t { ZeroInitialize = 1 << 0 };
+using BufferCreateFlags = Bitmask<BufferCreateFlagBits>;
 }  // namespace Vulkan
 }  // namespace Luna
 
@@ -61,3 +69,6 @@ struct fmt::formatter<T> : fmt::formatter<std::string> {
 		return format_to(ctx.out(), "{}", Luna::Vulkan::VulkanEnumToString(value));
 	}
 };
+
+template <>
+struct Luna::EnableBitmaskOperators<Luna::Vulkan::BufferCreateFlagBits> : public std::true_type {};

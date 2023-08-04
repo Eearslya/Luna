@@ -28,6 +28,20 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
 	void Begin();
 	void End();
 
+	void Barrier(const vk::DependencyInfo& dependency);
+	void BufferBarrier(const Buffer& buffer,
+	                   vk::PipelineStageFlags2 srcStages,
+	                   vk::AccessFlags2 srcAccess,
+	                   vk::PipelineStageFlags2 dstStages,
+	                   vk::AccessFlags2 dstAccess);
+
+	void CopyBuffer(const Buffer& dst, const Buffer& src);
+	void CopyBuffer(const Buffer& dst, const Buffer& src, const std::vector<vk::BufferCopy>& copies);
+	void CopyBuffer(
+		const Buffer& dst, vk::DeviceSize dstOffset, const Buffer& src, vk::DeviceSize srcOffset, vk::DeviceSize size);
+	void FillBuffer(const Buffer& dst, uint8_t value);
+	void FillBuffer(const Buffer& dst, uint8_t value, vk::DeviceSize offset, vk::DeviceSize size);
+
  private:
 	CommandBuffer(Device& device,
 	              CommandBufferType type,
