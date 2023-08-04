@@ -142,6 +142,7 @@ class Device : public VulkanObject<Device> {
 	void SubmitNoLock(CommandBufferHandle commandBuffer, FenceHandle* fence, std::vector<SemaphoreHandle>* semaphores);
 	void SubmitQueue(QueueType queueType, InternalFence* signalFence, std::vector<SemaphoreHandle>* semaphores);
 	void SubmitStaging(CommandBufferHandle commandBuffer, vk::PipelineStageFlags2 stages, bool flush);
+	void SubmitStagingNoLock(CommandBufferHandle commandBuffer, vk::PipelineStageFlags2 stages, bool flush);
 	void WaitIdleNoLock();
 
 	/* ====================================

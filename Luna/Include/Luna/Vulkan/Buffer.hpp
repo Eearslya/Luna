@@ -80,6 +80,9 @@ class Buffer : public VulkanObject<Buffer, BufferDeleter>, public Cookie, public
 		return reinterpret_cast<T*>(_mappedMemory);
 	}
 
+	void FillData(uint8_t data, vk::DeviceSize dataSize, vk::DeviceSize offset = 0);
+	void WriteData(const void* data, vk::DeviceSize dataSize, vk::DeviceSize offset = 0);
+
 	[[nodiscard]] static vk::AccessFlags2 UsageToAccess(vk::BufferUsageFlags usage);
 	[[nodiscard]] static vk::PipelineStageFlags2 UsageToStages(vk::BufferUsageFlags usage);
 

@@ -1,4 +1,5 @@
 #include <Luna/Vulkan/Buffer.hpp>
+#include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Device.hpp>
 
 namespace Luna {
@@ -72,6 +73,72 @@ Buffer::~Buffer() noexcept {
 	} else {
 		_device.DestroyBuffer(_buffer);
 		_device.FreeAllocation(_allocation, _mappedMemory != nullptr);
+	}
+}
+
+void Buffer::FillData(uint8_t data, vk::DeviceSize dataSize, vk::DeviceSize offset) {
+	Log::Assert(dataSize + offset <= _createInfo.Size,
+	            "Vulkan::Buffer",
+	            "FillData: dataSize ({}) + offset ({}) is greater than buffer size ({})",
+	            dataSize,
+	            offset,
+	            _createInfo.Size);
+
+	if (_mappedMemory) {
+		uint8_t* mappedData = reinterpret_cast<uint8_t*>(_mappedMemory);
+		std::memset(mappedData + offset, data, dataSize);
+	} else {
+		const std::string commandBufferName = fmt::format("{} Fill", _debugName.empty() ? "Buffer" : _debugName);
+		CommandBufferHandle cmd = _device.RequestCommandBuffer(CommandBufferType::AsyncTransfer, commandBufferName);
+		cmd->FillBuffer(*this, data, offset, dataSize);
+
+		const auto stages = Buffer::UsageToStages(_createInfo.Usage);
+		cmd->BufferBarrier(*this,
+		                   vk::PipelineStageFlagBits2::eTransfer,
+		                   vk::AccessFlagBits2::eTransferWrite,
+		                   Buffer::UsageToStages(_createInfo.Usage),
+		                   Buffer::UsageToAccess(_createInfo.Usage));
+
+		_device.SubmitStaging(cmd, stages, true);
+	}
+}
+
+void Buffer::WriteData(const void* data, vk::DeviceSize dataSize, vk::DeviceSize offset) {
+	Log::Assert(dataSize + offset <= _createInfo.Size,
+	            "Vulkan::Buffer",
+	            "WriteData: dataSize ({}) + offset ({}) is greater than buffer size ({})",
+	            dataSize,
+	            offset,
+	            _createInfo.Size);
+
+	if (!data) { return; }
+
+	if (_mappedMemory) {
+		uint8_t* mappedData = reinterpret_cast<uint8_t*>(_mappedMemory);
+		std::memcpy(mappedData + offset, data, dataSize);
+	} else {
+		CommandBufferHandle cmd;
+
+		auto stagingCreateInfo = _createInfo;
+		stagingCreateInfo.SetDomain(BufferDomain::Host).AddUsage(vk::BufferUsageFlagBits::eTransferSrc);
+
+		const std::string stagingBufferName =
+			_debugName.empty() ? "Staging Buffer" : fmt::format("{} [Staging]", _debugName);
+		const std::string commandBufferName = fmt::format("{} Copy", stagingBufferName);
+
+		auto stagingBuffer = _device.CreateBuffer(stagingCreateInfo, data, stagingBufferName);
+
+		cmd = _device.RequestCommandBuffer(CommandBufferType::AsyncTransfer, commandBufferName);
+		cmd->CopyBuffer(*this, *stagingBuffer);
+
+		const auto stages = Buffer::UsageToStages(_createInfo.Usage);
+		cmd->BufferBarrier(*this,
+		                   vk::PipelineStageFlagBits2::eTransfer,
+		                   vk::AccessFlagBits2::eTransferWrite,
+		                   Buffer::UsageToStages(_createInfo.Usage),
+		                   Buffer::UsageToAccess(_createInfo.Usage));
+
+		_device.SubmitStaging(cmd, stages, true);
 	}
 }
 

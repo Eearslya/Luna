@@ -148,48 +148,10 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo,
 	}
 
 	// Zero-initialize or copy initial data for our buffer
-	if (initialData || zeroInitialize) {
-		void* mappedMemory = handle->Map();
-		if (mappedMemory) {
-			// If we have the buffer mapped, we can simply memcpy/memset.
-			if (initialData) {
-				std::memcpy(mappedMemory, initialData, createInfo.Size);
-			} else {
-				std::memset(mappedMemory, 0, createInfo.Size);
-			}
-		} else {
-			// Otherwise, we need to execute some device commands.
-			CommandBufferHandle cmd;
-
-			if (initialData) {
-				auto stagingCreateInfo = createInfo;
-				stagingCreateInfo.SetDomain(BufferDomain::Host).AddUsage(vk::BufferUsageFlagBits::eTransferSrc);
-
-				const std::string stagingBufferName =
-					debugName.empty() ? "Staging Buffer" : fmt::format("{} [Staging]", debugName);
-				const std::string commandBufferName = fmt::format("{} Copy", stagingBufferName);
-
-				auto stagingBuffer = CreateBuffer(stagingCreateInfo, initialData, stagingBufferName);
-
-				cmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer, commandBufferName);
-				cmd->CopyBuffer(*handle, *stagingBuffer);
-			} else {
-				const std::string commandBufferName =
-					debugName.empty() ? "Buffer Zero Initialize" : fmt::format("{} Zero Initialize", debugName);
-				cmd = RequestCommandBuffer(CommandBufferType::AsyncTransfer, commandBufferName);
-				cmd->FillBuffer(*handle, 0);
-			}
-
-			const auto stages = Buffer::UsageToStages(createInfo.Usage);
-			cmd->BufferBarrier(*handle,
-			                   vk::PipelineStageFlagBits2::eTransfer,
-			                   vk::AccessFlagBits2::eTransferWrite,
-			                   Buffer::UsageToStages(createInfo.Usage),
-			                   Buffer::UsageToAccess(createInfo.Usage));
-
-			DeviceLock();
-			SubmitStaging(cmd, stages, true);
-		}
+	if (initialData) {
+		handle->WriteData(initialData, createInfo.Size, 0);
+	} else if (zeroInitialize) {
+		handle->FillData(0, createInfo.Size, 0);
 	}
 
 	return handle;
@@ -589,6 +551,11 @@ void Device::SubmitQueue(QueueType queueType, InternalFence* signalFence, std::v
 }
 
 void Device::SubmitStaging(CommandBufferHandle commandBuffer, vk::PipelineStageFlags2 stages, bool flush) {
+	DeviceLock();
+	SubmitStagingNoLock(commandBuffer, stages, flush);
+}
+
+void Device::SubmitStagingNoLock(CommandBufferHandle commandBuffer, vk::PipelineStageFlags2 stages, bool flush) {
 	// We perform all staging transfers/fills on the transfer queue, if available.
 	// Because this can be a separate queue, the only way to synchronize it with other queues is via semaphores.
 
