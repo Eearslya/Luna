@@ -14,6 +14,10 @@ class Device : public VulkanObject<Device> {
 	friend class Cookie;
 	friend class Fence;
 	friend struct FenceDeleter;
+	friend class Image;
+	friend struct ImageDeleter;
+	friend class ImageView;
+	friend struct ImageViewDeleter;
 	friend class Semaphore;
 	friend struct SemaphoreDeleter;
 
@@ -21,12 +25,30 @@ class Device : public VulkanObject<Device> {
 	Device(Context& context);
 	~Device() noexcept;
 
+	[[nodiscard]] vk::Device GetDevice() const noexcept {
+		return _device;
+	}
+	[[nodiscard]] const DeviceInfo& GetDeviceInfo() const noexcept {
+		return _deviceInfo;
+	}
+	[[nodiscard]] vk::Instance GetInstance() const noexcept {
+		return _instance;
+	}
+	[[nodiscard]] const QueueInfo& GetQueueInfo() const noexcept {
+		return _queueInfo;
+	}
+
 	/* ==============================================
 	** ===== Public Object Management Functions =====
 	*  ============================================== */
 	[[nodiscard]] BufferHandle CreateBuffer(const BufferCreateInfo& createInfo,
 	                                        const void* initialData      = nullptr,
 	                                        const std::string& debugName = "");
+
+	[[nodiscard]] ImageHandle CreateImage(const ImageCreateInfo& createInfo,
+	                                      const ImageInitialData* initialData = nullptr,
+	                                      const std::string& debugName        = "");
+	[[nodiscard]] SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
 
 	/** Set the debug name for the given object. */
 	void SetObjectName(vk::ObjectType type, uint64_t handle, const std::string& name);
@@ -38,17 +60,29 @@ class Device : public VulkanObject<Device> {
 	/* ============================================
 	** ===== Public Synchronization Functions =====
 	*  ============================================ */
+	SemaphoreHandle ConsumeReleaseSemaphore() noexcept;
+
+	void EndFrame();
+
 	/** Advance to the next frame context. */
 	void NextFrame();
 
 	/** Request a new command buffer for the current thread. */
-	CommandBufferHandle RequestCommandBuffer(CommandBufferType type       = CommandBufferType::Generic,
-	                                         const std::string& debugName = "");
+	[[nodiscard]] CommandBufferHandle RequestCommandBuffer(CommandBufferType type       = CommandBufferType::Generic,
+	                                                       const std::string& debugName = "");
 
 	/** Request a new command buffer for the specified thread. */
-	CommandBufferHandle RequestCommandBufferForThread(uint32_t threadIndex,
-	                                                  CommandBufferType type       = CommandBufferType::Generic,
-	                                                  const std::string& debugName = "");
+	[[nodiscard]] CommandBufferHandle RequestCommandBufferForThread(uint32_t threadIndex,
+	                                                                CommandBufferType type = CommandBufferType::Generic,
+	                                                                const std::string& debugName = "");
+
+	void SetAcquireSemaphore(uint32_t imageIndex, SemaphoreHandle semaphore);
+
+	void SetupSwapchain(const vk::Extent2D& extent,
+	                    const vk::SurfaceFormatKHR& format,
+	                    const std::vector<vk::Image>& images);
+
+	[[nodiscard]] bool SwapchainAcquired() const;
 
 	/**
 	 * Submit a command buffer for execution.
@@ -86,6 +120,8 @@ class Device : public VulkanObject<Device> {
 		std::vector<vk::Buffer> BuffersToDestroy;
 		std::vector<vk::Fence> FencesToAwait;
 		std::vector<vk::Fence> FencesToRecycle;
+		std::vector<vk::Image> ImagesToDestroy;
+		std::vector<vk::ImageView> ImageViewsToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToConsume;
 		std::vector<vk::Semaphore> SemaphoresToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToRecycle;
@@ -111,11 +147,15 @@ class Device : public VulkanObject<Device> {
 	** ===== Private Object Management Functions =====
 	*  =============================================== */
 	vk::Fence AllocateFence();
-	vk::Semaphore AllocateSemaphore();
+	vk::Semaphore AllocateSemaphore(const std::string& debugName = "");
 	void ConsumeSemaphore(vk::Semaphore semaphore);
 	void ConsumeSemaphoreNoLock(vk::Semaphore semaphore);
 	void DestroyBuffer(vk::Buffer buffer);
 	void DestroyBufferNoLock(vk::Buffer buffer);
+	void DestroyImage(vk::Image image);
+	void DestroyImageNoLock(vk::Image image);
+	void DestroyImageView(vk::ImageView imageView);
+	void DestroyImageViewNoLock(vk::ImageView imageView);
 	void DestroySemaphore(vk::Semaphore semaphore);
 	void DestroySemaphoreNoLock(vk::Semaphore semaphore);
 	void FreeAllocation(VmaAllocation allocation, bool mapped);
@@ -178,7 +218,15 @@ class Device : public VulkanObject<Device> {
 	VulkanObjectPool<Buffer> _bufferPool;
 	VulkanObjectPool<CommandBuffer> _commandBufferPool;
 	VulkanObjectPool<Fence> _fencePool;
+	VulkanObjectPool<Image> _imagePool;
+	VulkanObjectPool<ImageView> _imageViewPool;
 	VulkanObjectPool<Semaphore> _semaphorePool;
+
+	SemaphoreHandle _swapchainAcquire;
+	bool _swapchainAcquireConsumed = false;
+	std::vector<ImageHandle> _swapchainImages;
+	uint32_t _swapchainIndex = std::numeric_limits<uint32_t>::max();
+	SemaphoreHandle _swapchainRelease;
 
 	std::array<QueueData, QueueTypeCount> _queueData;
 };

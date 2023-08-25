@@ -8,7 +8,10 @@ void BufferDeleter::operator()(Buffer* buffer) {
 	buffer->_device._bufferPool.Free(buffer);
 }
 
-Buffer::Buffer(Device& device, const BufferCreateInfo& createInfo, const std::string& debugName)
+Buffer::Buffer(Device& device,
+               const BufferCreateInfo& createInfo,
+               const void* initialData,
+               const std::string& debugName)
 		: Cookie(device), _device(device), _createInfo(createInfo), _debugName(debugName) {
 	// First perform a few sanity checks.
 	const bool zeroInitialize = createInfo.Flags & BufferCreateFlagBits::ZeroInitialize;
@@ -36,16 +39,20 @@ Buffer::Buffer(Device& device, const BufferCreateInfo& createInfo, const std::st
 	}
 
 	// Create and allocate our buffer
-	VkBuffer buffer                  = VK_NULL_HANDLE;
 	VmaAllocationInfo allocationInfo = {};
-	const VkResult createResult =
-		vmaCreateBuffer(_device._allocator, &bufferCI, &bufferAI, &buffer, &_allocation, &allocationInfo);
-	if (createResult != VK_SUCCESS) {
-		Log::Error("Vulkan", "Failed to create buffer: {}", vk::to_string(vk::Result(createResult)));
+	{
+		std::lock_guard<std::mutex> lock(_device._lock.MemoryLock);
 
-		throw std::runtime_error("Failed to create buffer");
+		VkBuffer buffer = VK_NULL_HANDLE;
+		const VkResult createResult =
+			vmaCreateBuffer(_device._allocator, &bufferCI, &bufferAI, &buffer, &_allocation, &allocationInfo);
+		if (createResult != VK_SUCCESS) {
+			Log::Error("Vulkan", "Failed to create buffer: {}", vk::to_string(vk::Result(createResult)));
+
+			throw std::runtime_error("Failed to create buffer");
+		}
+		_buffer = buffer;
 	}
-	_buffer = buffer;
 
 	if (_debugName.empty()) {
 		Log::Trace("Vulkan", "Buffer created. ({})", Size(createInfo.Size));
@@ -63,6 +70,13 @@ Buffer::Buffer(Device& device, const BufferCreateInfo& createInfo, const std::st
 		if (mapResult != VK_SUCCESS) {
 			Log::Error("Vulkan", "Failed to map host-visible buffer: {}", vk::to_string(vk::Result(mapResult)));
 		}
+	}
+
+	// Zero-initialize or copy initial data for our buffer
+	if (initialData) {
+		WriteData(initialData, createInfo.Size, 0);
+	} else if (zeroInitialize) {
+		FillData(0, createInfo.Size, 0);
 	}
 }
 

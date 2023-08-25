@@ -87,7 +87,7 @@ class Buffer : public VulkanObject<Buffer, BufferDeleter>, public Cookie, public
 	[[nodiscard]] static vk::PipelineStageFlags2 UsageToStages(vk::BufferUsageFlags usage);
 
  private:
-	Buffer(Device& device, const BufferCreateInfo& createInfo, const std::string& debugName);
+	Buffer(Device& device, const BufferCreateInfo& createInfo, const void* initialData, const std::string& debugName);
 
 	Device& _device;
 	std::string _debugName;

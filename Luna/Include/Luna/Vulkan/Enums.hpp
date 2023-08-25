@@ -54,12 +54,32 @@ EnumCase(CommandBufferType, AsyncTransfer);
 EnumCase(CommandBufferType, AsyncGraphics);
 EndVulkanEnum();
 
+BeginVulkanEnum(ImageDomain, 2, Physical, Transient);
+EnumCase(ImageDomain, Physical);
+EnumCase(ImageDomain, Transient);
+EndVulkanEnum();
+
 #undef EndVulkanEnum
 #undef EnumCase
 #undef BeginVulkanEnum
 
 enum class BufferCreateFlagBits : uint32_t { ZeroInitialize = 1 << 0 };
 using BufferCreateFlags = Bitmask<BufferCreateFlagBits>;
+
+enum class ImageCreateFlagBits : uint32_t {
+	GenerateMipmaps              = 1 << 0,
+	ForceArray                   = 1 << 1,
+	MutableSrgb                  = 1 << 2,
+	CubeCompatible               = 1 << 3,
+	ConcurrentQueueGraphics      = 1 << 4,
+	ConcurrentQueueAsyncCompute  = 1 << 5,
+	ConcurrentQueueAsyncGraphics = 1 << 6,
+	ConcurrentQueueAsyncTransfer = 1 << 7
+};
+using ImageCreateFlags = Bitmask<ImageCreateFlagBits>;
+
+enum class ImageViewCreateFlagBits : uint32_t { ForceArray = 1 << 0 };
+using ImageViewCreateFlags = Bitmask<ImageViewCreateFlagBits>;
 }  // namespace Vulkan
 }  // namespace Luna
 
@@ -72,3 +92,7 @@ struct fmt::formatter<T> : fmt::formatter<std::string> {
 
 template <>
 struct Luna::EnableBitmaskOperators<Luna::Vulkan::BufferCreateFlagBits> : public std::true_type {};
+template <>
+struct Luna::EnableBitmaskOperators<Luna::Vulkan::ImageCreateFlagBits> : public std::true_type {};
+template <>
+struct Luna::EnableBitmaskOperators<Luna::Vulkan::ImageViewCreateFlagBits> : public std::true_type {};

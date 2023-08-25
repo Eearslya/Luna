@@ -8,6 +8,7 @@ class Renderer final {
 	static bool Initialize();
 	static void Shutdown();
 
+	static Vulkan::Device& GetDevice();
 	static void Render();
 };
 }  // namespace Luna

@@ -2,6 +2,7 @@
 
 #include <Luna/Core/Input.hpp>
 #include <Luna/Core/Window.hpp>
+#include <Luna/Renderer/Swapchain.hpp>
 
 namespace Luna {
 Window::Window(const std::string& title, int width, int height, bool show) {
@@ -35,6 +36,8 @@ Window::Window(const std::string& title, int width, int height, bool show) {
 	});
 	glfwSetScrollCallback(_window, [](GLFWwindow* window, double x, double y) { Input::MouseScrolledEvent({x, y}); });
 
+	_swapchain = MakeHandle<Swapchain>(*this);
+
 	if (show) {
 		glfwShowWindow(_window);
 		glfwFocusWindow(_window);
@@ -42,7 +45,16 @@ Window::Window(const std::string& title, int width, int height, bool show) {
 }
 
 Window::~Window() noexcept {
+	_swapchain.Reset();
 	glfwDestroyWindow(_window);
+}
+
+VkSurfaceKHR Window::CreateSurface(VkInstance instance) const {
+	VkSurfaceKHR surface  = VK_NULL_HANDLE;
+	const VkResult result = glfwCreateWindowSurface(instance, _window, nullptr, &surface);
+	if (result != VK_SUCCESS) { return VK_NULL_HANDLE; }
+
+	return surface;
 }
 
 glm::ivec2 Window::GetFramebufferSize() const {
@@ -61,6 +73,14 @@ glm::ivec2 Window::GetPosition() const {
 	glfwGetWindowPos(_window, &pos.x, &pos.y);
 
 	return pos;
+}
+
+Swapchain& Window::GetSwapchain() {
+	return *_swapchain;
+}
+
+const Swapchain& Window::GetSwapchain() const {
+	return *_swapchain;
 }
 
 glm::ivec2 Window::GetWindowSize() const {

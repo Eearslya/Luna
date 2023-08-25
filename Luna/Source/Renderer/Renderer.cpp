@@ -2,6 +2,7 @@
 #include <Luna/Core/Window.hpp>
 #include <Luna/Core/WindowManager.hpp>
 #include <Luna/Renderer/Renderer.hpp>
+#include <Luna/Renderer/Swapchain.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Context.hpp>
@@ -28,17 +29,17 @@ void Renderer::Shutdown() {
 	State.Context.Reset();
 }
 
+Vulkan::Device& Renderer::GetDevice() {
+	return *State.Device;
+}
+
 void Renderer::Render() {
 	auto& device = *State.Device;
 	device.NextFrame();
 
 	if (!Engine::GetMainWindow()) { return; }
 
-	uint8_t bufferData[64];
-	const Vulkan::BufferCreateInfo bufferCI(Vulkan::BufferDomain::Device, 64, vk::BufferUsageFlagBits::eVertexBuffer);
-	auto buffer = device.CreateBuffer(bufferCI, bufferData);
-
-	auto cmd = device.RequestCommandBuffer();
-	device.Submit(cmd);
+	const bool acquired = Engine::GetMainWindow()->GetSwapchain().Acquire();
+	if (acquired) { Engine::GetMainWindow()->GetSwapchain().Present(); }
 }
 }  // namespace Luna

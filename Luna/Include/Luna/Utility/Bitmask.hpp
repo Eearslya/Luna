@@ -10,131 +10,163 @@ template <typename Bits>
 concept IsBitmaskType = EnableBitmaskOperators<Bits>::value;
 
 template <typename Bits>
-class Bitmask {
- public:
-	using MaskT = typename std::underlying_type<Bits>::type;
+struct Bitflag {
+	using UnderlyingT = typename std::underlying_type_t<Bits>;
 
-	constexpr Bitmask() noexcept : _mask(0) {}
-	constexpr Bitmask(Bits bit) noexcept : _mask(static_cast<MaskT>(bit)) {}
-	constexpr Bitmask(const Bitmask<Bits>& other) noexcept = default;
-	constexpr explicit Bitmask(MaskT mask) noexcept : _mask(mask) {}
+	Bits Value = {};
 
-	constexpr Bitmask<Bits>& operator=(const Bitmask<Bits>& other) noexcept = default;
+	constexpr Bitflag() noexcept = default;
+	constexpr Bitflag(Bits value) noexcept : Value(value) {}
 
-	[[nodiscard]] constexpr operator bool() const noexcept {
-		return _mask != 0;
-	}
-	[[nodiscard]] constexpr operator MaskT() const noexcept {
-		return _mask;
-	}
-	[[nodiscard]] constexpr bool operator!() const noexcept {
-		return !_mask;
+	constexpr operator bool() const noexcept {
+		return static_cast<UnderlyingT>(Value) != 0;
 	}
 
-	[[nodiscard]] constexpr bool operator<(const Bitmask<Bits>& other) const noexcept {
-		return _mask < other._mask;
+	constexpr operator Bits() const noexcept {
+		return Value;
 	}
-	[[nodiscard]] constexpr bool operator<=(const Bitmask<Bits>& other) const noexcept {
-		return _mask <= other._mask;
-	}
-	[[nodiscard]] constexpr bool operator>(const Bitmask<Bits>& other) const noexcept {
-		return _mask > other._mask;
-	}
-	[[nodiscard]] constexpr bool operator>=(const Bitmask<Bits>& other) const noexcept {
-		return _mask >= other._mask;
-	}
-	[[nodiscard]] constexpr bool operator==(const Bitmask<Bits>& other) const noexcept {
-		return _mask == other._mask;
-	}
-	[[nodiscard]] constexpr bool operator!=(const Bitmask<Bits>& other) const noexcept {
-		return _mask != other._mask;
-	}
-
-	[[nodiscard]] constexpr Bitmask<Bits> operator&(const Bitmask<Bits>& other) const noexcept {
-		return Bitmask<Bits>(_mask & other._mask);
-	}
-	[[nodiscard]] constexpr Bitmask<Bits> operator|(const Bitmask<Bits>& other) const noexcept {
-		return Bitmask<Bits>(_mask | other._mask);
-	}
-	[[nodiscard]] constexpr Bitmask<Bits> operator^(const Bitmask<Bits>& other) const noexcept {
-		return Bitmask<Bits>(_mask ^ other._mask);
-	}
-	[[nodiscard]] constexpr Bitmask<Bits> operator~() const noexcept {
-		return Bitmask<Bits>(~_mask);
-	}
-
-	constexpr Bitmask<Bits>& operator&=(const Bitmask<Bits>& other) noexcept {
-		_mask &= other._mask;
-
-		return *this;
-	}
-	constexpr Bitmask<Bits>& operator|=(const Bitmask<Bits>& other) noexcept {
-		_mask |= other._mask;
-
-		return *this;
-	}
-	constexpr Bitmask<Bits>& operator^=(const Bitmask<Bits>& other) noexcept {
-		_mask ^= other._mask;
-
-		return *this;
-	}
-
- private:
-	MaskT _mask;
 };
 
 template <typename Bits>
-[[nodiscard]] constexpr bool operator<(Bits bit, const Bitmask<Bits>& flags) noexcept {
-	return flags.operator>(bit);
-}
-template <typename Bits>
-[[nodiscard]] constexpr bool operator>(Bits bit, const Bitmask<Bits>& flags) noexcept {
-	return flags.operator<(bit);
-}
-template <typename Bits>
-constexpr Bitmask<Bits>& operator<=(Bits bit, Bitmask<Bits>& flags) noexcept {
-	return flags.operator<=(bit);
-}
-template <typename Bits>
-constexpr Bitmask<Bits>& operator>=(Bits bit, Bitmask<Bits>& flags) noexcept {
-	return flags.operator>=(bit);
-}
-template <typename Bits>
-[[nodiscard]] constexpr Bitmask<Bits>& operator==(Bits bit, Bitmask<Bits>& flags) noexcept {
-	return flags.operator==(bit);
-}
-template <typename Bits>
-[[nodiscard]] constexpr Bitmask<Bits>& operator!=(Bits bit, Bitmask<Bits>& flags) noexcept {
-	return flags.operator!=(bit);
+struct Bitmask {
+	using UnderlyingT = typename std::underlying_type_t<Bits>;
+
+	UnderlyingT Value;
+
+	constexpr Bitmask() noexcept : Value(static_cast<UnderlyingT>(0)) {}
+	constexpr Bitmask(Bits value) noexcept : Value(static_cast<UnderlyingT>(value)) {}
+	constexpr Bitmask(UnderlyingT value) noexcept : Value(value) {}
+	constexpr Bitmask(Bitflag<Bits> value) noexcept : Value(static_cast<UnderlyingT>(value.Value)) {}
+	constexpr Bitmask(const Bitmask<Bits>& other) noexcept = default;
+	constexpr Bitmask(Bitmask<Bits>&& other) noexcept      = default;
+
+	constexpr Bitmask<Bits>& operator=(const Bitmask<Bits>& other) noexcept = default;
+	constexpr Bitmask<Bits>& operator=(Bitmask<Bits>&& other) noexcept      = default;
+
+	[[nodiscard]] constexpr operator bool() const noexcept {
+		return Value != 0;
+	}
+	[[nodiscard]] constexpr operator UnderlyingT() const noexcept {
+		return Value;
+	}
+
+	[[nodiscard]] constexpr auto operator<=>(Bits other) const noexcept {
+		return *this <=> Bitmask<Bits>(other);
+	}
+	[[nodiscard]] constexpr auto operator<=>(Bitflag<Bits> other) const noexcept {
+		return *this <=> Bitmask<Bits>(other.Value);
+	}
+	[[nodiscard]] constexpr auto operator<=>(Bitmask<Bits> other) const noexcept {
+		return *this <=> other;
+	}
+	[[nodiscard]] constexpr auto operator<=>(const Bitmask<Bits>& other) const noexcept = default;
+
+	[[nodiscard]] constexpr bool operator!() const noexcept {
+		return static_cast<UnderlyingT>(Value) == 0;
+	}
+	[[nodiscard]] constexpr Bitmask<Bits> operator~() const noexcept {
+		return {~static_cast<UnderlyingT>(Value)};
+	}
+
+	[[nodiscard]] constexpr Bitmask<Bits> operator&(Bits bits) const noexcept {
+		return {static_cast<UnderlyingT>(Value) & static_cast<UnderlyingT>(bits)};
+	}
+	[[nodiscard]] constexpr Bitmask<Bits> operator&(Bitflag<Bits> bits) const noexcept {
+		return {static_cast<UnderlyingT>(Value) & static_cast<UnderlyingT>(bits.Value)};
+	}
+	[[nodiscard]] constexpr Bitmask<Bits> operator&(Bitmask<Bits> bits) const noexcept {
+		return {static_cast<UnderlyingT>(Value) & static_cast<UnderlyingT>(bits.Value)};
+	}
+
+	[[nodiscard]] constexpr Bitmask<Bits> operator|(Bits bits) const noexcept {
+		return {static_cast<UnderlyingT>(Value) | static_cast<UnderlyingT>(bits)};
+	}
+	[[nodiscard]] constexpr Bitmask<Bits> operator|(Bitflag<Bits> bits) const noexcept {
+		return {static_cast<UnderlyingT>(Value) | static_cast<UnderlyingT>(bits.Value)};
+	}
+	[[nodiscard]] constexpr Bitmask<Bits> operator|(Bitmask<Bits> bits) const noexcept {
+		return {static_cast<UnderlyingT>(Value) | static_cast<UnderlyingT>(bits.Value)};
+	}
+
+	[[nodiscard]] constexpr Bitmask<Bits> operator^(Bits bits) const noexcept {
+		return {static_cast<UnderlyingT>(Value) ^ static_cast<UnderlyingT>(bits)};
+	}
+	[[nodiscard]] constexpr Bitmask<Bits> operator^(Bitflag<Bits> bits) const noexcept {
+		return {static_cast<UnderlyingT>(Value) ^ static_cast<UnderlyingT>(bits.Value)};
+	}
+	[[nodiscard]] constexpr Bitmask<Bits> operator^(Bitmask<Bits> bits) const noexcept {
+		return {static_cast<UnderlyingT>(Value) ^ static_cast<UnderlyingT>(bits.Value)};
+	}
+
+	constexpr Bitmask<Bits>& operator&=(Bits bits) noexcept {
+		Value &= static_cast<UnderlyingT>(bits);
+		return *this;
+	}
+	constexpr Bitmask<Bits>& operator&=(Bitflag<Bits> bits) noexcept {
+		Value &= static_cast<UnderlyingT>(bits.Value);
+		return *this;
+	}
+	constexpr Bitmask<Bits>& operator&=(Bitmask<Bits> bits) noexcept {
+		Value &= static_cast<UnderlyingT>(bits.Value);
+		return *this;
+	}
+
+	constexpr Bitmask<Bits>& operator|=(Bits bits) noexcept {
+		Value |= static_cast<UnderlyingT>(bits);
+		return *this;
+	}
+	constexpr Bitmask<Bits>& operator|=(Bitflag<Bits> bits) noexcept {
+		Value |= static_cast<UnderlyingT>(bits.Value);
+		return *this;
+	}
+	constexpr Bitmask<Bits>& operator|=(Bitmask<Bits> bits) noexcept {
+		Value |= static_cast<UnderlyingT>(bits.Value);
+		return *this;
+	}
+
+	constexpr Bitmask<Bits>& operator^=(Bits bits) noexcept {
+		Value ^= static_cast<UnderlyingT>(bits);
+		return *this;
+	}
+	constexpr Bitmask<Bits>& operator^=(Bitflag<Bits> bits) noexcept {
+		Value ^= static_cast<UnderlyingT>(bits.Value);
+		return *this;
+	}
+	constexpr Bitmask<Bits>& operator^=(Bitmask<Bits> bits) noexcept {
+		Value ^= static_cast<UnderlyingT>(bits.Value);
+		return *this;
+	}
+};
+
+[[nodiscard]] constexpr auto operator~(IsBitmaskType auto a) noexcept -> Bitmask<decltype(a)> {
+	using UnderlyingT = typename std::underlying_type_t<decltype(a)>;
+	return {~static_cast<UnderlyingT>(a)};
 }
 
-template <typename Bits>
-[[nodiscard]] constexpr Bitmask<Bits>& operator&(Bits bit, Bitmask<Bits>& flags) noexcept {
-	return flags.operator&(bit);
+[[nodiscard]] constexpr auto operator&(IsBitmaskType auto a, IsBitmaskType auto b) noexcept -> Bitmask<decltype(a)> {
+	using UnderlyingT = typename std::underlying_type_t<decltype(a)>;
+	return {static_cast<UnderlyingT>(a) & static_cast<UnderlyingT>(b)};
 }
-template <typename Bits>
-[[nodiscard]] constexpr Bitmask<Bits>& operator|(Bits bit, Bitmask<Bits>& flags) noexcept {
-	return flags.operator|(bit);
-}
-template <typename Bits>
-[[nodiscard]] constexpr Bitmask<Bits>& operator^(Bits bit, Bitmask<Bits>& flags) noexcept {
-	return flags.operator^(bit);
+[[nodiscard]] constexpr auto operator&(IsBitmaskType auto a, Bitmask<decltype(a)> b) noexcept -> Bitmask<decltype(a)> {
+	using UnderlyingT = typename std::underlying_type_t<decltype(a)>;
+	return {static_cast<UnderlyingT>(a) & static_cast<UnderlyingT>(b.Value)};
 }
 
-template <IsBitmaskType Bits>
-[[nodiscard]] constexpr Bitmask<Bits>& operator&(Bits a, Bits b) noexcept {
-	return Bitmask<Bits>(a) & b;
+[[nodiscard]] constexpr auto operator|(IsBitmaskType auto a, IsBitmaskType auto b) noexcept -> Bitmask<decltype(a)> {
+	using UnderlyingT = typename std::underlying_type_t<decltype(a)>;
+	return {static_cast<UnderlyingT>(a) | static_cast<UnderlyingT>(b)};
 }
-template <IsBitmaskType Bits>
-[[nodiscard]] constexpr Bitmask<Bits>& operator|(Bits a, Bits b) noexcept {
-	return Bitmask<Bits>(a) | b;
+[[nodiscard]] constexpr auto operator|(IsBitmaskType auto a, Bitmask<decltype(a)> b) noexcept -> Bitmask<decltype(a)> {
+	using UnderlyingT = typename std::underlying_type_t<decltype(a)>;
+	return {static_cast<UnderlyingT>(a) | static_cast<UnderlyingT>(b.Value)};
 }
-template <IsBitmaskType Bits>
-[[nodiscard]] constexpr Bitmask<Bits>& operator^(Bits a, Bits b) noexcept {
-	return Bitmask<Bits>(a) ^ b;
+
+[[nodiscard]] constexpr auto operator^(IsBitmaskType auto a, IsBitmaskType auto b) noexcept -> Bitmask<decltype(a)> {
+	using UnderlyingT = typename std::underlying_type_t<decltype(a)>;
+	return {static_cast<UnderlyingT>(a) ^ static_cast<UnderlyingT>(b)};
 }
-template <IsBitmaskType Bits>
-[[nodiscard]] constexpr Bitmask<Bits>& operator~(Bits bits) noexcept {
-	return ~Bitmask<Bits>(bits);
+[[nodiscard]] constexpr auto operator^(IsBitmaskType auto a, Bitmask<decltype(a)> b) noexcept -> Bitmask<decltype(a)> {
+	using UnderlyingT = typename std::underlying_type_t<decltype(a)>;
+	return {static_cast<UnderlyingT>(a) ^ static_cast<UnderlyingT>(b.Value)};
 }
 }  // namespace Luna

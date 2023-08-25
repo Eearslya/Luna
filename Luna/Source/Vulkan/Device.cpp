@@ -5,6 +5,8 @@
 #include <Luna/Vulkan/Context.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Fence.hpp>
+#include <Luna/Vulkan/Format.hpp>
+#include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
 
 namespace Luna {
@@ -102,6 +104,10 @@ Device::Device(Context& context)
 }
 
 Device::~Device() noexcept {
+	_swapchainAcquire.Reset();
+	_swapchainRelease.Reset();
+	_swapchainImages.clear();
+
 	WaitIdle();
 
 	if (_deviceInfo.EnabledFeatures.Vulkan12.timelineSemaphore) {
@@ -139,22 +145,36 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo,
 
 	BufferHandle handle;
 	try {
-		DeviceMemoryLock();
-		handle = BufferHandle(_bufferPool.Allocate(*this, createInfo, debugName));
+		handle = BufferHandle(_bufferPool.Allocate(*this, createInfo, initialData, debugName));
 	} catch (const std::exception& e) {
 		Log::Error("Vulkan", "Failed to create buffer: {}", e.what());
 
 		return {};
 	}
 
-	// Zero-initialize or copy initial data for our buffer
-	if (initialData) {
-		handle->WriteData(initialData, createInfo.Size, 0);
-	} else if (zeroInitialize) {
-		handle->FillData(0, createInfo.Size, 0);
+	return handle;
+}
+
+ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo,
+                                const ImageInitialData* initialData,
+                                const std::string& debugName) {
+	ImageHandle handle;
+	try {
+		handle = ImageHandle(_imagePool.Allocate(*this, createInfo, initialData, debugName));
+	} catch (const std::exception& e) {
+		Log::Error("Vulkan", "Failed to create image: {}", e.what());
+
+		return {};
 	}
 
 	return handle;
+}
+
+SemaphoreHandle Device::RequestSemaphore(const std::string& debugName) {
+	DeviceLock();
+	auto semaphore = AllocateSemaphore(debugName);
+
+	return SemaphoreHandle(_semaphorePool.Allocate(*this, semaphore, false, true, debugName));
 }
 
 void Device::SetObjectName(vk::ObjectType type, uint64_t handle, const std::string& name) {
@@ -167,6 +187,15 @@ void Device::SetObjectName(vk::ObjectType type, uint64_t handle, const std::stri
 /* ============================================
 ** ===== Public Synchronization Functions =====
 *  ============================================ */
+SemaphoreHandle Device::ConsumeReleaseSemaphore() noexcept {
+	return std::move(_swapchainRelease);
+}
+
+void Device::EndFrame() {
+	DeviceFlush();
+	EndFrameNoLock();
+}
+
 void Device::NextFrame() {
 	DeviceFlush();
 
@@ -186,6 +215,54 @@ CommandBufferHandle Device::RequestCommandBufferForThread(uint32_t threadIndex,
 	DeviceLock();
 
 	return RequestCommandBufferNoLock(threadIndex, type, debugName);
+}
+
+void Device::SetAcquireSemaphore(uint32_t imageIndex, SemaphoreHandle semaphore) {
+	_swapchainAcquire         = std::move(semaphore);
+	_swapchainAcquireConsumed = false;
+	_swapchainIndex           = imageIndex;
+
+	if (_swapchainAcquire) { _swapchainAcquire->SetInternalSync(); }
+}
+
+void Device::SetupSwapchain(const vk::Extent2D& extent,
+                            const vk::SurfaceFormatKHR& format,
+                            const std::vector<vk::Image>& images) {
+	DeviceFlush();
+
+	const auto imageCI = ImageCreateInfo::RenderTarget(format.format, extent.width, extent.height);
+
+	_swapchainAcquireConsumed = false;
+	_swapchainImages.clear();
+	_swapchainImages.reserve(images.size());
+	_swapchainIndex = std::numeric_limits<uint32_t>::max();
+
+	for (size_t i = 0; i < images.size(); ++i) {
+		const auto& image = images[i];
+
+		const vk::ImageViewCreateInfo viewCI({},
+		                                     image,
+		                                     vk::ImageViewType::e2D,
+		                                     format.format,
+		                                     vk::ComponentMapping(),
+		                                     vk::ImageSubresourceRange(FormatAspectFlags(format.format), 0, 1, 0, 1));
+		auto imageView = _device.createImageView(viewCI);
+		Log::Trace("Vulkan", "Image View created.");
+
+		Image* img = _imagePool.Allocate(*this, imageCI, image, VmaAllocation{}, imageView);
+		ImageHandle handle(img);
+		handle->DisownImage();
+		handle->DisownMemory();
+		handle->SetInternalSync();
+		handle->GetView().SetInternalSync();
+		handle->SetSwapchainLayout(vk::ImageLayout::ePresentSrcKHR);
+
+		_swapchainImages.push_back(handle);
+	}
+}
+
+bool Device::SwapchainAcquired() const {
+	return _swapchainAcquireConsumed;
 }
 
 void Device::Submit(CommandBufferHandle& commandBuffer, FenceHandle* fence, std::vector<SemaphoreHandle>* semaphores) {
@@ -214,17 +291,21 @@ vk::Fence Device::AllocateFence() {
 	}
 }
 
-vk::Semaphore Device::AllocateSemaphore() {
+vk::Semaphore Device::AllocateSemaphore(const std::string& debugName) {
+	vk::Semaphore semaphore;
+
 	if (_availableSemaphores.empty()) {
 		const vk::SemaphoreCreateInfo semaphoreCI;
-
-		return _device.createSemaphore(semaphoreCI);
+		semaphore = _device.createSemaphore(semaphoreCI);
+		Log::Trace("Vulkan", "Semaphore created.");
 	} else {
-		auto semaphore = _availableSemaphores.back();
+		semaphore = _availableSemaphores.back();
 		_availableSemaphores.pop_back();
-
-		return semaphore;
 	}
+
+	if (!debugName.empty()) { SetObjectName(semaphore, debugName); }
+
+	return semaphore;
 }
 
 void Device::ConsumeSemaphore(vk::Semaphore semaphore) {
@@ -243,6 +324,24 @@ void Device::DestroyBuffer(vk::Buffer buffer) {
 
 void Device::DestroyBufferNoLock(vk::Buffer buffer) {
 	Frame().BuffersToDestroy.push_back(buffer);
+}
+
+void Device::DestroyImage(vk::Image image) {
+	DeviceLock();
+	DestroyImageNoLock(image);
+}
+
+void Device::DestroyImageNoLock(vk::Image image) {
+	Frame().ImagesToDestroy.push_back(image);
+}
+
+void Device::DestroyImageView(vk::ImageView imageView) {
+	DeviceLock();
+	DestroyImageViewNoLock(imageView);
+}
+
+void Device::DestroyImageViewNoLock(vk::ImageView imageView) {
+	Frame().ImageViewsToDestroy.push_back(imageView);
 }
 
 void Device::DestroySemaphore(vk::Semaphore semaphore) {
@@ -741,9 +840,13 @@ void Device::FrameContext::Begin() {
 
 	// Clean up all deferred object deletions.
 	for (auto buffer : BuffersToDestroy) { device.destroyBuffer(buffer); }
+	for (auto image : ImagesToDestroy) { device.destroyImage(image); }
+	for (auto imageView : ImageViewsToDestroy) { device.destroyImageView(imageView); }
 	for (auto semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
 	for (auto semaphore : SemaphoresToRecycle) { Parent.FreeSemaphore(semaphore); }
 	BuffersToDestroy.clear();
+	ImagesToDestroy.clear();
+	ImageViewsToDestroy.clear();
 	SemaphoresToDestroy.clear();
 	SemaphoresToRecycle.clear();
 

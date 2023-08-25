@@ -4,8 +4,12 @@
 #include <Luna/Core/WindowManager.hpp>
 
 struct GLFWwindow;
+using VkInstance   = struct VkInstance_T*;
+using VkSurfaceKHR = struct VkSurfaceKHR_T*;
 
 namespace Luna {
+class Swapchain;
+
 class Window final {
  public:
 	Window(const std::string& title, int width, int height, bool show = true);
@@ -13,14 +17,17 @@ class Window final {
 	Window& operator=(const Window&) noexcept = delete;
 	~Window() noexcept;
 
-	glm::ivec2 GetFramebufferSize() const;
-	GLFWwindow* GetHandle() const;
-	glm::ivec2 GetPosition() const;
-	glm::ivec2 GetWindowSize() const;
-	bool IsCloseRequested() const;
-	bool IsFocused() const;
-	bool IsMaximized() const;
-	bool IsMinimized() const;
+	[[nodiscard]] VkSurfaceKHR CreateSurface(VkInstance instance) const;
+	[[nodiscard]] glm::ivec2 GetFramebufferSize() const;
+	[[nodiscard]] GLFWwindow* GetHandle() const;
+	[[nodiscard]] glm::ivec2 GetPosition() const;
+	[[nodiscard]] Swapchain& GetSwapchain();
+	[[nodiscard]] const Swapchain& GetSwapchain() const;
+	[[nodiscard]] glm::ivec2 GetWindowSize() const;
+	[[nodiscard]] bool IsCloseRequested() const;
+	[[nodiscard]] bool IsFocused() const;
+	[[nodiscard]] bool IsMaximized() const;
+	[[nodiscard]] bool IsMinimized() const;
 
 	void CenterPosition();
 	void Close();
@@ -39,5 +46,6 @@ class Window final {
  private:
 	GLFWwindow* _window = nullptr;
 	MouseCursor _cursor = MouseCursor::Arrow;
+	IntrusivePtr<Swapchain> _swapchain;
 };
 }  // namespace Luna

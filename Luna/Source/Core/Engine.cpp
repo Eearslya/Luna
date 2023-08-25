@@ -50,8 +50,7 @@ int Engine::Run() {
 	if (!State.Initialized) { return -1; }
 
 	State.FrameCount = 0;
-	Update();
-	// State.Running    = true;
+	State.Running    = true;
 	while (State.Running) { Update(); }
 
 	return 0;
