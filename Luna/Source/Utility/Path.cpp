@@ -128,6 +128,10 @@ std::string_view Path::Stem() const {
 	return filename.substr(0, lastDot);
 }
 
+Path Path::Relative(const Path& other) const {
+	return Path(ParentPath()) / other;
+}
+
 Path::operator std::string() const {
 	return _pathStr;
 }

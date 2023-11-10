@@ -41,17 +41,17 @@ void Renderer::Render() {
 	if (!Engine::GetMainWindow()) { return; }
 
 	const bool acquired = Engine::GetMainWindow()->GetSwapchain().Acquire();
-	if (acquired) {
-		auto cmd = device.RequestCommandBuffer();
+	if (!acquired) { return; }
 
-		auto rpInfo           = device.GetSwapchainRenderPass();
-		rpInfo.ClearColors[0] = vk::ClearColorValue(0.36f, 0.0f, 0.63f, 1.0f);
-		cmd->BeginRenderPass(rpInfo);
-		cmd->EndRenderPass();
+	auto cmd = device.RequestCommandBuffer();
 
-		device.Submit(cmd);
+	auto rpInfo           = device.GetSwapchainRenderPass();
+	rpInfo.ClearColors[0] = vk::ClearColorValue(0.36f, 0.0f, 0.63f, 1.0f);
+	cmd->BeginRenderPass(rpInfo);
+	cmd->EndRenderPass();
 
-		Engine::GetMainWindow()->GetSwapchain().Present();
-	}
+	device.Submit(cmd);
+
+	Engine::GetMainWindow()->GetSwapchain().Present();
 }
 }  // namespace Luna

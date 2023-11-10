@@ -3,6 +3,8 @@ project(Luna-Engine LANGUAGES CXX)
 include(FetchContent)
 include(FindVulkan)
 
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
 FetchContent_Declare(glfw
 	GIT_REPOSITORY https://github.com/glfw/glfw.git
 	GIT_TAG 3eaf1255b29fdf5c2895856c7be7d7185ef2b241)
@@ -14,19 +16,53 @@ set(GLFW_VULKAN_STATIC  OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(glm
 	GIT_REPOSITORY https://github.com/g-truc/glm.git
-	GIT_TAG 5c46b9c07008ae65cb81ab79cd677ecc1934b903)
+	GIT_TAG 586a402397dd35d66d7a079049856d1e2cbab300)
+
+FetchContent_Declare(glslang
+	GIT_REPOSITORY https://github.com/KhronosGroup/glslang.git
+	GIT_TAG a8d39f97cdf08cf7eac4ae40dfe7b41420a3be30)
+set(ENABLE_CTEST            OFF CACHE BOOL "" FORCE)
+set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "" FORCE)
+set(ENABLE_HLSL              ON CACHE BOOL "" FORCE)
+set(SKIP_GLSLANG_INSTALL     ON CACHE BOOL "" FORCE)
+
+FetchContent_Declare(shaderc
+	GIT_REPOSITORY https://github.com/google/shaderc.git
+	GIT_TAG 0d6f72f3ec57fe68377363d9e810385e6b6e37e1)
+set(SHADERC_ENABLE_WERROR_COMPILE OFF CACHE BOOL "" FORCE)
+set(SHADERC_SKIP_COPYRIGHT_CHECK   ON CACHE BOOL "" FORCE)
+set(SHADERC_SKIP_EXAMPLES          ON CACHE BOOL "" FORCE)
+set(SHADERC_SKIP_INSTALL           ON CACHE BOOL "" FORCE)
+set(SHADERC_SKIP_TESTS             ON CACHE BOOL "" FORCE)
 
 FetchContent_Declare(spdlog
 	GIT_REPOSITORY https://github.com/gabime/spdlog.git
-	GIT_TAG 76dfc7e7c0d3c69d3cdaa3399b63545235ccbb02)
+	GIT_TAG ac55e60488032b9acde8940a5de099541c4515da)
+
+FetchContent_Declare(spirv-headers
+	GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Headers
+	GIT_TAG 38f39dae5baaa24431b24ac659054ebe972fa1e6)
+
+FetchContent_Declare(spirv-tools
+	GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Tools
+  GIT_TAG fbf047cc8b51d396d66c747f1eee472feb1b2441)
+set(SKIP_SPIRV_TOOLS_INSTALL  ON CACHE BOOL "" FORCE)
+set(SPIRV_BUILD_FUZZER       OFF CACHE BOOL "" FORCE)
+set(SPIRV_SKIP_EXECUTABLES    ON CACHE BOOL "" FORCE)
+set(SPIRV_SKIP_TESTS          ON CACHE BOOL "" FORCE)
+set(SPIRV_WARN_EVERYTHING    OFF CACHE BOOL "" FORCE)
+set(SPIRV_WERROR             OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(vma
 	GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
-	GIT_TAG 6eb62e1515072827db992c2befd80b71b2d04329)
+	GIT_TAG b721922bce0e536c84b70a1d9bcd5db2b66e42df)
 set(VMA_DYNAMIC_VULKAN_FUNCTIONS OFF CACHE BOOL "" FORCE)
 set(VMA_STATIC_VULKAN_FUNCTIONS  OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(glfw glm spdlog vma)
+FetchContent_MakeAvailable(glfw glm spdlog spirv-headers spirv-tools glslang shaderc vma)
+
+set_target_properties(glslc_exe      PROPERTIES EXCLUDE_FROM_ALL ON)
+set_target_properties(shaderc_shared PROPERTIES EXCLUDE_FROM_ALL ON)
 
 add_library(Luna STATIC)
 target_compile_definitions(Luna
@@ -35,7 +71,7 @@ target_compile_definitions(Luna
 target_include_directories(Luna PUBLIC "Include")
 target_link_libraries(Luna
   PUBLIC glm spdlog Vulkan::Headers VulkanMemoryAllocator
-  PRIVATE glfw)
+  PRIVATE glfw shaderc)
 target_precompile_headers(Luna PRIVATE "Include/Luna/Common.hpp")
 
 add_subdirectory(Source)

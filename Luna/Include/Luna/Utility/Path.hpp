@@ -31,6 +31,8 @@ class Path {
 	[[nodiscard]] std::string_view Protocol() const;
 	[[nodiscard]] std::string_view Stem() const;
 
+	[[nodiscard]] Path Relative(const Path& other) const;
+
 	[[nodiscard]] operator std::string() const;
 	[[nodiscard]] bool operator==(const Path& other) const;
 	[[nodiscard]] bool operator!=(const Path& other) const;
