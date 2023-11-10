@@ -1,4 +1,5 @@
 #include <Luna/Core/Threading.hpp>
+#include <Luna/Utility/Hash.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/CommandPool.hpp>
@@ -7,6 +8,7 @@
 #include <Luna/Vulkan/Fence.hpp>
 #include <Luna/Vulkan/Format.hpp>
 #include <Luna/Vulkan/Image.hpp>
+#include <Luna/Vulkan/RenderPass.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
 
 namespace Luna {
@@ -170,6 +172,41 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo,
 	return handle;
 }
 
+RenderPassInfo Device::GetSwapchainRenderPass(SwapchainRenderPassType type) const noexcept {
+	RenderPassInfo info       = {};
+	info.ColorAttachmentCount = 1;
+	info.ColorAttachments[0]  = &GetSwapchainView();
+	info.ClearColors[0]       = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+	info.ClearDepthStencil    = vk::ClearDepthStencilValue(1.0f, 0);
+	info.ClearAttachmentMask  = 1 << 0;
+	info.StoreAttachmentMask  = 1 << 0;
+
+	const auto& imageCI = info.ColorAttachments[0]->GetImage().GetCreateInfo();
+	const vk::Extent2D extent(imageCI.Width, imageCI.Height);
+
+	if (type == SwapchainRenderPassType::Depth) {
+	} else if (type == SwapchainRenderPassType::DepthStencil) {
+	}
+
+	return info;
+}
+
+ImageView& Device::GetSwapchainView() {
+	return GetSwapchainView(_swapchainIndex);
+}
+
+const ImageView& Device::GetSwapchainView() const {
+	return GetSwapchainView(_swapchainIndex);
+}
+
+ImageView& Device::GetSwapchainView(uint32_t index) {
+	return _swapchainImages[_swapchainIndex]->GetView();
+}
+
+const ImageView& Device::GetSwapchainView(uint32_t index) const {
+	return _swapchainImages[_swapchainIndex]->GetView();
+}
+
 SemaphoreHandle Device::RequestSemaphore(const std::string& debugName) {
 	DeviceLock();
 	auto semaphore = AllocateSemaphore(debugName);
@@ -201,6 +238,8 @@ void Device::NextFrame() {
 
 	EndFrameNoLock();
 
+	_framebuffers.BeginFrame();
+
 	_currentFrameContext = (_currentFrameContext + 1) % _frameContexts.size();
 	Frame().Begin();
 }
@@ -229,6 +268,7 @@ void Device::SetupSwapchain(const vk::Extent2D& extent,
                             const vk::SurfaceFormatKHR& format,
                             const std::vector<vk::Image>& images) {
 	DeviceFlush();
+	WaitIdleNoLock();
 
 	const auto imageCI = ImageCreateInfo::RenderTarget(format.format, extent.width, extent.height);
 
@@ -326,6 +366,15 @@ void Device::DestroyBufferNoLock(vk::Buffer buffer) {
 	Frame().BuffersToDestroy.push_back(buffer);
 }
 
+void Device::DestroyFramebuffer(vk::Framebuffer framebuffer) {
+	DeviceLock();
+	DestroyFramebufferNoLock(framebuffer);
+}
+
+void Device::DestroyFramebufferNoLock(vk::Framebuffer framebuffer) {
+	Frame().FramebuffersToDestroy.push_back(framebuffer);
+}
+
 void Device::DestroyImage(vk::Image image) {
 	DeviceLock();
 	DestroyImageNoLock(image);
@@ -371,6 +420,92 @@ void Device::FreeSemaphore(vk::Semaphore semaphore) {
 	_availableSemaphores.push_back(semaphore);
 }
 
+void Device::RecycleSemaphore(vk::Semaphore semaphore) {
+	DeviceLock();
+	RecycleSemaphoreNoLock(semaphore);
+}
+
+void Device::RecycleSemaphoreNoLock(vk::Semaphore semaphore) {
+	Frame().SemaphoresToRecycle.push_back(semaphore);
+}
+
+const Framebuffer& Device::RequestFramebuffer(const RenderPassInfo& rpInfo) {
+	Hasher h;
+
+	auto& rp = RequestRenderPass(rpInfo, true);
+	h(rp.GetHash());
+
+	for (uint32_t i = 0; i < rpInfo.ColorAttachmentCount; ++i) { h(rpInfo.ColorAttachments[i]->GetCookie()); }
+	if (rpInfo.DepthStencilAttachment) { h(rpInfo.DepthStencilAttachment->GetCookie()); }
+	h(rpInfo.ArrayLayers > 1 ? 0u : rpInfo.BaseLayer);
+
+	const auto hash = h.Get();
+
+	std::lock_guard<std::mutex> lock(_lock.FramebufferLock);
+	auto* node = _framebuffers.Request(hash);
+	if (node) { return *node; }
+
+	return *_framebuffers.Emplace(hash, *this, rp, rpInfo);
+}
+
+const RenderPass& Device::RequestRenderPass(const RenderPassInfo& rpInfo, bool compatible) {
+	Hasher h;
+
+	std::array<vk::Format, MaxColorAttachments> colorFormats;
+	colorFormats.fill(vk::Format::eUndefined);
+	vk::Format depthFormat = vk::Format::eUndefined;
+	uint32_t lazy          = 0;
+
+	for (uint32_t i = 0; i < rpInfo.ColorAttachmentCount; ++i) {
+		colorFormats[i] = rpInfo.ColorAttachments[i]->GetFormat();
+		if (rpInfo.ColorAttachments[i]->GetImage().GetCreateInfo().Domain == ImageDomain::Transient) { lazy |= 1u << i; }
+		h(rpInfo.ColorAttachments[i]->GetImage().GetSwapchainLayout());
+	}
+
+	if (rpInfo.DepthStencilAttachment) {
+		if (rpInfo.DepthStencilAttachment->GetImage().GetCreateInfo().Domain == ImageDomain::Transient) {
+			lazy |= 1u << rpInfo.ColorAttachmentCount;
+		}
+	}
+
+	if (rpInfo.ArrayLayers > 1) {
+		h(rpInfo.BaseLayer);
+		h(rpInfo.ArrayLayers);
+	} else {
+		h(uint32_t(0));
+		h(rpInfo.ArrayLayers);
+	}
+
+	h(rpInfo.Subpasses.size());
+	for (const auto& subpass : rpInfo.Subpasses) {
+		h(subpass.ColorAttachmentCount);
+		h(subpass.InputAttachmentCount);
+		h(subpass.ResolveAttachmentCount);
+		h(subpass.DepthStencil);
+		for (uint32_t i = 0; i < subpass.ColorAttachmentCount; ++i) { h(subpass.ColorAttachments[i]); }
+		for (uint32_t i = 0; i < subpass.InputAttachmentCount; ++i) { h(subpass.InputAttachments[i]); }
+		for (uint32_t i = 0; i < subpass.ResolveAttachmentCount; ++i) { h(subpass.ResolveAttachments[i]); }
+	}
+
+	h(rpInfo.ColorAttachmentCount);
+	for (const auto format : colorFormats) { h(format); }
+	h(rpInfo.DepthStencilAttachment ? rpInfo.DepthStencilAttachment->GetFormat() : vk::Format::eUndefined);
+
+	if (!compatible) {
+		h(rpInfo.Flags);
+		h(rpInfo.ClearAttachmentMask);
+		h(rpInfo.LoadAttachmentMask);
+		h(rpInfo.StoreAttachmentMask);
+	}
+	h(lazy);
+
+	const auto hash = h.Get();
+	auto* ret       = _renderPasses.Find(hash);
+	if (!ret) { ret = _renderPasses.EmplaceYield(hash, hash, *this, rpInfo); }
+
+	return *ret;
+}
+
 void Device::ResetFence(vk::Fence fence, bool observedWait) {
 	DeviceLock();
 	ResetFenceNoLock(fence, observedWait);
@@ -383,15 +518,6 @@ void Device::ResetFenceNoLock(vk::Fence fence, bool observedWait) {
 	} else {
 		Frame().FencesToRecycle.push_back(fence);
 	}
-}
-
-void Device::RecycleSemaphore(vk::Semaphore semaphore) {
-	DeviceLock();
-	RecycleSemaphoreNoLock(semaphore);
-}
-
-void Device::RecycleSemaphoreNoLock(vk::Semaphore semaphore) {
-	Frame().SemaphoresToRecycle.push_back(semaphore);
 }
 
 /* =============================================
@@ -538,7 +664,23 @@ void Device::SubmitQueue(QueueType queueType, InternalFence* signalFence, std::v
 	// Add all of our command buffers.
 	for (auto& commandBuffer : submissions) {
 		const auto swapchainStages = commandBuffer->GetSwapchainStages();
-		if (swapchainStages) {
+		if (swapchainStages && !_swapchainAcquireConsumed) {
+			if (_swapchainAcquire && _swapchainAcquire->GetSemaphore()) {
+				const auto value = _swapchainAcquire->GetTimelineValue();
+				AddWaitSemaphore(_swapchainAcquire->GetSemaphore(), value, swapchainStages);
+				if (!value) { Frame().SemaphoresToRecycle.push_back(_swapchainAcquire->GetSemaphore()); }
+
+				_swapchainAcquire->Consume();
+				_swapchainAcquireConsumed = true;
+				_swapchainAcquire.Reset();
+			}
+
+			AddCommandBuffer(commandBuffer->GetCommandBuffer());
+
+			vk::Semaphore release = AllocateSemaphore();
+			_swapchainRelease     = SemaphoreHandle(_semaphorePool.Allocate(*this, release, true, true));
+			_swapchainRelease->SetInternalSync();
+			AddSignalSemaphore(release, 0, {});
 		} else {
 			AddCommandBuffer(commandBuffer->GetCommandBuffer());
 		}
@@ -693,6 +835,8 @@ void Device::WaitIdleNoLock() {
 		// Await the completion of all GPU work.
 		_device.waitIdle();
 
+		_framebuffers.Clear();
+
 		for (auto& queue : _queueData) {
 			for (auto& semaphore : queue.WaitSemaphores) { _device.destroySemaphore(semaphore->Release()); }
 			queue.WaitSemaphores.clear();
@@ -840,11 +984,13 @@ void Device::FrameContext::Begin() {
 
 	// Clean up all deferred object deletions.
 	for (auto buffer : BuffersToDestroy) { device.destroyBuffer(buffer); }
+	for (auto framebuffer : FramebuffersToDestroy) { device.destroyFramebuffer(framebuffer); }
 	for (auto image : ImagesToDestroy) { device.destroyImage(image); }
 	for (auto imageView : ImageViewsToDestroy) { device.destroyImageView(imageView); }
 	for (auto semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
 	for (auto semaphore : SemaphoresToRecycle) { Parent.FreeSemaphore(semaphore); }
 	BuffersToDestroy.clear();
+	FramebuffersToDestroy.clear();
 	ImagesToDestroy.clear();
 	ImageViewsToDestroy.clear();
 	SemaphoresToDestroy.clear();

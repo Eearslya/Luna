@@ -4,6 +4,12 @@
 #include <type_traits>
 
 namespace Luna {
+/**
+ * Reference counter class which is suitable for use on a single thread.
+ *
+ * Uses a simple integer variable for reference counting, which is susceptible to race conditions in a multithreaded
+ * context.
+ */
 class SingleThreadCounter {
  public:
 	void AddReference() noexcept {
@@ -18,6 +24,12 @@ class SingleThreadCounter {
 	std::size_t _count = 1;
 };
 
+/**
+ * Reference counter class which is suitable for use on multiple threads.
+ *
+ * Uses an atomic integer for reference counting, which prevents race conditions and ensures stability of the reference
+ * count.
+ */
 class MultiThreadCounter {
  public:
 	MultiThreadCounter() noexcept {
@@ -39,6 +51,14 @@ class MultiThreadCounter {
 template <typename T>
 class IntrusivePtr;
 
+/**
+ * Base class required for any class you wish to use intrusive pointers with.
+ *
+ * As the name implies, the reference counter is intrusive, which means the reference count is stored inside the object
+ * itself rather than in a separate allocation like std::shared_ptr.
+ * Optionally, you can specify a templated Deleter functor which will be called whenever all references to the object
+ * are released.
+ */
 template <typename T, typename DeleterT = std::default_delete<T>, typename ReferenceOpsT = SingleThreadCounter>
 class IntrusivePtrEnabled {
  public:
@@ -59,12 +79,25 @@ class IntrusivePtrEnabled {
 	}
 
  protected:
-	IntrusivePtrT ReferenceFromThis();
+	/**
+	 * Retrieve an IntrusivePtr for this object.
+	 */
+	[[nodiscard]] IntrusivePtrT ReferenceFromThis();
 
  private:
 	ReferenceOpsT _referenceCount;
 };
 
+/**
+ * A smart pointer class where the object itself stores its own reference count.
+ *
+ * This implementation of smart pointers is similar to std::shared_ptr, but the reference count is contained inside the
+ * object itself. This avoids the need for a separate heap allocation to keep track of the reference count, but it
+ * requires that the class inherits from IntrusivePtrEnabled.
+ *
+ * An IntrusivePtr can be copied and moved like a shared pointer, and once all IntrusivePtr objects for a given object
+ * go out of scope, the object itself will be deleted.
+ */
 template <typename T>
 class IntrusivePtr {
  public:

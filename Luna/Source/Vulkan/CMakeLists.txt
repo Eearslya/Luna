@@ -9,4 +9,5 @@ target_sources(Luna PRIVATE
   Fence.cpp
   Format.cpp
   Image.cpp
+  RenderPass.cpp
   Semaphore.cpp)

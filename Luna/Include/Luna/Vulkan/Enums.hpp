@@ -54,9 +54,26 @@ EnumCase(CommandBufferType, AsyncTransfer);
 EnumCase(CommandBufferType, AsyncGraphics);
 EndVulkanEnum();
 
+BeginVulkanEnum(DepthStencilUsage, 3, None, ReadOnly, ReadWrite);
+EnumCase(DepthStencilUsage, None);
+EnumCase(DepthStencilUsage, ReadOnly);
+EnumCase(DepthStencilUsage, ReadWrite);
+EndVulkanEnum();
+
 BeginVulkanEnum(ImageDomain, 2, Physical, Transient);
 EnumCase(ImageDomain, Physical);
 EnumCase(ImageDomain, Transient);
+EndVulkanEnum();
+
+BeginVulkanEnum(ImageLayoutType, 2, Optimal, General);
+EnumCase(ImageLayoutType, Optimal);
+EnumCase(ImageLayoutType, General);
+EndVulkanEnum();
+
+BeginVulkanEnum(SwapchainRenderPassType, 3, ColorOnly, Depth, DepthStencil);
+EnumCase(SwapchainRenderPassType, ColorOnly);
+EnumCase(SwapchainRenderPassType, Depth);
+EnumCase(SwapchainRenderPassType, DepthStencil);
 EndVulkanEnum();
 
 #undef EndVulkanEnum
@@ -65,6 +82,19 @@ EndVulkanEnum();
 
 enum class BufferCreateFlagBits : uint32_t { ZeroInitialize = 1 << 0 };
 using BufferCreateFlags = Bitmask<BufferCreateFlagBits>;
+
+enum class CommandBufferDirtyFlagBits {
+	StaticState      = 1 << 0,
+	Pipeline         = 1 << 1,
+	Viewport         = 1 << 2,
+	Scissor          = 1 << 3,
+	DepthBias        = 1 << 4,
+	StencilReference = 1 << 5,
+	StaticVertex     = 1 << 6,
+	PushConstants    = 1 << 7,
+	Dynamic          = Viewport | Scissor | DepthBias | StencilReference
+};
+using CommandBufferDirtyFlags = Bitmask<CommandBufferDirtyFlagBits>;
 
 enum class ImageCreateFlagBits : uint32_t {
 	GenerateMipmaps              = 1 << 0,
@@ -80,6 +110,16 @@ using ImageCreateFlags = Bitmask<ImageCreateFlagBits>;
 
 enum class ImageViewCreateFlagBits : uint32_t { ForceArray = 1 << 0 };
 using ImageViewCreateFlags = Bitmask<ImageViewCreateFlagBits>;
+
+enum class RenderPassFlagBits : uint32_t {
+	ClearDepthStencil    = 1 << 0,
+	LoadDepthStencil     = 1 << 1,
+	StoreDepthStencil    = 1 << 2,
+	DepthStencilReadOnly = 1 << 3,
+	EnableTransientStore = 1 << 4,
+	EnableTransientLoad  = 1 << 5
+};
+using RenderPassFlags = Bitmask<RenderPassFlagBits>;
 }  // namespace Vulkan
 }  // namespace Luna
 
@@ -93,6 +133,10 @@ struct fmt::formatter<T> : fmt::formatter<std::string> {
 template <>
 struct Luna::EnableBitmaskOperators<Luna::Vulkan::BufferCreateFlagBits> : public std::true_type {};
 template <>
+struct Luna::EnableBitmaskOperators<Luna::Vulkan::CommandBufferDirtyFlagBits> : public std::true_type {};
+template <>
 struct Luna::EnableBitmaskOperators<Luna::Vulkan::ImageCreateFlagBits> : public std::true_type {};
 template <>
 struct Luna::EnableBitmaskOperators<Luna::Vulkan::ImageViewCreateFlagBits> : public std::true_type {};
+template <>
+struct Luna::EnableBitmaskOperators<Luna::Vulkan::RenderPassFlagBits> : public std::true_type {};

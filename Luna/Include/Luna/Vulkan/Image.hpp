@@ -189,8 +189,17 @@ class Image : public VulkanObject<Image, ImageDeleter>, public Cookie, public In
  public:
 	~Image() noexcept;
 
+	[[nodiscard]] const ImageCreateInfo GetCreateInfo() const noexcept {
+		return _createInfo;
+	}
 	[[nodiscard]] vk::Image GetImage() const noexcept {
 		return _image;
+	}
+	[[nodiscard]] vk::ImageLayout GetLayout(vk::ImageLayout optimal) const noexcept {
+		return _layoutType == ImageLayoutType::Optimal ? optimal : vk::ImageLayout::eGeneral;
+	}
+	[[nodiscard]] ImageLayoutType GetLayoutType() const noexcept {
+		return _layoutType;
 	}
 	[[nodiscard]] vk::ImageLayout GetSwapchainLayout() const noexcept {
 		return _swapchainLayout;
@@ -201,9 +210,13 @@ class Image : public VulkanObject<Image, ImageDeleter>, public Cookie, public In
 	[[nodiscard]] const ImageView& GetView() const noexcept {
 		return *_imageView;
 	}
+	[[nodiscard]] const bool IsSwapchainImage() const noexcept {
+		return _swapchainLayout != vk::ImageLayout::eUndefined;
+	}
 
 	void DisownImage() noexcept;
 	void DisownMemory() noexcept;
+	void SetLayoutType(ImageLayoutType type) noexcept;
 	void SetSwapchainLayout(vk::ImageLayout layout) noexcept;
 
 	static constexpr vk::ImageViewType GetImageViewType(const ImageCreateInfo& imageCI,
@@ -229,6 +242,7 @@ class Image : public VulkanObject<Image, ImageDeleter>, public Cookie, public In
 	bool _imageOwned                 = true;
 	bool _allocationOwned            = true;
 	vk::ImageLayout _swapchainLayout = vk::ImageLayout::eUndefined;
+	ImageLayoutType _layoutType      = ImageLayoutType::Optimal;
 
 	ImageViewHandle _imageView;
 };
@@ -238,7 +252,7 @@ struct ImageViewDeleter {
 };
 
 struct ImageViewCreateInfo {
-	const Image* Image             = nullptr;
+	Image* Image                   = nullptr;
 	vk::Format Format              = vk::Format::eUndefined;
 	uint32_t BaseLevel             = 0;
 	uint32_t MipLevels             = VK_REMAINING_MIP_LEVELS;
@@ -249,13 +263,34 @@ struct ImageViewCreateInfo {
 	ImageViewCreateFlags MiscFlags = {};
 };
 
-class ImageView : public VulkanObject<ImageView, ImageViewDeleter>, public InternalSyncEnabled {
+class ImageView : public VulkanObject<ImageView, ImageViewDeleter>, public Cookie, public InternalSyncEnabled {
 	friend class ObjectPool<ImageView>;
 	friend class Image;
 	friend struct ImageViewDeleter;
 
  public:
 	~ImageView() noexcept;
+
+	[[nodiscard]] vk::Format GetFormat() const noexcept {
+		return _createInfo.Format;
+	}
+	[[nodiscard]] uint32_t GetHeight() const noexcept {
+		return _createInfo.Image->GetCreateInfo().Height;
+	}
+	[[nodiscard]] Image& GetImage() noexcept {
+		return *_createInfo.Image;
+	}
+	[[nodiscard]] const Image& GetImage() const noexcept {
+		return *_createInfo.Image;
+	}
+	[[nodiscard]] vk::ImageView GetView() const noexcept {
+		return _view;
+	}
+	[[nodiscard]] uint32_t GetWidth() const noexcept {
+		return _createInfo.Image->GetCreateInfo().Width;
+	}
+
+	[[nodiscard]] vk::ImageView GetRenderTargetView(uint32_t layer) const noexcept;
 
  private:
 	ImageView(Device& device, const ImageViewCreateInfo& createInfo);

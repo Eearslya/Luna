@@ -3,6 +3,7 @@
 #include <vk_mem_alloc.h>
 
 #include <Luna/Common.hpp>
+#include <Luna/Utility/IntrusiveHashMap.hpp>
 #include <Luna/Utility/ObjectPool.hpp>
 #include <Luna/Vulkan/Cookie.hpp>
 #include <Luna/Vulkan/Enums.hpp>
@@ -16,8 +17,14 @@ namespace Vulkan {
 /* ============================
 ** ===== Helper Templates =====
 *  ============================ */
+template <typename T>
+using HashedObject = IntrusiveHashMapEnabled<T>;
 template <typename T, typename Deleter = std::default_delete<T>>
 using VulkanObject = IntrusivePtrEnabled<T, Deleter, MultiThreadCounter>;
+template <typename T>
+using VulkanCache = ThreadSafeIntrusiveHashMapReadCached<T>;
+template <typename T>
+using VulkanCacheReadWrite = ThreadSafeIntrusiveHashMap<T>;
 template <typename T>
 using VulkanObjectPool = ThreadSafeObjectPool<T>;
 
@@ -34,6 +41,8 @@ class Context;
 class Device;
 class Fence;
 struct FenceDeleter;
+class Framebuffer;
+struct FramebufferNode;
 class Image;
 struct ImageCreateInfo;
 struct ImageDeleter;
@@ -41,6 +50,8 @@ struct ImageInitialData;
 class ImageView;
 struct ImageViewCreateInfo;
 struct ImageViewDeleter;
+class RenderPass;
+struct RenderPassInfo;
 class Semaphore;
 struct SemaphoreDeleter;
 
@@ -55,6 +66,20 @@ using FenceHandle         = IntrusivePtr<Fence>;
 using ImageHandle         = IntrusivePtr<Image>;
 using ImageViewHandle     = IntrusivePtr<ImageView>;
 using SemaphoreHandle     = IntrusivePtr<Semaphore>;
+
+/* ===========================
+** ===== Constant Values =====
+*  =========================== */
+constexpr int DescriptorSetsPerPool  = 16;
+constexpr int MaxBindlessDescriptors = 16384;
+constexpr int MaxColorAttachments    = 8;
+constexpr int MaxDescriptorBindings  = 32;
+constexpr int MaxDescriptorSets      = 4;
+constexpr int MaxPushConstantSize    = 128;
+constexpr int MaxSpecConstants       = 16;
+constexpr int MaxUniformBufferSize   = 16384;
+constexpr int MaxVertexAttributes    = 16;
+constexpr int MaxVertexBindings      = 8;
 
 /* ===========================
 ** ===== Data Structures =====

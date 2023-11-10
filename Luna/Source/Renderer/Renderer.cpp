@@ -7,6 +7,7 @@
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Context.hpp>
 #include <Luna/Vulkan/Device.hpp>
+#include <Luna/Vulkan/RenderPass.hpp>
 
 namespace Luna {
 static struct RendererState {
@@ -40,6 +41,17 @@ void Renderer::Render() {
 	if (!Engine::GetMainWindow()) { return; }
 
 	const bool acquired = Engine::GetMainWindow()->GetSwapchain().Acquire();
-	if (acquired) { Engine::GetMainWindow()->GetSwapchain().Present(); }
+	if (acquired) {
+		auto cmd = device.RequestCommandBuffer();
+
+		auto rpInfo           = device.GetSwapchainRenderPass();
+		rpInfo.ClearColors[0] = vk::ClearColorValue(0.36f, 0.0f, 0.63f, 1.0f);
+		cmd->BeginRenderPass(rpInfo);
+		cmd->EndRenderPass();
+
+		device.Submit(cmd);
+
+		Engine::GetMainWindow()->GetSwapchain().Present();
+	}
 }
 }  // namespace Luna

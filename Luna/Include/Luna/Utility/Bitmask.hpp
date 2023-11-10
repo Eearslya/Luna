@@ -170,3 +170,12 @@ struct Bitmask {
 	return {static_cast<UnderlyingT>(a) ^ static_cast<UnderlyingT>(b.Value)};
 }
 }  // namespace Luna
+
+namespace std {
+template <typename T>
+struct hash<Luna::Bitmask<T>> {
+	size_t operator()(const Luna::Bitmask<T> bitmask) const {
+		return hash<typename Luna::Bitmask<T>::UnderlyingT>{}(bitmask);
+	}
+};
+}  // namespace std

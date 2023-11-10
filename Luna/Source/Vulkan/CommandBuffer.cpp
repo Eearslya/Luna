@@ -1,9 +1,18 @@
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Device.hpp>
+#include <Luna/Vulkan/Image.hpp>
 
 namespace Luna {
 namespace Vulkan {
+Hash DeferredPipelineCompile::GetComputeHash() const {
+	return {};
+}
+
+Hash DeferredPipelineCompile::GetHash(uint32_t& activeVBOs) const {
+	return {};
+}
+
 void CommandBufferDeleter::operator()(CommandBuffer* commandBuffer) {
 	commandBuffer->_device._commandBufferPool.Free(commandBuffer);
 }
@@ -120,6 +129,110 @@ void CommandBuffer::FillBuffer(const Buffer& dst, uint8_t value) {
 
 void CommandBuffer::FillBuffer(const Buffer& dst, uint8_t value, vk::DeviceSize offset, vk::DeviceSize size) {
 	_commandBuffer.fillBuffer(dst.GetBuffer(), offset, size, value);
+}
+
+void CommandBuffer::BeginRenderPass(const RenderPassInfo& rpInfo, vk::SubpassContents contents) {
+	_framebuffer                        = &_device.RequestFramebuffer(rpInfo);
+	_pipelineState.CompatibleRenderPass = &_framebuffer->GetCompatibleRenderPass();
+	_actualRenderPass                   = &_device.RequestRenderPass(rpInfo, false);
+	_pipelineState.SubpassIndex         = 0;
+
+	_framebufferAttachments.fill(nullptr);
+	for (uint32_t i = 0; i < rpInfo.ColorAttachmentCount; ++i) {
+		_framebufferAttachments[i] = rpInfo.ColorAttachments[i];
+	}
+	if (rpInfo.DepthStencilAttachment) {
+		_framebufferAttachments[rpInfo.ColorAttachmentCount] = rpInfo.DepthStencilAttachment;
+	}
+
+	SetViewportScissor(rpInfo, _framebuffer);
+
+	uint32_t clearValueCount = 0;
+	std::array<vk::ClearValue, MaxColorAttachments + 1> clearValues;
+	for (uint32_t i = 0; i < rpInfo.ColorAttachmentCount; ++i) {
+		if (rpInfo.ClearAttachmentMask & (1u << i)) {
+			clearValues[i].color = rpInfo.ClearColors[i];
+			clearValueCount      = i + 1;
+		}
+
+		if (rpInfo.ColorAttachments[i]->GetImage().IsSwapchainImage()) {
+			_swapchainStages |= vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+		}
+	}
+	if (rpInfo.DepthStencilAttachment && (rpInfo.Flags & RenderPassFlagBits::ClearDepthStencil)) {
+		clearValues[rpInfo.ColorAttachmentCount].depthStencil = rpInfo.ClearDepthStencil;
+		clearValueCount                                       = rpInfo.ColorAttachmentCount + 1;
+	}
+
+	const vk::RenderPassBeginInfo rpBI(
+		_actualRenderPass->GetRenderPass(), _framebuffer->GetFramebuffer(), _scissor, clearValueCount, clearValues.data());
+	_commandBuffer.beginRenderPass(rpBI, contents);
+	_currentContents = contents;
+
+	BeginGraphics();
+}
+
+void CommandBuffer::NextSubpass(vk::SubpassContents contents) {
+	_pipelineState.SubpassIndex++;
+	_commandBuffer.nextSubpass(contents);
+	_currentContents = contents;
+
+	BeginGraphics();
+}
+
+void CommandBuffer::EndRenderPass() {
+	_commandBuffer.endRenderPass();
+
+	_framebuffer                        = nullptr;
+	_actualRenderPass                   = nullptr;
+	_pipelineState.CompatibleRenderPass = nullptr;
+
+	BeginCompute();
+}
+
+void CommandBuffer::BeginCompute() {
+	_isCompute = true;
+	BeginContext();
+}
+
+void CommandBuffer::BeginContext() {
+	_dirty     = ~0u;
+	_dirtySets = ~0u;
+	_dirtyVBOs = ~0u;
+	// _currentPipeline.Pipeline = nullptr;
+	_pipelineLayout = nullptr;
+	// _programLayout = nullptr;
+	// _pipelineState.Program = nullptr;
+	_pipelineState.PotentialStaticState.SpecConstantMask         = 0;
+	_pipelineState.PotentialStaticState.InternalSpecConstantMask = 0;
+	for (uint32_t set = 0; set < MaxDescriptorSets; ++set) {
+		for (uint32_t binding = 0; binding < MaxDescriptorBindings; ++binding) {
+			// _bindings.Bindings[set][binding].Cookie = 0;
+			// _bindings.Bindings[set][binding].SecondaryCookie = 0;
+		}
+	}
+	_vertexBindings.Buffers.fill(VK_NULL_HANDLE);
+	memset(&_indexState, 0, sizeof(_indexState));
+}
+
+void CommandBuffer::BeginGraphics() {
+	_isCompute = false;
+	BeginContext();
+}
+
+void CommandBuffer::SetViewportScissor(const RenderPassInfo& rpInfo, const Framebuffer* framebuffer) {
+	vk::Rect2D rect     = rpInfo.RenderArea;
+	vk::Extent2D extent = framebuffer->GetExtent();
+
+	rect.offset.x      = std::min(int32_t(extent.width), rect.offset.x);
+	rect.offset.y      = std::min(int32_t(extent.height), rect.offset.y);
+	rect.extent.width  = std::min(extent.width - rect.offset.x, rect.extent.width);
+	rect.extent.height = std::min(extent.height - rect.offset.y, rect.extent.height);
+
+	// Note: Viewport is flipped up-side-down here for compatibility with GLM matrices.
+	_viewport = vk::Viewport(
+		float(rect.offset.x), float(rect.extent.height), float(rect.extent.width), -float(rect.extent.height), 0.0f, 1.0f);
+	_scissor = rect;
 }
 }  // namespace Vulkan
 }  // namespace Luna

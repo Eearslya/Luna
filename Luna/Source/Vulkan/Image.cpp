@@ -296,6 +296,10 @@ void Image::DisownMemory() noexcept {
 	_allocationOwned = false;
 }
 
+void Image::SetLayoutType(ImageLayoutType type) noexcept {
+	_layoutType = type;
+}
+
 void Image::SetSwapchainLayout(vk::ImageLayout layout) noexcept {
 	_swapchainLayout = layout;
 }
@@ -342,7 +346,8 @@ void ImageViewDeleter::operator()(ImageView* imageView) {
 	imageView->_device._imageViewPool.Free(imageView);
 }
 
-ImageView::ImageView(Device& device, const ImageViewCreateInfo& createInfo) : _device(device), _createInfo(createInfo) {
+ImageView::ImageView(Device& device, const ImageViewCreateInfo& createInfo)
+		: Cookie(device), _device(device), _createInfo(createInfo) {
 	const vk::ImageViewCreateInfo viewCI({},
 	                                     _createInfo.Image->GetImage(),
 	                                     _createInfo.ViewType,
@@ -358,7 +363,7 @@ ImageView::ImageView(Device& device, const ImageViewCreateInfo& createInfo) : _d
 }
 
 ImageView::ImageView(Device& device, vk::ImageView view, const ImageViewCreateInfo& createInfo)
-		: _device(device), _createInfo(createInfo), _view(view) {}
+		: Cookie(device), _device(device), _createInfo(createInfo), _view(view) {}
 
 ImageView::~ImageView() noexcept {
 	if (_internalSync) {
@@ -376,6 +381,12 @@ ImageView::~ImageView() noexcept {
 		if (_srgbView) { _device.DestroyImageView(_srgbView); }
 		for (auto view : _renderTargetViews) { _device.DestroyImageView(view); }
 	}
+}
+
+vk::ImageView ImageView::GetRenderTargetView(uint32_t layer) const noexcept {
+	if (_createInfo.Image->GetCreateInfo().Domain == ImageDomain::Transient) { return _view; }
+	if (_renderTargetViews.empty()) { return _view; }
+	return _renderTargetViews[layer];
 }
 }  // namespace Vulkan
 }  // namespace Luna

@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Luna/Utility/SpinLock.hpp>
+#include <Luna/Utility/TemporaryHashMap.hpp>
 #include <Luna/Vulkan/Common.hpp>
+#include <Luna/Vulkan/RenderPass.hpp>
 
 namespace Luna {
 namespace Vulkan {
@@ -14,10 +16,12 @@ class Device : public VulkanObject<Device> {
 	friend class Cookie;
 	friend class Fence;
 	friend struct FenceDeleter;
+	friend class Framebuffer;
 	friend class Image;
 	friend struct ImageDeleter;
 	friend class ImageView;
 	friend struct ImageViewDeleter;
+	friend class RenderPass;
 	friend class Semaphore;
 	friend struct SemaphoreDeleter;
 
@@ -44,10 +48,15 @@ class Device : public VulkanObject<Device> {
 	[[nodiscard]] BufferHandle CreateBuffer(const BufferCreateInfo& createInfo,
 	                                        const void* initialData      = nullptr,
 	                                        const std::string& debugName = "");
-
 	[[nodiscard]] ImageHandle CreateImage(const ImageCreateInfo& createInfo,
 	                                      const ImageInitialData* initialData = nullptr,
 	                                      const std::string& debugName        = "");
+	[[nodiscard]] RenderPassInfo GetSwapchainRenderPass(
+		SwapchainRenderPassType type = SwapchainRenderPassType::ColorOnly) const noexcept;
+	[[nodiscard]] ImageView& GetSwapchainView();
+	[[nodiscard]] const ImageView& GetSwapchainView() const;
+	[[nodiscard]] ImageView& GetSwapchainView(uint32_t index);
+	[[nodiscard]] const ImageView& GetSwapchainView(uint32_t index) const;
 	[[nodiscard]] SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
 
 	/** Set the debug name for the given object. */
@@ -120,6 +129,7 @@ class Device : public VulkanObject<Device> {
 		std::vector<vk::Buffer> BuffersToDestroy;
 		std::vector<vk::Fence> FencesToAwait;
 		std::vector<vk::Fence> FencesToRecycle;
+		std::vector<vk::Framebuffer> FramebuffersToDestroy;
 		std::vector<vk::Image> ImagesToDestroy;
 		std::vector<vk::ImageView> ImageViewsToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToConsume;
@@ -152,6 +162,8 @@ class Device : public VulkanObject<Device> {
 	void ConsumeSemaphoreNoLock(vk::Semaphore semaphore);
 	void DestroyBuffer(vk::Buffer buffer);
 	void DestroyBufferNoLock(vk::Buffer buffer);
+	void DestroyFramebuffer(vk::Framebuffer framebuffer);
+	void DestroyFramebufferNoLock(vk::Framebuffer framebuffer);
 	void DestroyImage(vk::Image image);
 	void DestroyImageNoLock(vk::Image image);
 	void DestroyImageView(vk::ImageView imageView);
@@ -164,6 +176,8 @@ class Device : public VulkanObject<Device> {
 	void FreeSemaphore(vk::Semaphore semaphore);
 	void RecycleSemaphore(vk::Semaphore semaphore);
 	void RecycleSemaphoreNoLock(vk::Semaphore semaphore);
+	const Framebuffer& RequestFramebuffer(const RenderPassInfo& rpInfo);
+	const RenderPass& RequestRenderPass(const RenderPassInfo& rpInfo, bool compatible = false);
 	void ResetFence(vk::Fence fence, bool observedWait);
 	void ResetFenceNoLock(vk::Fence fence, bool observedWait);
 
@@ -205,6 +219,7 @@ class Device : public VulkanObject<Device> {
 		std::mutex Lock;
 		std::mutex MemoryLock;
 		RWSpinLock ReadOnlyCache;
+		std::mutex FramebufferLock;
 	} _lock;
 	std::atomic_uint64_t _nextCookie;
 
@@ -229,6 +244,10 @@ class Device : public VulkanObject<Device> {
 	SemaphoreHandle _swapchainRelease;
 
 	std::array<QueueData, QueueTypeCount> _queueData;
+
+	VulkanCache<RenderPass> _renderPasses;
+
+	TemporaryHashMap<FramebufferNode, 8, false> _framebuffers;
 };
 }  // namespace Vulkan
 }  // namespace Luna
