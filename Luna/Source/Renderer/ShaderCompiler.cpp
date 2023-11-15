@@ -39,24 +39,6 @@ std::vector<uint32_t> ShaderCompiler::Compile(std::string& error,
 		case Vulkan::ShaderStage::Compute:
 			shaderKind = shaderc_glsl_compute_shader;
 			break;
-		case Vulkan::ShaderStage::RayGen:
-			shaderKind = shaderc_glsl_raygen_shader;
-			break;
-		case Vulkan::ShaderStage::AnyHit:
-			shaderKind = shaderc_glsl_anyhit_shader;
-			break;
-		case Vulkan::ShaderStage::ClosestHit:
-			shaderKind = shaderc_glsl_closesthit_shader;
-			break;
-		case Vulkan::ShaderStage::Miss:
-			shaderKind = shaderc_glsl_miss_shader;
-			break;
-		case Vulkan::ShaderStage::Intersection:
-			shaderKind = shaderc_glsl_intersection_shader;
-			break;
-		case Vulkan::ShaderStage::Callable:
-			shaderKind = shaderc_glsl_callable_shader;
-			break;
 		default:
 			error = "Invalid shader stage.";
 			return {};

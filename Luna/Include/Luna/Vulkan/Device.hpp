@@ -21,9 +21,12 @@ class Device : public VulkanObject<Device> {
 	friend struct ImageDeleter;
 	friend class ImageView;
 	friend struct ImageViewDeleter;
+	friend class PipelineLayout;
+	friend class Program;
 	friend class RenderPass;
 	friend class Semaphore;
 	friend struct SemaphoreDeleter;
+	friend class Shader;
 
  public:
 	Device(Context& context);
@@ -57,7 +60,16 @@ class Device : public VulkanObject<Device> {
 	[[nodiscard]] const ImageView& GetSwapchainView() const;
 	[[nodiscard]] ImageView& GetSwapchainView(uint32_t index);
 	[[nodiscard]] const ImageView& GetSwapchainView(uint32_t index) const;
+	[[nodiscard]] DescriptorSetAllocator* RequestDescriptorSetAllocator(const DescriptorSetLayout& layout,
+	                                                                    const vk::ShaderStageFlags* stagesForBindings);
+	[[nodiscard]] Program* RequestProgram(const std::array<Shader*, ShaderStageCount>& shaders);
+	[[nodiscard]] Program* RequestProgram(Shader* compute);
+	[[nodiscard]] Program* RequestProgram(const std::vector<uint32_t>& compCode);
+	[[nodiscard]] Program* RequestProgram(size_t compCodeSize, const void* compCode);
 	[[nodiscard]] SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
+	[[nodiscard]] Shader* RequestShader(Hash hash);
+	[[nodiscard]] Shader* RequestShader(const std::vector<uint32_t>& code);
+	[[nodiscard]] Shader* RequestShader(size_t codeSize, const void* code);
 
 	/** Set the debug name for the given object. */
 	void SetObjectName(vk::ObjectType type, uint64_t handle, const std::string& name);
@@ -177,6 +189,7 @@ class Device : public VulkanObject<Device> {
 	void RecycleSemaphore(vk::Semaphore semaphore);
 	void RecycleSemaphoreNoLock(vk::Semaphore semaphore);
 	const Framebuffer& RequestFramebuffer(const RenderPassInfo& rpInfo);
+	PipelineLayout* RequestPipelineLayout(const ProgramResourceLayout& resourceLayout);
 	const RenderPass& RequestRenderPass(const RenderPassInfo& rpInfo, bool compatible = false);
 	void ResetFence(vk::Fence fence, bool observedWait);
 	void ResetFenceNoLock(vk::Fence fence, bool observedWait);
@@ -245,7 +258,11 @@ class Device : public VulkanObject<Device> {
 
 	std::array<QueueData, QueueTypeCount> _queueData;
 
+	VulkanCache<DescriptorSetAllocator> _descriptorSetAllocators;
+	VulkanCache<PipelineLayout> _pipelineLayouts;
+	VulkanCache<Program> _programs;
 	VulkanCache<RenderPass> _renderPasses;
+	VulkanCache<Shader> _shaders;
 
 	TemporaryHashMap<FramebufferNode, 8, false> _framebuffers;
 };

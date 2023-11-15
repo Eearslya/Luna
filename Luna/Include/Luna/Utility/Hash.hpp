@@ -54,7 +54,7 @@ class Hasher {
 	/** Hash the given Vulkan flags. */
 	template <typename F>
 	void operator()(const vk::Flags<F>& flags) {
-		operator()(static_cast<typename F::MaskType>(flags));
+		operator()(static_cast<typename vk::Flags<F>::MaskType>(flags));
 	}
 
  private:

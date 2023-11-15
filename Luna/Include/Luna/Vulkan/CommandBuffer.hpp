@@ -105,7 +105,9 @@ struct IndexState {
 };
 
 struct DeferredPipelineCompile {
-	// Program* Program = nullptr;
+	std::vector<Program*> ProgramGroup     = {};
+	Program* Program                       = nullptr;
+	const PipelineLayout* PipelineLayout   = nullptr;
 	const RenderPass* CompatibleRenderPass = nullptr;
 
 	PipelineState StaticState           = {};
@@ -115,10 +117,11 @@ struct DeferredPipelineCompile {
 	std::array<vk::VertexInputRate, MaxVertexBindings> InputRates    = {vk::VertexInputRate::eVertex};
 	std::array<vk::DeviceSize, MaxVertexBindings> Strides            = {0};
 
-	uint32_t SubpassIndex = 0;
-	Hash CachedHash;
-	uint32_t SubgroupSizeTag = 0;
+	uint32_t SubpassIndex           = 0;
+	vk::PipelineCache PipelineCache = VK_NULL_HANDLE;
+	uint32_t SubgroupSizeTag        = 0;
 
+	mutable Hash CachedHash = 0;
 	Hash GetComputeHash() const;
 	Hash GetHash(uint32_t& activeVBOs) const;
 };
@@ -134,19 +137,21 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
  public:
 	~CommandBuffer() noexcept;
 
-	vk::CommandBuffer GetCommandBuffer() const noexcept {
+	[[nodiscard]] vk::CommandBuffer GetCommandBuffer() const noexcept {
 		return _commandBuffer;
 	}
-	CommandBufferType GetCommandBufferType() const noexcept {
+	[[nodiscard]] CommandBufferType GetCommandBufferType() const noexcept {
 		return _type;
 	}
-	vk::PipelineStageFlags2 GetSwapchainStages() const noexcept {
+	[[nodiscard]] vk::PipelineStageFlags2 GetSwapchainStages() const noexcept {
 		return _swapchainStages;
 	}
 
+	// Basic control
 	void Begin();
 	void End();
 
+	// Pipeline barriers
 	void Barrier(const vk::DependencyInfo& dependency);
 	void BufferBarrier(const Buffer& buffer,
 	                   vk::PipelineStageFlags2 srcStages,
@@ -154,6 +159,7 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
 	                   vk::PipelineStageFlags2 dstStages,
 	                   vk::AccessFlags2 dstAccess);
 
+	// Buffer transfers
 	void CopyBuffer(const Buffer& dst, const Buffer& src);
 	void CopyBuffer(const Buffer& dst, const Buffer& src, const std::vector<vk::BufferCopy>& copies);
 	void CopyBuffer(
@@ -161,9 +167,27 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
 	void FillBuffer(const Buffer& dst, uint8_t value);
 	void FillBuffer(const Buffer& dst, uint8_t value, vk::DeviceSize offset, vk::DeviceSize size);
 
+	// Descriptors
+	template <typename T>
+	void PushConstants(const T& data, vk::DeviceSize offset = 0) {
+		PushConstants(sizeof(data), &data, offset);
+	}
+	void PushConstants(size_t size, const void* data, vk::DeviceSize offset = 0);
+	void SetStorageBuffer(uint32_t set, uint32_t binding, const Buffer& buffer);
+	void SetStorageBuffer(
+		uint32_t set, uint32_t binding, const Buffer& buffer, vk::DeviceSize offset, vk::DeviceSize range);
+
+	// Dispatch and Draw
+	void Dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ);
+
+	// Render Pass control
 	void BeginRenderPass(const RenderPassInfo& rpInfo, vk::SubpassContents contents = vk::SubpassContents::eInline);
 	void NextSubpass(vk::SubpassContents contents = vk::SubpassContents::eInline);
 	void EndRenderPass();
+
+	// State control
+	void SetOpaqueState();
+	void SetProgram(Program* program);
 
  private:
 	CommandBuffer(Device& device,
@@ -172,38 +196,67 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
 	              uint32_t threadIndex,
 	              const std::string& debugName);
 
+	void BindPipeline(vk::PipelineBindPoint bindPoint, vk::Pipeline pipeline, CommandBufferDirtyFlags activeDynamicState);
+	Pipeline BuildComputePipeline(bool synchronous);
 	void BeginCompute();
 	void BeginContext();
 	void BeginGraphics();
+	void ClearRenderState();
+	bool FlushComputePipeline(bool synchronous);
+	vk::Pipeline FlushComputeState(bool synchronous);
+	void FlushDescriptorSet(uint32_t set);
+	void FlushDescriptorSets();
+	void RebindDescriptorSet(uint32_t set);
 	void SetViewportScissor(const RenderPassInfo& rpInfo, const Framebuffer* framebuffer);
 
+	// ----- Core command buffer information -----
 	Device& _device;
 	CommandBufferType _type;
 	vk::CommandBuffer _commandBuffer;
 	uint32_t _threadIndex;
 	std::string _debugName;
 
-	uint32_t _activeVBOs                   = 0;
-	vk::SubpassContents _currentContents   = vk::SubpassContents::eInline;
-	CommandBufferDirtyFlags _dirty         = ~0u;
-	uint32_t _dirtySets                    = 0;
-	uint32_t _dirtySetsDynamic             = 0;
-	uint32_t _dirtyVBOs                    = 0;
-	DynamicState _dynamicState             = {};
-	IndexState _indexState                 = {};
-	bool _isCompute                        = true;
-	DeferredPipelineCompile _pipelineState = {};
-	vk::Rect2D _scissor                    = {};
-	vk::PipelineStageFlags2 _swapchainStages;
-	VertexBindingState _vertexBindings = {};
-	vk::Viewport _viewport             = {};
+	// ----- Descriptors State -----
+	std::array<vk::DescriptorSet, MaxDescriptorSets> _allocatedSets = {};
+	// - Currently bound descriptors and push constants.
+	ResourceBindings _resources = {};
 
-	const RenderPass* _actualRenderPass = nullptr;
-	// Pipeline _currentPipeline = {};
-	const Framebuffer* _framebuffer                                               = nullptr;
-	std::array<const ImageView*, MaxColorAttachments + 1> _framebufferAttachments = {nullptr};
+	// ----- Program State -----
+	// - The currently bound Pipeline.
+	Pipeline _currentPipeline = {};
+	// - Whether or not the current Pipeline is Compute.
+	bool _isCompute = true;
+	// - The VkPipelineLayout of the currently bound Pipeline.
 	vk::PipelineLayout _pipelineLayout;
-	// PipelineLayout* _programLayout = nullptr;
+	// - Includes all state necessary to compile a Pipeline once a draw or dispatch is recorded.
+	DeferredPipelineCompile _pipelineState = {};
+
+	// ----- Render Pass State -----
+	// - All members are NULL until a graphics render pass has begun, and return to NULL when the render pass ends.
+	// - The currently active Render Pass, as per vkCmdBeginRenderPass.
+	const RenderPass* _actualRenderPass = nullptr;
+	// - The currently set SubpassContents for the active subpass.
+	vk::SubpassContents _currentContents = vk::SubpassContents::eInline;
+	// - The currently bound Framebuffer, as per VkRenderPassBeginInfo.
+	const Framebuffer* _framebuffer = nullptr;
+	// - The attachments that make up the currently bound Framebuffer.
+	std::array<const ImageView*, MaxColorAttachments + 1> _framebufferAttachments = {nullptr};
+
+	// ----- Vertex Input State -----
+	// - Index Buffer State.
+	IndexState _indexState = {};
+	// - Vertex Buffer(s) State.
+	VertexBindingState _vertexBindings = {};
+
+	uint32_t _activeVBOs           = 0;
+	CommandBufferDirtyFlags _dirty = ~0u;
+	uint32_t _dirtySets            = 0;
+	uint32_t _dirtySetsDynamic     = 0;
+	uint32_t _dirtyVBOs            = 0;
+	DynamicState _dynamicState     = {};
+	vk::Rect2D _scissor            = {};
+	vk::PipelineStageFlags2 _swapchainStages;
+	vk::Viewport _viewport = {};
 };
 }  // namespace Vulkan
 }  // namespace Luna

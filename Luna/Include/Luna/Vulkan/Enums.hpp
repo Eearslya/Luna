@@ -70,32 +70,14 @@ EnumCase(ImageLayoutType, Optimal);
 EnumCase(ImageLayoutType, General);
 EndVulkanEnum();
 
-BeginVulkanEnum(ShaderStage,
-                12,
-                Vertex,
-                TessellationControl,
-                TessellationEvaluation,
-                Geometry,
-                Fragment,
-                Compute,
-                RayGen,
-                AnyHit,
-                ClosestHit,
-                Miss,
-                Intersection,
-                Callable);
+// Enum values MUST be in the same order as vk::ShaderStageFlagBits
+BeginVulkanEnum(ShaderStage, 12, Vertex, TessellationControl, TessellationEvaluation, Geometry, Fragment, Compute);
 EnumCase(ShaderStage, Vertex);
 EnumCase(ShaderStage, TessellationControl);
 EnumCase(ShaderStage, TessellationEvaluation);
 EnumCase(ShaderStage, Geometry);
 EnumCase(ShaderStage, Fragment);
 EnumCase(ShaderStage, Compute);
-EnumCase(ShaderStage, RayGen);
-EnumCase(ShaderStage, AnyHit);
-EnumCase(ShaderStage, ClosestHit);
-EnumCase(ShaderStage, Miss);
-EnumCase(ShaderStage, Intersection);
-EnumCase(ShaderStage, Callable);
 EndVulkanEnum();
 
 BeginVulkanEnum(SwapchainRenderPassType, 3, ColorOnly, Depth, DepthStencil);

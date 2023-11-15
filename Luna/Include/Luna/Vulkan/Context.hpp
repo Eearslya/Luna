@@ -13,7 +13,7 @@ class Context : public VulkanObject<Context> {
 	~Context() noexcept;
 
  private:
-	static constexpr uint32_t TargetVulkanVersion = VK_API_VERSION_1_2;
+	static constexpr uint32_t TargetVulkanVersion = VK_API_VERSION_1_3;
 
 	void CreateInstance(const std::vector<const char*>& requiredExtensions);
 	void SelectPhysicalDevice(const std::vector<const char*>& requiredExtensions);

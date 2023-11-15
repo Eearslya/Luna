@@ -39,9 +39,20 @@ FetchContent_Declare(spdlog
 	GIT_REPOSITORY https://github.com/gabime/spdlog.git
 	GIT_TAG ac55e60488032b9acde8940a5de099541c4515da)
 
+FetchContent_Declare(spirv-cross
+	GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Cross.git
+	GIT_TAG 4818f7e7ef7b7078a3a7a5a52c4a338e0dda22f4)
+set(SPIRV_CROSS_CLI          OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_ENABLE_GLSL   ON CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_ENABLE_HLSL  OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_ENABLE_MSL   OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+
 FetchContent_Declare(spirv-headers
 	GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Headers
 	GIT_TAG 38f39dae5baaa24431b24ac659054ebe972fa1e6)
+set(SPIRV_HEADERS_SKIP_EXAMPLES ON CACHE BOOL "" FORCE)
+set(SPIRV_HEADERS_SKIP_INSTALL  ON CACHE BOOL "" FORCE)
 
 FetchContent_Declare(spirv-tools
 	GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Tools
@@ -59,7 +70,7 @@ FetchContent_Declare(vma
 set(VMA_DYNAMIC_VULKAN_FUNCTIONS OFF CACHE BOOL "" FORCE)
 set(VMA_STATIC_VULKAN_FUNCTIONS  OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(glfw glm spdlog spirv-headers spirv-tools glslang shaderc vma)
+FetchContent_MakeAvailable(glfw glm spdlog spirv-headers spirv-tools spirv-cross glslang shaderc vma)
 
 set_target_properties(glslc_exe      PROPERTIES EXCLUDE_FROM_ALL ON)
 set_target_properties(shaderc_shared PROPERTIES EXCLUDE_FROM_ALL ON)
@@ -71,7 +82,7 @@ target_compile_definitions(Luna
 target_include_directories(Luna PUBLIC "Include")
 target_link_libraries(Luna
   PUBLIC glm spdlog Vulkan::Headers VulkanMemoryAllocator
-  PRIVATE glfw shaderc)
+  PRIVATE glfw shaderc spirv-cross-cpp)
 target_precompile_headers(Luna PRIVATE "Include/Luna/Common.hpp")
 
 add_subdirectory(Source)

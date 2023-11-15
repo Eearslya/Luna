@@ -238,24 +238,24 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredExten
 		std::sort(info.AvailableExtensions.begin(), info.AvailableExtensions.end());
 
 		vk::StructureChain<vk::PhysicalDeviceFeatures2,
-		                   vk::PhysicalDeviceSynchronization2Features,
-		                   vk::PhysicalDeviceVulkan12Features>
+		                   vk::PhysicalDeviceVulkan12Features,
+		                   vk::PhysicalDeviceVulkan13Features>
 			featuresChain;
-		vk::StructureChain<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceVulkan12Properties> propertiesChain;
-
-		if (!HasExtension(info, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)) {
-			featuresChain.unlink<vk::PhysicalDeviceSynchronization2Features>();
-		}
+		vk::StructureChain<vk::PhysicalDeviceProperties2,
+		                   vk::PhysicalDeviceVulkan12Properties,
+		                   vk::PhysicalDeviceVulkan13Properties>
+			propertiesChain;
 
 		info.PhysicalDevice.getFeatures2(&featuresChain.get());
 		info.PhysicalDevice.getProperties2(&propertiesChain.get());
 
-		info.AvailableFeatures.Core             = featuresChain.get().features;
-		info.AvailableFeatures.Synchronization2 = featuresChain.get<vk::PhysicalDeviceSynchronization2Features>();
-		info.AvailableFeatures.Vulkan12         = featuresChain.get<vk::PhysicalDeviceVulkan12Features>();
+		info.AvailableFeatures.Core     = featuresChain.get().features;
+		info.AvailableFeatures.Vulkan12 = featuresChain.get<vk::PhysicalDeviceVulkan12Features>();
+		info.AvailableFeatures.Vulkan13 = featuresChain.get<vk::PhysicalDeviceVulkan13Features>();
 
 		info.Properties.Core     = propertiesChain.get().properties;
 		info.Properties.Vulkan12 = propertiesChain.get<vk::PhysicalDeviceVulkan12Properties>();
+		info.Properties.Vulkan13 = propertiesChain.get<vk::PhysicalDeviceVulkan13Properties>();
 	}
 
 	std::stable_partition(deviceInfos.begin(), deviceInfos.end(), [](const DeviceInfo& info) {
@@ -316,9 +316,6 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 		return true;
 	};
 	for (const auto& ext : requiredExtensions) { TryExtension(ext); }
-
-	_extensions.Maintenance4     = TryExtension(VK_KHR_MAINTENANCE_4_EXTENSION_NAME);
-	_extensions.Synchronization2 = TryExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
 
 	auto familyProps = _deviceInfo.QueueFamilies;
 	std::vector<std::vector<float>> familyPriorities(familyProps.size());
@@ -384,15 +381,15 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 	} while (0)
 
 	TryFeature(Core.samplerAnisotropy, "Sampler Anisotropy");
-	TryFeature(Synchronization2.synchronization2, "Synchronization 2");
 	TryFeature(Vulkan12.scalarBlockLayout, "Scalar Block Layout");
 	TryFeature(Vulkan12.timelineSemaphore, "Timeline Semaphores");
+	TryFeature(Vulkan13.maintenance4, "Maintenance 4");
+	TryFeature(Vulkan13.synchronization2, "Synchronization 2");
 
 #undef TryFeature
 
 	const vk::PhysicalDeviceFeatures2 features2(_deviceInfo.EnabledFeatures.Core);
-	vk::StructureChain featuresChain(features2, enable.Synchronization2, enable.Vulkan12);
-	if (!_extensions.Synchronization2) { featuresChain.unlink<vk::PhysicalDeviceSynchronization2Features>(); }
+	vk::StructureChain featuresChain(features2, enable.Vulkan12, enable.Vulkan13);
 
 	const vk::DeviceCreateInfo deviceCI({}, queueCIs, nullptr, enabledExtensions, nullptr);
 	const vk::StructureChain deviceChain(deviceCI, featuresChain.get());

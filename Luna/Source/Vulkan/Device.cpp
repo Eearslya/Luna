@@ -10,6 +10,7 @@
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
+#include <Luna/Vulkan/Shader.hpp>
 
 namespace Luna {
 namespace Vulkan {
@@ -53,6 +54,8 @@ Device::Device(Context& context)
 			VmaFn(vkCreateImage),
 			VmaFn(vkDestroyImage),
 			VmaFn(vkCmdCopyBuffer),
+			VmaFn(vkGetDeviceBufferMemoryRequirements),
+			VmaFn(vkGetDeviceImageMemoryRequirements),
 		};
 #undef VmaFn
 #define VmaFn(core) vmaFunctions.core##KHR = reinterpret_cast<PFN_##core##KHR>(VULKAN_HPP_DEFAULT_DISPATCHER.core)
@@ -62,12 +65,6 @@ Device::Device(Context& context)
 		VmaFn(vkBindImageMemory2);
 		VmaFn(vkGetPhysicalDeviceMemoryProperties2);
 #undef VmaFn
-		if (_extensions.Maintenance4) {
-			vmaFunctions.vkGetDeviceBufferMemoryRequirements = reinterpret_cast<PFN_vkGetDeviceBufferMemoryRequirements>(
-				VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceBufferMemoryRequirementsKHR);
-			vmaFunctions.vkGetDeviceImageMemoryRequirements = reinterpret_cast<PFN_vkGetDeviceImageMemoryRequirements>(
-				VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceImageMemoryRequirementsKHR);
-		}
 
 		VmaAllocatorCreateFlags allocatorFlags = VMA_ALLOCATOR_CREATE_EXTERNALLY_SYNCHRONIZED_BIT;
 		if (_deviceInfo.EnabledFeatures.Vulkan12.bufferDeviceAddress) {
@@ -207,11 +204,83 @@ const ImageView& Device::GetSwapchainView(uint32_t index) const {
 	return _swapchainImages[_swapchainIndex]->GetView();
 }
 
+DescriptorSetAllocator* Device::RequestDescriptorSetAllocator(const DescriptorSetLayout& layout,
+                                                              const vk::ShaderStageFlags* stagesForBindings) {
+	Hasher h;
+	h.Data(sizeof(DescriptorSetLayout), &layout);
+	h.Data(sizeof(vk::ShaderStageFlags) * MaxDescriptorBindings, stagesForBindings);
+	const auto hash = h.Get();
+
+	DeviceCacheLock();
+
+	auto* ret = _descriptorSetAllocators.Find(hash);
+	if (!ret) { ret = _descriptorSetAllocators.EmplaceYield(hash, hash, *this, layout, stagesForBindings); }
+
+	return ret;
+}
+
+Program* Device::RequestProgram(Shader* compute) {
+	return ProgramBuilder{*this}.Compute(compute).Build();
+}
+
+Program* Device::RequestProgram(const std::array<Shader*, ShaderStageCount>& shaders) {
+	Hasher h;
+	for (const auto shader : shaders) { h(shader ? shader->GetHash() : Hash(0)); }
+	const auto hash = h.Get();
+
+	DeviceCacheLock();
+
+	Program* ret = _programs.Find(hash);
+	if (!ret) {
+		try {
+			ret = _programs.EmplaceYield(hash, hash, *this, shaders);
+		} catch (const std::exception& e) {
+			Log::Error("Vulkan", "Failed to create program: {}", e.what());
+
+			return nullptr;
+		}
+	}
+
+	return ret;
+}
+
+Program* Device::RequestProgram(const std::vector<uint32_t>& compCode) {
+	return RequestProgram(RequestShader(compCode));
+}
+
+Program* Device::RequestProgram(size_t compCodeSize, const void* compCode) {
+	return RequestProgram(RequestShader(compCodeSize, compCode));
+}
+
 SemaphoreHandle Device::RequestSemaphore(const std::string& debugName) {
 	DeviceLock();
 	auto semaphore = AllocateSemaphore(debugName);
 
 	return SemaphoreHandle(_semaphorePool.Allocate(*this, semaphore, false, true, debugName));
+}
+
+Shader* Device::RequestShader(Hash hash) {
+	DeviceCacheLock();
+
+	return _shaders.Find(hash);
+}
+
+Shader* Device::RequestShader(const std::vector<uint32_t>& code) {
+	return RequestShader(size_t(code.size()) * sizeof(uint32_t), code.data());
+}
+
+Shader* Device::RequestShader(size_t codeSize, const void* code) {
+	Hasher h;
+	h(codeSize);
+	h.Data(codeSize, code);
+	const auto hash = h.Get();
+
+	DeviceCacheLock();
+
+	auto* ret = _shaders.Find(hash);
+	if (!ret) { ret = _shaders.EmplaceYield(hash, hash, *this, codeSize, code); }
+
+	return ret;
 }
 
 void Device::SetObjectName(vk::ObjectType type, uint64_t handle, const std::string& name) {
@@ -446,6 +515,15 @@ const Framebuffer& Device::RequestFramebuffer(const RenderPassInfo& rpInfo) {
 	if (node) { return *node; }
 
 	return *_framebuffers.Emplace(hash, *this, rp, rpInfo);
+}
+
+PipelineLayout* Device::RequestPipelineLayout(const ProgramResourceLayout& resourceLayout) {
+	const auto hash = Hasher(resourceLayout).Get();
+
+	auto* ret = _pipelineLayouts.Find(hash);
+	if (!ret) { ret = _pipelineLayouts.EmplaceYield(hash, hash, *this, resourceLayout); }
+
+	return ret;
 }
 
 const RenderPass& Device::RequestRenderPass(const RenderPassInfo& rpInfo, bool compatible) {
@@ -742,50 +820,9 @@ void Device::SubmitQueue(QueueType queueType, InternalFence* signalFence, std::v
 	}
 
 	// Finally, perform the actual queue submissions.
-	if (_deviceInfo.EnabledFeatures.Synchronization2.synchronization2) {
-		const auto submitResult = queue.submit2KHR(submitCount, submits.data(), signalFence ? signalFence->Fence : nullptr);
-		if (submitResult != vk::Result::eSuccess) {
-			Log::Error("Vulkan", "Failed to submit command buffers: {}", vk::to_string(submitResult));
-		}
-	} else {
-		// If we don't have sync2, we need to convert the SubmitInfo2 structs back to normal SubmitInfo structs.
-		for (int i = 0; i < submitCount; ++i) {
-			const auto& submit    = submits[i];
-			const vk::Fence fence = signalFence ? signalFence->Fence : nullptr;
-
-			bool hasTimeline = false;
-			std::vector<vk::CommandBuffer> commandBuffers(submit.commandBufferInfoCount);
-			std::vector<vk::Semaphore> signalSemaphores(submit.signalSemaphoreInfoCount);
-			std::vector<uint64_t> signalValues(submit.signalSemaphoreInfoCount);
-			std::vector<vk::Semaphore> waitSemaphores(submit.waitSemaphoreInfoCount);
-			std::vector<vk::PipelineStageFlags> waitStages(submit.waitSemaphoreInfoCount);
-			std::vector<uint64_t> waitValues(submit.waitSemaphoreInfoCount);
-
-			for (uint32_t i = 0; i < submit.waitSemaphoreInfoCount; ++i) {
-				waitSemaphores[i] = submit.pWaitSemaphoreInfos[i].semaphore;
-				waitStages[i]     = DowngradeDstPipelineStageFlags2(submit.pWaitSemaphoreInfos[i].stageMask);
-				waitValues[i]     = submit.pWaitSemaphoreInfos[i].value;
-
-				hasTimeline |= waitValues[i] != 0;
-			}
-
-			for (uint32_t i = 0; i < submit.commandBufferInfoCount; ++i) {
-				commandBuffers[i] = submit.pCommandBufferInfos[i].commandBuffer;
-			}
-
-			for (uint32_t i = 0; i < submit.signalSemaphoreInfoCount; ++i) {
-				signalSemaphores[i] = submit.pSignalSemaphoreInfos[i].semaphore;
-				signalValues[i]     = submit.pSignalSemaphoreInfos[i].value;
-
-				hasTimeline |= signalValues[i] != 0;
-			}
-
-			vk::SubmitInfo oldSubmit(waitSemaphores, waitStages, commandBuffers, signalSemaphores);
-			vk::TimelineSemaphoreSubmitInfo oldTimeline(waitValues, signalValues);
-			if (hasTimeline) { oldSubmit.pNext = &oldTimeline; }
-
-			queue.submit(oldSubmit, i + 1 == submitCount ? fence : nullptr);
-		}
+	const auto submitResult = queue.submit2(submitCount, submits.data(), signalFence ? signalFence->Fence : nullptr);
+	if (submitResult != vk::Result::eSuccess) {
+		Log::Error("Vulkan", "Failed to submit command buffers: {}", vk::to_string(submitResult));
 	}
 
 	if (!_deviceInfo.EnabledFeatures.Vulkan12.timelineSemaphore) { queueData.NeedsFence = true; }

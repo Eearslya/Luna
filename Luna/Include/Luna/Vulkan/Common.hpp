@@ -5,6 +5,7 @@
 #include <Luna/Common.hpp>
 #include <Luna/Utility/IntrusiveHashMap.hpp>
 #include <Luna/Utility/ObjectPool.hpp>
+#include <Luna/Utility/TemporaryHashMap.hpp>
 #include <Luna/Vulkan/Cookie.hpp>
 #include <Luna/Vulkan/Enums.hpp>
 #include <Luna/Vulkan/InternalSync.hpp>
@@ -31,6 +32,9 @@ using VulkanObjectPool = ThreadSafeObjectPool<T>;
 /* ================================
 ** ===== Forward Declarations =====
 *  ================================ */
+class BindlessAllocator;
+class BindlessDescriptorPool;
+struct BindlessDescriptorPoolDeleter;
 class Buffer;
 struct BufferCreateInfo;
 struct BufferDeleter;
@@ -38,6 +42,8 @@ class CommandBuffer;
 struct CommandBufferDeleter;
 class CommandPool;
 class Context;
+class DescriptorSetAllocator;
+struct DescriptorSetLayout;
 class Device;
 class Fence;
 struct FenceDeleter;
@@ -50,10 +56,15 @@ struct ImageInitialData;
 class ImageView;
 struct ImageViewCreateInfo;
 struct ImageViewDeleter;
+class PipelineLayout;
+class Program;
+struct ProgramResourceLayout;
 class RenderPass;
 struct RenderPassInfo;
 class Semaphore;
 struct SemaphoreDeleter;
+class Shader;
+struct ShaderResourceLayout;
 
 /* ===============================
 ** ===== Handle Declarations =====
@@ -70,16 +81,18 @@ using SemaphoreHandle     = IntrusivePtr<Semaphore>;
 /* ===========================
 ** ===== Constant Values =====
 *  =========================== */
-constexpr int DescriptorSetsPerPool  = 16;
-constexpr int MaxBindlessDescriptors = 16384;
-constexpr int MaxColorAttachments    = 8;
-constexpr int MaxDescriptorBindings  = 32;
-constexpr int MaxDescriptorSets      = 4;
-constexpr int MaxPushConstantSize    = 128;
-constexpr int MaxSpecConstants       = 16;
-constexpr int MaxUniformBufferSize   = 16384;
-constexpr int MaxVertexAttributes    = 16;
-constexpr int MaxVertexBindings      = 8;
+constexpr int DescriptorSetsPerPool    = 16;
+constexpr int MaxBindlessDescriptors   = 16384;
+constexpr int MaxColorAttachments      = 8;
+constexpr int MaxDescriptorBindings    = 32;
+constexpr int MaxDescriptorSets        = 4;
+constexpr int MaxPushConstantSize      = 128;
+constexpr int MaxUniformBufferSize     = 16384;
+constexpr int MaxVertexAttributes      = 16;
+constexpr int MaxVertexBindings        = 8;
+constexpr int MaxUserSpecConstants     = 8;
+constexpr int MaxInternalSpecConstants = 4;
+constexpr int MaxSpecConstants         = MaxUserSpecConstants + MaxInternalSpecConstants;
 
 /* ===========================
 ** ===== Data Structures =====
@@ -93,20 +106,18 @@ struct Extensions {
 #ifdef LUNA_VULKAN_DEBUG
 	bool ValidationFeatures = false;
 #endif
-
-	bool Maintenance4     = false;
-	bool Synchronization2 = false;
 };
 
 struct DeviceFeatures {
 	vk::PhysicalDeviceFeatures Core;
-	vk::PhysicalDeviceSynchronization2Features Synchronization2;
 	vk::PhysicalDeviceVulkan12Features Vulkan12;
+	vk::PhysicalDeviceVulkan13Features Vulkan13;
 };
 
 struct DeviceProperties {
 	vk::PhysicalDeviceProperties Core;
 	vk::PhysicalDeviceVulkan12Properties Vulkan12;
+	vk::PhysicalDeviceVulkan13Properties Vulkan13;
 };
 
 struct DeviceInfo {
@@ -119,6 +130,11 @@ struct DeviceInfo {
 	std::vector<vk::QueueFamilyProperties> QueueFamilies;
 
 	DeviceFeatures EnabledFeatures;
+};
+
+struct Pipeline {
+	vk::Pipeline Pipeline;
+	uint32_t DynamicMask = 0;
 };
 
 struct QueueInfo {
@@ -167,6 +183,26 @@ struct QueueInfo {
 	const vk::Queue& Queue(QueueType type) const {
 		return Queues[int(type)];
 	}
+};
+
+struct ResourceBinding {
+	union {
+		vk::DescriptorBufferInfo Buffer;
+		struct {
+			vk::DescriptorImageInfo Float;
+			vk::DescriptorImageInfo Integer;
+		} Image;
+		vk::BufferView BufferView;
+	};
+
+	vk::DeviceSize DynamicOffset = 0;
+	uint64_t Cookie              = 0;
+	uint64_t SecondaryCookie     = 0;
+};
+
+struct ResourceBindings {
+	ResourceBinding Bindings[MaxDescriptorSets][MaxDescriptorBindings] = {};
+	uint8_t PushConstantData[MaxPushConstantSize]                      = {0};
 };
 
 struct Size {

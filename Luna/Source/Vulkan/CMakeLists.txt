@@ -5,9 +5,11 @@ target_sources(Luna PRIVATE
   Common.cpp
   Context.cpp
   Cookie.cpp
+  DescriptorSet.cpp
   Device.cpp
   Fence.cpp
   Format.cpp
   Image.cpp
   RenderPass.cpp
-  Semaphore.cpp)
+  Semaphore.cpp
+  Shader.cpp)
