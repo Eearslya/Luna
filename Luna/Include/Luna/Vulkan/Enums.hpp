@@ -134,7 +134,7 @@ using RenderPassFlags = Bitmask<RenderPassFlagBits>;
 }  // namespace Luna
 
 template <Luna::Vulkan::IsVulkanEnum T>
-struct fmt::formatter<T> : fmt::formatter<std::string> {
+struct std::formatter<T> : std::formatter<std::string> {
 	auto format(const T value, format_context& ctx) const -> decltype(ctx.out()) {
 		return format_to(ctx.out(), "{}", Luna::Vulkan::VulkanEnumToString(value));
 	}

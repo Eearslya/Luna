@@ -1,4 +1,5 @@
 #include <Luna/Utility/Path.hpp>
+#include <Luna/Utility/String.hpp>
 
 namespace Luna {
 Path::Path() = default;
@@ -50,7 +51,7 @@ Path Path::Normalized() const {
 		}
 	}
 
-	const auto newPathStr = fmt::format("{}", fmt::join(parts, "/"));
+	const auto newPathStr = std::format("{}", StringJoin(parts, "/"));
 
 	return newPathStr;
 }

@@ -106,13 +106,13 @@ bool ShaderCompiler::Parse(const Path& sourcePath, const std::string& source) {
 			const auto it = std::find(_dependencies.begin(), _dependencies.end(), includedPath);
 			if (it == _dependencies.end()) {
 				// Use a #line directive to tell the compiler we're starting at line 1 of this included file.
-				_processedSource += fmt::format("#line 1 \"{}\"\n", includedPath.String());
+				_processedSource += std::format("#line 1 \"{}\"\n", includedPath.String());
 
 				// Append the included file's source.
 				if (!Parse(includedPath, includedSource)) { return false; }
 
 				// Use another #line directive to tell the compiler to go back to where we were in this file.
-				_processedSource += fmt::format("#line {} \"{}\"\n", lineIndex + 1, sourcePath.String());
+				_processedSource += std::format("#line {} \"{}\"\n", lineIndex + 1, sourcePath.String());
 
 				// Add the included file to our list of dependencies.
 				_dependencies.push_back(includedPath);

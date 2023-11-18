@@ -38,6 +38,7 @@ set(SHADERC_SKIP_TESTS             ON CACHE BOOL "" FORCE)
 FetchContent_Declare(spdlog
 	GIT_REPOSITORY https://github.com/gabime/spdlog.git
 	GIT_TAG ac55e60488032b9acde8940a5de099541c4515da)
+set(SPDLOG_USE_STD_FORMAT ON CACHE BOOL "" FORCE)
 
 FetchContent_Declare(spirv-cross
 	GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Cross.git

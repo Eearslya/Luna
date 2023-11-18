@@ -79,7 +79,7 @@ Device::Device(Context& context)
 		                                            .pHeapSizeLimit              = nullptr,
 		                                            .pVulkanFunctions            = &vmaFunctions,
 		                                            .instance                    = _instance,
-		                                            .vulkanApiVersion            = VK_API_VERSION_1_2};
+		                                            .vulkanApiVersion            = VK_API_VERSION_1_3};
 		const auto allocatorResult               = vmaCreateAllocator(&allocatorCI, &_allocator);
 		if (allocatorResult != VK_SUCCESS) {
 			Log::Error("Vulkan", "Failed to create memory allocator: {}", vk::to_string(vk::Result(allocatorResult)));
@@ -948,7 +948,7 @@ Device::FrameContext::FrameContext(Device& parent, uint32_t frameIndex) : Parent
 		CommandPools[type].reserve(threadCount);
 		for (int i = 0; i < threadCount; ++i) {
 			CommandPools[type].emplace_back(
-				Parent, Parent._queueInfo.Families[type], fmt::format("{} Command Pool - Thread {}", QueueType(type), i));
+				Parent, Parent._queueInfo.Families[type], std::format("{} Command Pool - Thread {}", QueueType(type), i));
 		}
 	}
 }

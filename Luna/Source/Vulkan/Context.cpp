@@ -275,23 +275,23 @@ void Context::SelectPhysicalDevice(const std::vector<const char*>& requiredExten
 
 		for (const auto& ext : requiredExtensions) {
 			if (!HasExtension(info, ext)) {
-				reason = fmt::format("Missing required extension '{}'", ext);
+				reason = std::format("Missing required extension '{}'", ext);
 				break;
 			}
 		}
 
 		if (reason.empty()) {
-			Log::Trace("Vulkan::Context", "- {}: Compatible", info.Properties.Core.deviceName);
+			Log::Trace("Vulkan::Context", "- {}: Compatible", info.Properties.Core.deviceName.data());
 			if (!selectedIndex.has_value()) { selectedIndex = i; }
 		} else {
-			Log::Trace("Vulkan::Context", "- {}: Incompatible ({})", info.Properties.Core.deviceName, reason);
+			Log::Trace("Vulkan::Context", "- {}: Incompatible ({})", info.Properties.Core.deviceName.data(), reason);
 		}
 	}
 
 	if (!selectedIndex.has_value()) { throw std::runtime_error("No Vulkan devices meet requirements"); }
 
 	_deviceInfo = deviceInfos[*selectedIndex];
-	Log::Debug("Vulkan", "Using Vulkan device '{}'", _deviceInfo.Properties.Core.deviceName);
+	Log::Debug("Vulkan", "Using Vulkan device '{}'", _deviceInfo.Properties.Core.deviceName.data());
 }
 
 void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
@@ -417,7 +417,7 @@ void Context::DumpInstanceInfo() const {
 	std::sort(instanceExtensions.begin(), instanceExtensions.end());
 	Log::Trace("Vulkan::Context", "Instance Extensions ({}):", instanceExtensions.size());
 	for (const auto& ext : instanceExtensions) {
-		Log::Trace("Vulkan::Context", "- {} v{}", ext.extensionName, ext.specVersion);
+		Log::Trace("Vulkan::Context", "- {} v{}", ext.extensionName.data(), ext.specVersion);
 	}
 	Log::Trace("Vulkan::Context", "");
 
@@ -427,15 +427,15 @@ void Context::DumpInstanceInfo() const {
 	for (const auto& layer : instanceLayers) {
 		Log::Trace("Vulkan::Context",
 		           "- {} v{} (Vulkan {}) - {}",
-		           layer.layerName,
+		           layer.layerName.data(),
 		           layer.implementationVersion,
 		           Version(layer.specVersion),
-		           layer.description);
+		           layer.description.data());
 
 		auto layerExtensions = vk::enumerateInstanceExtensionProperties(std::string(layer.layerName.data()));
 		std::sort(layerExtensions.begin(), layerExtensions.end());
 		for (const auto& ext : layerExtensions) {
-			Log::Trace("Vulkan::Context", "  - {} v{}", ext.extensionName, ext.specVersion);
+			Log::Trace("Vulkan::Context", "  - {} v{}", ext.extensionName.data(), ext.specVersion);
 		}
 	}
 
@@ -449,7 +449,7 @@ void Context::DumpDeviceInfo() const {
 	Log::Trace("Vulkan::Context", "===== Vulkan Device Information =====");
 	Log::Trace("Vulkan::Context", "=====================================");
 
-	Log::Trace("Vulkan::Context", "Device Name: {}", _deviceInfo.Properties.Core.deviceName);
+	Log::Trace("Vulkan::Context", "Device Name: {}", _deviceInfo.Properties.Core.deviceName.data());
 	Log::Trace("Vulkan::Context", "Device Type: {}", vk::to_string(_deviceInfo.Properties.Core.deviceType));
 	Log::Trace("Vulkan::Context", "Vulkan Version: {}", Version(_deviceInfo.Properties.Core.apiVersion));
 
@@ -468,7 +468,7 @@ void Context::DumpDeviceInfo() const {
 
 	Log::Trace("Vulkan::Context", "Device Extensions ({}):", _deviceInfo.AvailableExtensions.size());
 	for (const auto& ext : _deviceInfo.AvailableExtensions) {
-		Log::Trace("Vulkan::Context", "- {} v{}", ext.extensionName, ext.specVersion);
+		Log::Trace("Vulkan::Context", "- {} v{}", ext.extensionName.data(), ext.specVersion);
 	}
 
 	Log::Trace("Vulkan::Context", "");

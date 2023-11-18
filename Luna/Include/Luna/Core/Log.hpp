@@ -16,7 +16,7 @@ class Log {
 	static void SetLevel(Level level);
 
 	template <typename... Args>
-	static void Assert(bool condition, std::string_view tag, const fmt::format_string<Args...>& format, Args&&... args) {
+	static void Assert(bool condition, std::string_view tag, const std::format_string<Args...>& format, Args&&... args) {
 		if (!condition) {
 			Output(Level::Fatal, tag, format, std::forward<Args>(args)...);
 			Shutdown();
@@ -24,27 +24,27 @@ class Log {
 		}
 	}
 	template <typename... Args>
-	static void Fatal(std::string_view tag, const fmt::format_string<Args...>& format, Args&&... args) {
+	static void Fatal(std::string_view tag, const std::format_string<Args...>& format, Args&&... args) {
 		Output(Level::Fatal, tag, format, std::forward<Args>(args)...);
 	}
 	template <typename... Args>
-	static void Error(std::string_view tag, const fmt::format_string<Args...>& format, Args&&... args) {
+	static void Error(std::string_view tag, const std::format_string<Args...>& format, Args&&... args) {
 		Output(Level::Error, tag, format, std::forward<Args>(args)...);
 	}
 	template <typename... Args>
-	static void Warning(std::string_view tag, const fmt::format_string<Args...>& format, Args&&... args) {
+	static void Warning(std::string_view tag, const std::format_string<Args...>& format, Args&&... args) {
 		Output(Level::Warning, tag, format, std::forward<Args>(args)...);
 	}
 	template <typename... Args>
-	static void Info(std::string_view tag, const fmt::format_string<Args...>& format, Args&&... args) {
+	static void Info(std::string_view tag, const std::format_string<Args...>& format, Args&&... args) {
 		Output(Level::Info, tag, format, std::forward<Args>(args)...);
 	}
 	template <typename... Args>
-	static void Debug(std::string_view tag, const fmt::format_string<Args...>& format, Args&&... args) {
+	static void Debug(std::string_view tag, const std::format_string<Args...>& format, Args&&... args) {
 		Output(Level::Debug, tag, format, std::forward<Args>(args)...);
 	}
 	template <typename... Args>
-	static void Trace(std::string_view tag, const fmt::format_string<Args...>& format, Args&&... args) {
+	static void Trace(std::string_view tag, const std::format_string<Args...>& format, Args&&... args) {
 		Output(Level::Trace, tag, format, std::forward<Args>(args)...);
 	}
 
@@ -53,8 +53,8 @@ class Log {
 	static spdlog::level::level_enum ToSpdlog(Level level);
 
 	template <typename... Args>
-	static void Output(Level level, std::string_view tag, const fmt::format_string<Args...>& format, Args&&... args) {
-		const auto logMessage = fmt::format(format, std::forward<Args>(args)...);
+	static void Output(Level level, std::string_view tag, const std::format_string<Args...>& format, Args&&... args) {
+		const auto logMessage = std::format(format, std::forward<Args>(args)...);
 		spdlog::log(ToSpdlog(level), "[{}] {}", tag, logMessage);
 	}
 };

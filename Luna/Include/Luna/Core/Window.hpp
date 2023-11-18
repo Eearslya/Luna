@@ -2,6 +2,7 @@
 
 #include <Luna/Common.hpp>
 #include <Luna/Core/WindowManager.hpp>
+#include <Luna/Utility/Hash.hpp>
 
 struct GLFWwindow;
 using VkInstance   = struct VkInstance_T*;
@@ -23,6 +24,7 @@ class Window final {
 	[[nodiscard]] glm::ivec2 GetPosition() const;
 	[[nodiscard]] Swapchain& GetSwapchain();
 	[[nodiscard]] const Swapchain& GetSwapchain() const;
+	[[nodiscard]] Hash GetSwapchainHash() const noexcept;
 	[[nodiscard]] glm::ivec2 GetWindowSize() const;
 	[[nodiscard]] bool IsCloseRequested() const;
 	[[nodiscard]] bool IsFocused() const;

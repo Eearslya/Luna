@@ -148,6 +148,14 @@ void Swapchain::Recreate() {
 	_release.resize(_images.size());
 	_suboptimal = false;
 
+	Hasher h;
+	h(_extent.width);
+	h(_extent.height);
+	h(_format.format);
+	h(_format.colorSpace);
+	h(_images.size());
+	_swapchainHash = h.Get();
+
 	Renderer::GetDevice().SetupSwapchain(_extent, _format, _images);
 }
 }  // namespace Luna

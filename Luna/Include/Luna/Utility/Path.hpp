@@ -88,7 +88,7 @@ struct hash<Luna::Path> {
 }  // namespace std
 
 template <>
-struct fmt::formatter<Luna::Path> : fmt::formatter<std::string> {
+struct std::formatter<Luna::Path> : std::formatter<std::string> {
 	auto format(const Luna::Path& path, format_context& ctx) const -> decltype(ctx.out()) {
 		return format_to(ctx.out(), "{}", std::string(path));
 	}

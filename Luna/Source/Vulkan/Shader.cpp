@@ -1,6 +1,7 @@
 #include <Luna/Utility/BitOps.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Shader.hpp>
+#include <Luna/Utility/String.hpp>
 #include <spirv_cross.hpp>
 
 namespace Luna {
@@ -11,7 +12,7 @@ static std::string MaskToBindings(uint32_t mask, const uint8_t* arraySizes = nul
 
 	ForEachBit(mask, [&](uint32_t bit) {
 		if (arraySizes && arraySizes[bit]) {
-			bindings[bindingCount++] = fmt::format(
+			bindings[bindingCount++] = std::format(
 				"{}[{}]",
 				bit,
 				arraySizes[bit] == DescriptorSetLayout::UnsizedArray ? "Bindless" : std::to_string(arraySizes[bit]));
@@ -20,7 +21,7 @@ static std::string MaskToBindings(uint32_t mask, const uint8_t* arraySizes = nul
 		}
 	});
 
-	return fmt::format("{}", fmt::join(bindings, bindings + bindingCount, ", "));
+	return std::format("{}", StringJoin(std::span(bindings, bindings + bindingCount), ", "));
 }
 
 PipelineLayout::PipelineLayout(Hash hash, Device& device, const ProgramResourceLayout& resourceLayout)

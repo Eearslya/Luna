@@ -102,7 +102,7 @@ void Buffer::FillData(uint8_t data, vk::DeviceSize dataSize, vk::DeviceSize offs
 		uint8_t* mappedData = reinterpret_cast<uint8_t*>(_mappedMemory);
 		std::memset(mappedData + offset, data, dataSize);
 	} else {
-		const std::string commandBufferName = fmt::format("{} Fill", _debugName.empty() ? "Buffer" : _debugName);
+		const std::string commandBufferName = std::format("{} Fill", _debugName.empty() ? "Buffer" : _debugName);
 		CommandBufferHandle cmd = _device.RequestCommandBuffer(CommandBufferType::AsyncTransfer, commandBufferName);
 		cmd->FillBuffer(*this, data, offset, dataSize);
 
@@ -137,8 +137,8 @@ void Buffer::WriteData(const void* data, vk::DeviceSize dataSize, vk::DeviceSize
 		stagingCreateInfo.SetDomain(BufferDomain::Host).AddUsage(vk::BufferUsageFlagBits::eTransferSrc);
 
 		const std::string stagingBufferName =
-			_debugName.empty() ? "Staging Buffer" : fmt::format("{} [Staging]", _debugName);
-		const std::string commandBufferName = fmt::format("{} Copy", stagingBufferName);
+			_debugName.empty() ? "Staging Buffer" : std::format("{} [Staging]", _debugName);
+		const std::string commandBufferName = std::format("{} Copy", stagingBufferName);
 
 		auto stagingBuffer = _device.CreateBuffer(stagingCreateInfo, data, stagingBufferName);
 

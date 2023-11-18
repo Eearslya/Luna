@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <filesystem>
+#include <format>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -13,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 

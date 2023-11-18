@@ -308,7 +308,7 @@ constexpr vk::PipelineStageFlags DowngradeSrcPipelineStageFlags2(vk::PipelineSta
 }  // namespace Luna
 
 template <>
-struct fmt::formatter<Luna::Vulkan::Version> : fmt::formatter<std::string> {
+struct std::formatter<Luna::Vulkan::Version> : std::formatter<std::string> {
 	auto format(const Luna::Vulkan::Version& version, format_context& ctx) const -> decltype(ctx.out()) {
 		return format_to(ctx.out(),
 		                 "{}.{}.{}",
@@ -319,7 +319,7 @@ struct fmt::formatter<Luna::Vulkan::Version> : fmt::formatter<std::string> {
 };
 
 template <>
-struct fmt::formatter<Luna::Vulkan::Size> : fmt::formatter<std::string> {
+struct std::formatter<Luna::Vulkan::Size> : std::formatter<std::string> {
 	auto format(const Luna::Vulkan::Size byteSize, format_context& ctx) const -> decltype(ctx.out()) {
 		constexpr const vk::DeviceSize kib = 1024;
 		constexpr const vk::DeviceSize mib = kib * 1024;
@@ -342,21 +342,21 @@ concept HasVulkanToString = requires(T t) {
 };
 
 template <typename T>
-requires(HasVulkanToString<T>) struct fmt::formatter<T> : fmt::formatter<std::string> {
+requires(HasVulkanToString<T>) struct std::formatter<T> : std::formatter<std::string> {
 	auto format(const T value, format_context& ctx) const -> decltype(ctx.out()) {
 		return format_to(ctx.out(), "{}", vk::to_string(value));
 	}
 };
 
 template <>
-struct fmt::formatter<vk::Extent2D> : fmt::formatter<std::string> {
+struct std::formatter<vk::Extent2D> : std::formatter<std::string> {
 	auto format(const vk::Extent2D extent, format_context& ctx) const -> decltype(ctx.out()) {
 		return format_to(ctx.out(), "{} x {}", extent.width, extent.height);
 	}
 };
 
 template <>
-struct fmt::formatter<vk::Extent3D> : fmt::formatter<std::string> {
+struct std::formatter<vk::Extent3D> : std::formatter<std::string> {
 	auto format(const vk::Extent3D extent, format_context& ctx) const -> decltype(ctx.out()) {
 		return format_to(ctx.out(), "{} x {} x {}", extent.width, extent.height, extent.depth);
 	}

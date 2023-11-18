@@ -189,7 +189,7 @@ Image::Image(Device& device,
 		// Default View
 		{
 			defaultView = _device._device.createImageView(viewCI);
-			if (!_debugName.empty()) { _device.SetObjectName(defaultView, fmt::format("{} View", _debugName)); }
+			if (!_debugName.empty()) { _device.SetObjectName(defaultView, std::format("{} View", _debugName)); }
 			Log::Trace("Vulkan", "  Image View created.");
 		}
 
@@ -216,14 +216,14 @@ Image::Image(Device& device,
 				viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
 				_imageView->_depthView               = _device._device.createImageView(viewInfo);
 				if (!_debugName.empty()) {
-					_device.SetObjectName(_imageView->_depthView, fmt::format("{} Depth View", _debugName));
+					_device.SetObjectName(_imageView->_depthView, std::format("{} Depth View", _debugName));
 				}
 				Log::Trace("Vulkan", "  Image View created. (Depth)");
 
 				viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eStencil;
 				_imageView->_stencilView             = _device._device.createImageView(viewInfo);
 				if (!_debugName.empty()) {
-					_device.SetObjectName(_imageView->_stencilView, fmt::format("{} Stencil View", _debugName));
+					_device.SetObjectName(_imageView->_stencilView, std::format("{} Stencil View", _debugName));
 				}
 				Log::Trace("Vulkan", "  Image View created. (Stencil)");
 			}
@@ -248,7 +248,7 @@ Image::Image(Device& device,
 					if (!_debugName.empty()) {
 						_device.SetObjectName(
 							view,
-							fmt::format("{} Render Target View Layer {}", _debugName, viewInfo.subresourceRange.baseArrayLayer));
+							std::format("{} Render Target View Layer {}", _debugName, viewInfo.subresourceRange.baseArrayLayer));
 					}
 					Log::Trace(
 						"Vulkan", "  Image View created. (Render Target Layer {})", viewInfo.subresourceRange.baseArrayLayer);

@@ -83,6 +83,10 @@ const Swapchain& Window::GetSwapchain() const {
 	return *_swapchain;
 }
 
+Hash Window::GetSwapchainHash() const noexcept {
+	return _swapchain->GetHash();
+}
+
 glm::ivec2 Window::GetWindowSize() const {
 	glm::ivec2 size(0, 0);
 	glfwGetWindowSize(_window, &size.x, &size.y);
