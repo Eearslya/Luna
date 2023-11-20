@@ -183,9 +183,13 @@ class RenderPass {
 		return _fakeResourceAliases;
 	}
 
+	RenderTextureResource& AddTextureInput(const std::string& name, vk::PipelineStageFlags2 stages = {});
+
 	RenderTextureResource& AddColorOutput(const std::string& name,
 	                                      const AttachmentInfo& info,
 	                                      const std::string& input = "");
+
+	void MakeColorInputScaled(uint32_t index);
 
 	bool GetClearColor(uint32_t index, vk::ClearColorValue* value = nullptr) const;
 	bool GetClearDepthStencil(vk::ClearDepthStencilValue* value = nullptr) const;

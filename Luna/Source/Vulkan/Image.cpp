@@ -1,6 +1,9 @@
 #include <Luna/Vulkan/Buffer.hpp>
+#include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Image.hpp>
+#include <Luna/Vulkan/Semaphore.hpp>
+#include <Luna/Vulkan/TextureFormat.hpp>
 
 namespace Luna {
 namespace Vulkan {
@@ -15,14 +18,20 @@ Image::Image(Device& device,
 		: Cookie(device), _device(device), _createInfo(createInfo), _debugName(debugName) {
 	// Sanity checks.
 	{
+		// Ensure image has a valid size.
 		if (createInfo.Width == 0 || createInfo.Height == 0 || createInfo.Depth == 0) {
 			throw std::logic_error("Cannot create an image with 0 in any dimension");
 		}
+
+		// Ensure image has a valid format.
 		if (createInfo.Format == vk::Format::eUndefined) {
 			throw std::logic_error("Cannot create an image in Undefined format");
 		}
+
+		// Ensure image has a valid array layer count.
 		if (createInfo.ArrayLayers == 0) { throw std::logic_error("Cannot create an image with 0 array layers"); }
 
+		// Ensure the device supports the image format for this usage.
 		vk::ImageFormatProperties properties = {};
 		try {
 			properties = _device._deviceInfo.PhysicalDevice.getImageFormatProperties(
@@ -37,6 +46,7 @@ Image::Image(Device& device,
 			throw std::runtime_error("Device does not support creating an image with these options");
 		}
 
+		// Ensure the image does not exceed size restrictions.
 		if (createInfo.Width > properties.maxExtent.width || createInfo.Height > properties.maxExtent.height ||
 		    createInfo.Depth > properties.maxExtent.depth) {
 			Log::Error("Vulkan",
@@ -48,6 +58,7 @@ Image::Image(Device& device,
 			throw std::runtime_error("Device does not support images this large");
 		}
 
+		// Ensure the image does not exceed layer count restrictions.
 		if (createInfo.ArrayLayers > properties.maxArrayLayers) {
 			Log::Error(
 				"Vulkan", "Image has too many layers: {} {} ({})", createInfo.Type, createInfo.Format, createInfo.ArrayLayers);
@@ -55,6 +66,7 @@ Image::Image(Device& device,
 			throw std::runtime_error("Device does not support images with this many layers");
 		}
 
+		// Ensure the image does not exceed mip level count restrictions.
 		if (createInfo.MipLevels > properties.maxMipLevels) {
 			Log::Error("Vulkan",
 			           "Image has too many mip levels: {} {} ({})",
@@ -65,6 +77,7 @@ Image::Image(Device& device,
 			throw std::runtime_error("Device does not support images with this many mip levels");
 		}
 
+		// Ensure the device supports the chosen sample count.
 		if ((createInfo.Samples & properties.sampleCounts) != createInfo.Samples) {
 			Log::Error(
 				"Vulkan", "Unsupported sample count: {} {} ({})", createInfo.Type, createInfo.Format, createInfo.Samples);
@@ -73,15 +86,24 @@ Image::Image(Device& device,
 		}
 	}
 
-	const bool generateMips = _createInfo.MiscFlags & ImageCreateFlagBits::GenerateMipmaps;
+	// Allow the implementation to use lazy memory allocation for transient attachments.
 	if (_createInfo.Domain == ImageDomain::Transient) {
 		_createInfo.Usage |= vk::ImageUsageFlagBits::eTransientAttachment;
 	}
+
+	// If we have been given an initial image, we need to be able to transfer into this image.
 	if (initialData) { _createInfo.Usage |= vk::ImageUsageFlagBits::eTransferDst; }
+
+	// If we have to generate mips, we need to be able to transfer from this image.
+	const bool generateMips = _createInfo.MiscFlags & ImageCreateFlagBits::GenerateMipmaps;
 	if (generateMips) { _createInfo.Usage |= vk::ImageUsageFlagBits::eTransferSrc; }
+
+	// Automatically calculate mip levels when they're not provided.
 	if (_createInfo.MipLevels == 0) {
 		_createInfo.MipLevels = CalculateMipLevels(_createInfo.Width, _createInfo.Height, _createInfo.Depth);
 	}
+
+	// Create sRGB and UNorm views for storage images, as compute shaders cannot write to sRGB images.
 	if ((_createInfo.Usage & vk::ImageUsageFlagBits::eStorage) &&
 	    (_createInfo.MiscFlags & ImageCreateFlagBits::MutableSrgb)) {
 		_createInfo.Flags |= vk::ImageCreateFlagBits::eMutableFormat;
@@ -100,6 +122,7 @@ Image::Image(Device& device,
 	                            nullptr,
 	                            vk::ImageLayout::eUndefined);
 
+	// Determine which queues will be sharing this image, if any.
 	ImageCreateFlags queueFlags =
 		_createInfo.MiscFlags &
 		(ImageCreateFlagBits::ConcurrentQueueGraphics | ImageCreateFlagBits::ConcurrentQueueAsyncCompute |
@@ -146,6 +169,7 @@ Image::Image(Device& device,
 		if (!queueFlags) { queueFlags |= ImageCreateFlagBits::ConcurrentQueueGraphics; }
 	}
 
+	// Create the image.
 	{
 		std::lock_guard<std::mutex> lock(_device._lock.MemoryLock);
 
@@ -162,6 +186,7 @@ Image::Image(Device& device,
 		_image = image;
 	}
 
+	// Set the image's debug name, if applicable.
 	if (_debugName.empty()) {
 		Log::Trace("Vulkan", "Image created. ({} {})", createInfo.Format, imageCI.extent);
 	} else {
@@ -170,6 +195,7 @@ Image::Image(Device& device,
 		Log::Trace("Vulkan", "Image \"{}\" created. ({} {})", _debugName, createInfo.Format, imageCI.extent);
 	}
 
+	// Create image's default views.
 	const bool hasView(createInfo.Usage &
 	                   (vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage |
 	                    vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eDepthStencilAttachment |
@@ -186,7 +212,7 @@ Image::Image(Device& device,
 			vk::ImageSubresourceRange(
 				FormatAspectFlags(_createInfo.Format), 0, _createInfo.MipLevels, 0, _createInfo.ArrayLayers));
 
-		// Default View
+		// Default View. Includes all mip levels and array layers.
 		{
 			defaultView = _device._device.createImageView(viewCI);
 			if (!_debugName.empty()) { _device.SetObjectName(defaultView, std::format("{} View", _debugName)); }
@@ -256,6 +282,187 @@ Image::Image(Device& device,
 				}
 			}
 		}
+	}
+
+	// Handle initial upload of image data, if applicable.
+	BufferHandle stagingBuffer;
+	std::vector<vk::BufferImageCopy> blits;
+	if (initialData) {
+		// Create our staging buffer.
+		{
+			TextureFormatLayout layout;
+
+			uint32_t copyLevels = _createInfo.MipLevels;
+			if (generateMips) {
+				copyLevels = 1;
+			} else if (_createInfo.MipLevels == 0) {
+				copyLevels = CalculateMipLevels(_createInfo.Width, _createInfo.Height, _createInfo.Depth);
+			}
+
+			switch (_createInfo.Type) {
+				case vk::ImageType::e1D:
+					layout.Set1D(_createInfo.Format, _createInfo.Width, _createInfo.ArrayLayers, copyLevels);
+					break;
+				case vk::ImageType::e2D:
+					layout.Set2D(_createInfo.Format, _createInfo.Width, _createInfo.Height, _createInfo.ArrayLayers, copyLevels);
+					break;
+				case vk::ImageType::e3D:
+					layout.Set3D(_createInfo.Format, _createInfo.Width, _createInfo.Height, _createInfo.Depth, copyLevels);
+					break;
+				default:
+					throw std::logic_error("Cannot upload initial image data");
+			}
+
+			const BufferCreateInfo bufferCI{
+				BufferDomain::Host, layout.GetRequiredSize(), vk::BufferUsageFlagBits::eTransferSrc};
+			stagingBuffer = _device.CreateBuffer(bufferCI);
+
+			uint32_t index = 0;
+			uint8_t* data  = reinterpret_cast<uint8_t*>(stagingBuffer->Map());
+			layout.SetBuffer(layout.GetRequiredSize(), data);
+
+			for (uint32_t level = 0; level < copyLevels; ++level) {
+				const auto& mipInfo            = layout.GetMipInfo(level);
+				const uint32_t dstHeightStride = layout.GetLayerSize(level);
+				const size_t rowSize           = layout.GetRowSize(level);
+
+				for (uint32_t layer = 0; layer < _createInfo.ArrayLayers; ++layer, ++index) {
+					const uint32_t srcRowLength = initialData[index].RowLength ? initialData[index].RowLength : mipInfo.RowLength;
+					const uint32_t srcArrayHeight =
+						initialData[index].ImageHeight ? initialData[index].ImageHeight : mipInfo.ImageHeight;
+					const uint32_t srcRowStride    = layout.RowByteStride(srcRowLength);
+					const uint32_t srcHeightStride = layout.LayerByteStride(srcArrayHeight, srcRowStride);
+
+					uint8_t* dst       = reinterpret_cast<uint8_t*>(layout.Data(layer, level));
+					const uint8_t* src = reinterpret_cast<const uint8_t*>(initialData[index].Data);
+					for (uint32_t z = 0; z < mipInfo.Depth; ++z) {
+						for (uint32_t y = 0; y < mipInfo.BlockImageHeight; ++y) {
+							memcpy(dst + z * dstHeightStride + y * rowSize, src + z * srcHeightStride + y * srcRowStride, rowSize);
+						}
+					}
+				}
+			}
+
+			blits = layout.BuildBufferImageCopies();
+		}
+	}
+
+	CommandBufferHandle transitionCmd;
+	if (stagingBuffer) {
+		const bool generateMips = _createInfo.MiscFlags & ImageCreateFlagBits::GenerateMipmaps;
+
+		{
+			auto transferCmd = _device.RequestCommandBuffer(CommandBufferType::AsyncTransfer);
+
+			{
+				transferCmd->ImageBarrier(*this,
+				                          vk::ImageLayout::eUndefined,
+				                          vk::ImageLayout::eTransferDstOptimal,
+				                          vk::PipelineStageFlagBits2::eNone,
+				                          vk::AccessFlagBits2::eNone,
+				                          vk::PipelineStageFlagBits2::eCopy,
+				                          vk::AccessFlagBits2::eTransferWrite);
+				transferCmd->CopyBufferToImage(*this, *stagingBuffer, blits);
+				if (!generateMips) {
+					transferCmd->ImageBarrier(*this,
+					                          vk::ImageLayout::eTransferDstOptimal,
+					                          _createInfo.InitialLayout,
+					                          vk::PipelineStageFlagBits2::eCopy,
+					                          vk::AccessFlagBits2::eTransferWrite,
+					                          vk::PipelineStageFlagBits2::eNone,
+					                          vk::AccessFlagBits2::eNone);
+					transitionCmd = std::move(transferCmd);
+				}
+			}
+
+			if (generateMips) {
+				std::vector<SemaphoreHandle> semaphores(1);
+				_device.Submit(transferCmd, nullptr, &semaphores);
+				_device.AddWaitSemaphore(CommandBufferType::Generic, semaphores[0], vk::PipelineStageFlagBits2::eBlit, true);
+			}
+		}
+
+		if (generateMips) {
+			auto graphicsCmd = _device.RequestCommandBuffer(CommandBufferType::Generic);
+			graphicsCmd->BarrierPrepareGenerateMipmaps(*this,
+			                                           vk::ImageLayout::eTransferDstOptimal,
+			                                           vk::PipelineStageFlagBits2::eBlit,
+			                                           vk::AccessFlagBits2::eNone,
+			                                           true);
+			graphicsCmd->GenerateMipmaps(*this);
+
+			graphicsCmd->ImageBarrier(*this,
+			                          vk::ImageLayout::eTransferSrcOptimal,
+			                          _createInfo.InitialLayout,
+			                          vk::PipelineStageFlagBits2::eBlit,
+			                          vk::AccessFlagBits2::eNone,
+			                          vk::PipelineStageFlagBits2::eNone,
+			                          vk::AccessFlagBits2::eNone);
+
+			transitionCmd = std::move(graphicsCmd);
+		}
+	} else if (_createInfo.InitialLayout != vk::ImageLayout::eUndefined) {
+		CommandBufferType type = CommandBufferType::Generic;
+
+		if (queueFlags & ImageCreateFlagBits::ConcurrentQueueGraphics) {
+			type = CommandBufferType::Generic;
+		} else if (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncGraphics) {
+			type = CommandBufferType::AsyncGraphics;
+		} else if (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncCompute) {
+			type = CommandBufferType::AsyncCompute;
+		} else if (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncTransfer) {
+			type = CommandBufferType::AsyncTransfer;
+		}
+
+		transitionCmd = _device.RequestCommandBuffer(type);
+		transitionCmd->ImageBarrier(*this,
+		                            imageCI.initialLayout,
+		                            _createInfo.InitialLayout,
+		                            vk::PipelineStageFlagBits2::eNone,
+		                            vk::AccessFlagBits2::eNone,
+		                            vk::PipelineStageFlagBits2::eNone,
+		                            vk::AccessFlagBits2::eNone);
+	}
+
+	if (transitionCmd) {
+		std::array<vk::PipelineStageFlags2, QueueTypeCount> stages;
+		std::array<CommandBufferType, QueueTypeCount> types;
+		std::array<SemaphoreHandle, QueueTypeCount> semaphores;
+		uint32_t semaphoreCount = 0;
+
+		if (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncGraphics) {
+			if (_device.GetQueueType(CommandBufferType::AsyncGraphics) == QueueType::Graphics) {
+				queueFlags |= ImageCreateFlagBits::ConcurrentQueueGraphics;
+				queueFlags &= ~ImageCreateFlagBits::ConcurrentQueueAsyncGraphics;
+			} else {
+				queueFlags &= ~ImageCreateFlagBits::ConcurrentQueueAsyncCompute;
+			}
+		}
+
+		if (queueFlags & ImageCreateFlagBits::ConcurrentQueueGraphics) {
+			types[semaphoreCount]  = CommandBufferType::Generic;
+			stages[semaphoreCount] = vk::PipelineStageFlagBits2::eAllCommands;
+			semaphoreCount++;
+		}
+		if (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncGraphics) {
+			types[semaphoreCount]  = CommandBufferType::AsyncGraphics;
+			stages[semaphoreCount] = vk::PipelineStageFlagBits2::eAllCommands;
+			semaphoreCount++;
+		}
+		if (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncCompute) {
+			types[semaphoreCount]  = CommandBufferType::AsyncCompute;
+			stages[semaphoreCount] = vk::PipelineStageFlagBits2::eAllCommands;
+			semaphoreCount++;
+		}
+		if (_createInfo.MiscFlags & ImageCreateFlagBits::ConcurrentQueueAsyncTransfer) {
+			types[semaphoreCount]  = CommandBufferType::AsyncTransfer;
+			stages[semaphoreCount] = vk::PipelineStageFlagBits2::eAllCommands;
+			semaphoreCount++;
+		}
+
+		std::vector<SemaphoreHandle> sem(semaphores.data(), semaphores.data() + semaphoreCount);
+		_device.Submit(transitionCmd, nullptr, &sem);
+		for (uint32_t i = 0; i < semaphoreCount; ++i) { _device.AddWaitSemaphore(types[i], sem[i], stages[i], true); }
 	}
 }
 

@@ -3,4 +3,6 @@ target_sources(Luna PRIVATE
   RenderGraph.cpp
   RenderPass.cpp
   ShaderCompiler.cpp
-  Swapchain.cpp)
+  ShaderManager.cpp
+  Swapchain.cpp
+  UIManager.cpp)

@@ -2,6 +2,7 @@
 
 #include <Luna/Utility/TemporaryHashMap.hpp>
 #include <Luna/Vulkan/Common.hpp>
+#include <Luna/Vulkan/Format.hpp>
 
 namespace Luna {
 namespace Vulkan {
@@ -47,8 +48,34 @@ class RenderPass : public HashedObject<RenderPass> {
 	RenderPass& operator=(RenderPass&&)      = delete;
 	~RenderPass() noexcept;
 
+	[[nodiscard]] uint32_t GetColorAttachmentCount(uint32_t subpass) const noexcept {
+		return _subpasses[subpass].ColorAttachmentCount;
+	}
+	[[nodiscard]] const vk::AttachmentReference2& GetColorAttachment(uint32_t subpass, uint32_t att) const noexcept {
+		return _subpasses[subpass].ColorAttachments[att];
+	}
+	[[nodiscard]] uint32_t GetInputAttachmentCount(uint32_t subpass) const noexcept {
+		return _subpasses[subpass].InputAttachmentCount;
+	}
+	[[nodiscard]] const vk::AttachmentReference2& GetInputAttachment(uint32_t subpass, uint32_t att) const noexcept {
+		return _subpasses[subpass].InputAttachments[att];
+	}
 	[[nodiscard]] vk::RenderPass GetRenderPass() const noexcept {
 		return _renderPass;
+	}
+	[[nodiscard]] vk::SampleCountFlagBits GetSampleCount(uint32_t subpass) const noexcept {
+		return _subpasses[subpass].SampleCount;
+	}
+	[[nodiscard]] size_t GetSubpassCount() const noexcept {
+		return _subpasses.size();
+	}
+	[[nodiscard]] bool HasDepth(uint32_t subpass) const noexcept {
+		return _subpasses[subpass].DepthStencilAttachment.attachment != VK_ATTACHMENT_UNUSED &&
+		       FormatHasDepth(_depthStencilFormat);
+	}
+	[[nodiscard]] bool HasStencil(uint32_t subpass) const noexcept {
+		return _subpasses[subpass].DepthStencilAttachment.attachment != VK_ATTACHMENT_UNUSED &&
+		       FormatHasStencil(_depthStencilFormat);
 	}
 
  private:
@@ -95,6 +122,13 @@ class Framebuffer : public Cookie, public InternalSyncEnabled {
 
 struct FramebufferNode : TemporaryHashMapEnabled<FramebufferNode>, IntrusiveListEnabled<FramebufferNode>, Framebuffer {
 	FramebufferNode(Device& device, const RenderPass& renderPass, const RenderPassInfo& rpInfo);
+};
+
+struct TransientAttachmentNode : TemporaryHashMapEnabled<TransientAttachmentNode>,
+																 IntrusiveListEnabled<TransientAttachmentNode> {
+	TransientAttachmentNode(ImageHandle image);
+
+	ImageHandle Image;
 };
 }  // namespace Vulkan
 }  // namespace Luna

@@ -22,13 +22,15 @@ class RenderGraph {
 	~RenderGraph() noexcept;
 
 	void EnqueueRenderPasses(Vulkan::Device& device, TaskComposer& composer);
-	void SetupAttachments(Vulkan::ImageView* backbuffer);
+	void SetupAttachments(Vulkan::Device& device, Vulkan::ImageView* backbuffer);
 
-	void Bake();
+	void Bake(Vulkan::Device& device);
 	void Log();
 	void Reset();
 
 	RenderPass& AddPass(const std::string& name, RenderGraphQueueFlagBits queue = RenderGraphQueueFlagBits::Graphics);
+	[[nodiscard]] ResourceDimensions GetResourceDimensions(const RenderBufferResource& resource) const;
+	[[nodiscard]] ResourceDimensions GetResourceDimensions(const RenderTextureResource& resource) const;
 	[[nodiscard]] RenderTextureResource& GetTextureResource(const std::string& name);
 
 	void SetBackbufferDimensions(const ResourceDimensions& dimensions);
@@ -76,7 +78,7 @@ class RenderGraph {
 
 	struct PassSubmissionState {
 		void EmitPrePassBarriers();
-		void Submit();
+		void Submit(Vulkan::Device& device);
 
 		std::vector<vk::BufferMemoryBarrier2> BufferBarriers;
 		std::vector<vk::ImageMemoryBarrier2> ImageBarriers;
@@ -126,6 +128,46 @@ class RenderGraph {
 
 	// ===== Render Graph Baking Functions =====
 	void ValidatePasses();
+	void TraverseDependencies(const RenderPass& pass, uint32_t depth);
+	void DependPassesRecursive(const RenderPass& self,
+	                           const std::unordered_set<uint32_t>& passes,
+	                           uint32_t depth,
+	                           bool noCheck,
+	                           bool ignoreSelf,
+	                           bool mergeDependency);
+	void FilterPasses();
+	void ReorderPasses();
+	void BuildPhysicalResources();
+	void BuildPhysicalPasses();
+	void BuildTransients();
+	void BuildRenderPassInfo();
+	void BuildBarriers();
+	void BuildPhysicalBarriers();
+	void BuildAliases();
+
+	// ===== Render Graph Execution Functions =====
+	void EnqueueRenderPass(Vulkan::Device& device,
+	                       PhysicalPass& physicalPass,
+	                       PassSubmissionState& state,
+	                       TaskComposer& composer);
+	void EnqueuePhysicalPassCPU(Vulkan::Device& device,
+	                            const PhysicalPass& pass,
+	                            PassSubmissionState& state,
+	                            TaskComposer& composer);
+	void EnqueuePhysicalPassGPU(Vulkan::Device& device, const PhysicalPass& physicalPass, PassSubmissionState& state);
+	void RecordComputeCommands(const PhysicalPass& physicalPass, PassSubmissionState& state);
+	void RecordGraphicsCommands(const PhysicalPass& physicalPass, PassSubmissionState& state);
+	void SetupPhysicalBuffer(Vulkan::Device& device, uint32_t physicalIndex);
+	void SetupPhysicalImage(Vulkan::Device& device, uint32_t physicalIndex);
+
+	// ===== Render Graph Helper Functions =====
+	void GetQueueType(Vulkan::CommandBufferType& cmdType, bool& graphics, RenderGraphQueueFlagBits flag) const;
+	void PhysicalPassFlushBarrier(const Barrier& barrier, PassSubmissionState& state);
+	void PhysicalPassInvalidateAttachments(const PhysicalPass& physicalPass);
+	void PhysicalPassInvalidateBarrier(const Barrier& barrier, PassSubmissionState& state, bool physicalGraphics);
+	[[nodiscard]] bool PhysicalPassRequiresWork(const PhysicalPass& physicalPass) const;
+	void PhysicalPassSignal(Vulkan::Device& device, const PhysicalPass& physicalPass, PassSubmissionState& state);
+	void PhysicalPassTransferOwnership(const PhysicalPass& physicalPass);
 
 	// Backbuffer information
 	Vulkan::ImageView* _backbufferAttachment = nullptr;
@@ -146,15 +188,19 @@ class RenderGraph {
 	std::vector<std::unordered_set<uint32_t>> _passDependencies;
 	std::vector<std::unordered_set<uint32_t>> _passMergeDependencies;
 	std::vector<uint32_t> _passStack;
-	std::vector<PassSubmissionState> _passSubmissionStates;
+	std::vector<uint32_t> _physicalAliases;
 	std::vector<Vulkan::ImageView*> _physicalAttachments;
 	std::vector<Vulkan::BufferHandle> _physicalBuffers;
 	std::vector<ResourceDimensions> _physicalDimensions;
 	std::vector<PipelineEvent> _physicalEvents;
 	std::vector<PipelineEvent> _physicalHistoryEvents;
+	std::vector<Vulkan::ImageHandle> _physicalHistoryImages;
 	std::vector<Vulkan::ImageHandle> _physicalImages;
 	std::vector<bool> _physicalImageHasHistory;
-	std::vector<Vulkan::ImageHandle> _physicalHistoryImages;
+	std::vector<std::string> _physicalNames;
 	std::vector<PhysicalPass> _physicalPasses;
+
+	// Render Graph execution state
+	std::vector<PassSubmissionState> _passSubmissionStates;
 };
 }  // namespace Luna

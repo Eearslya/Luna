@@ -473,9 +473,9 @@ RenderPass::RenderPass(Hash hash, Device& device, const RenderPassInfo& rpInfo)
 		auto& dep                  = subpassDependencies.emplace_back();
 		dep                        = vk::SubpassDependency2(subpass,
                                  subpass,
-                                 {},
+		                                                    {},
                                  vk::PipelineStageFlagBits::eFragmentShader,
-                                 {},
+		                                                    {},
                                  vk::AccessFlagBits::eInputAttachmentRead,
                                  vk::DependencyFlagBits::eByRegion);
 
@@ -660,5 +660,7 @@ FramebufferNode::FramebufferNode(Device& device, const RenderPass& renderPass, c
 		: Framebuffer(device, renderPass, rpInfo) {
 	_internalSync = true;
 }
+
+TransientAttachmentNode::TransientAttachmentNode(ImageHandle image) : Image(image) {}
 }  // namespace Vulkan
 }  // namespace Luna

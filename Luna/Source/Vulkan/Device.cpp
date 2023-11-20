@@ -9,6 +9,7 @@
 #include <Luna/Vulkan/Format.hpp>
 #include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
+#include <Luna/Vulkan/Sampler.hpp>
 #include <Luna/Vulkan/Semaphore.hpp>
 #include <Luna/Vulkan/Shader.hpp>
 
@@ -98,6 +99,91 @@ Device::Device(Context& context)
 		}
 	}
 
+	for (int i = 0; i < StockSamplerCount; ++i) {
+		const auto type = static_cast<StockSampler>(i);
+		SamplerCreateInfo info{};
+		info.MinLod        = 0.0f;
+		info.MaxLod        = VK_LOD_CLAMP_NONE;
+		info.MaxAnisotropy = 1.0f;
+
+		switch (type) {
+			case StockSampler::LinearShadow:
+			case StockSampler::NearestShadow:
+				info.CompareEnable = VK_TRUE;
+				info.CompareOp     = vk::CompareOp::eLessOrEqual;
+				break;
+
+			default:
+				info.CompareEnable = VK_FALSE;
+				break;
+		}
+
+		switch (type) {
+			case StockSampler::DefaultGeometryFilterClamp:
+			case StockSampler::DefaultGeometryFilterWrap:
+			case StockSampler::TrilinearClamp:
+			case StockSampler::TrilinearWrap:
+				info.MipmapMode = vk::SamplerMipmapMode::eLinear;
+				break;
+
+			default:
+				info.MipmapMode = vk::SamplerMipmapMode::eNearest;
+				break;
+		}
+
+		switch (type) {
+			case StockSampler::DefaultGeometryFilterClamp:
+			case StockSampler::DefaultGeometryFilterWrap:
+			case StockSampler::LinearClamp:
+			case StockSampler::LinearShadow:
+			case StockSampler::LinearWrap:
+			case StockSampler::TrilinearClamp:
+			case StockSampler::TrilinearWrap:
+				info.MagFilter = vk::Filter::eLinear;
+				info.MinFilter = vk::Filter::eLinear;
+				break;
+
+			default:
+				info.MagFilter = vk::Filter::eNearest;
+				info.MinFilter = vk::Filter::eNearest;
+				break;
+		}
+
+		switch (type) {
+			case StockSampler::DefaultGeometryFilterClamp:
+			case StockSampler::LinearClamp:
+			case StockSampler::LinearShadow:
+			case StockSampler::NearestClamp:
+			case StockSampler::NearestShadow:
+			case StockSampler::TrilinearClamp:
+				info.AddressModeU = vk::SamplerAddressMode::eClampToEdge;
+				info.AddressModeV = vk::SamplerAddressMode::eClampToEdge;
+				info.AddressModeW = vk::SamplerAddressMode::eClampToEdge;
+				break;
+
+			default:
+				info.AddressModeU = vk::SamplerAddressMode::eRepeat;
+				info.AddressModeV = vk::SamplerAddressMode::eRepeat;
+				info.AddressModeW = vk::SamplerAddressMode::eRepeat;
+		}
+
+		switch (type) {
+			case StockSampler::DefaultGeometryFilterClamp:
+			case StockSampler::DefaultGeometryFilterWrap:
+				if (_deviceInfo.EnabledFeatures.Core.samplerAnisotropy) {
+					info.AnisotropyEnable = VK_TRUE;
+					info.MaxAnisotropy    = std::min(16.0f, _deviceInfo.Properties.Core.limits.maxSamplerAnisotropy);
+				}
+				info.MipLodBias = 0.0f;
+				break;
+
+			default:
+				break;
+		}
+
+		_stockSamplers[i] = RequestImmutableSampler(info);
+	}
+
 	// Create Frame Contexts
 	CreateFrameContexts(2);
 }
@@ -117,6 +203,8 @@ Device::~Device() noexcept {
 			}
 		}
 	}
+
+	_immutableSamplers.Clear();
 
 	_frameContexts.clear();
 	for (auto& semaphore : _availableSemaphores) { _device.destroySemaphore(semaphore); }
@@ -169,6 +257,20 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo,
 	return handle;
 }
 
+SamplerHandle Device::CreateSampler(const SamplerCreateInfo& samplerCI, const std::string& debugName) {
+	try {
+		return SamplerHandle(_samplerPool.Allocate(*this, samplerCI, false));
+	} catch (const std::exception& e) {
+		Log::Error("Vulkan", "Failed to create Sampler: {}", e.what());
+
+		return {};
+	}
+}
+
+const Sampler& Device::GetStockSampler(StockSampler type) const {
+	return _stockSamplers[int(type)]->GetSampler();
+}
+
 RenderPassInfo Device::GetSwapchainRenderPass(SwapchainRenderPassType type) const noexcept {
 	RenderPassInfo info       = {};
 	info.ColorAttachmentCount = 1;
@@ -219,6 +321,16 @@ DescriptorSetAllocator* Device::RequestDescriptorSetAllocator(const DescriptorSe
 	return ret;
 }
 
+const ImmutableSampler* Device::RequestImmutableSampler(const SamplerCreateInfo& samplerCI) {
+	const auto hash = Hasher(samplerCI).Get();
+
+	DeviceCacheLock();
+	auto* sampler = _immutableSamplers.Find(hash);
+	if (!sampler) { sampler = _immutableSamplers.EmplaceYield(hash, hash, *this, samplerCI); }
+
+	return sampler;
+}
+
 Program* Device::RequestProgram(Shader* compute) {
 	return ProgramBuilder{*this}.Compute(compute).Build();
 }
@@ -252,6 +364,25 @@ Program* Device::RequestProgram(size_t compCodeSize, const void* compCode) {
 	return RequestProgram(RequestShader(compCodeSize, compCode));
 }
 
+Program* Device::RequestProgram(Shader* vertex, Shader* fragment) {
+	return ProgramBuilder{*this}.Vertex(vertex).Fragment(fragment).Build();
+}
+
+Program* Device::RequestProgram(const std::vector<uint32_t>& vertexCode, const std::vector<uint32_t>& fragmentCode) {
+	return RequestProgram(RequestShader(vertexCode), RequestShader(fragmentCode));
+}
+
+Program* Device::RequestProgram(size_t vertexCodeSize,
+                                const void* vertexCode,
+                                size_t fragmentCodeSize,
+                                const void* fragmentCode) {
+	return RequestProgram(RequestShader(vertexCodeSize, vertexCode), RequestShader(fragmentCodeSize, fragmentCode));
+}
+
+SemaphoreHandle Device::RequestProxySemaphore() {
+	return SemaphoreHandle(_semaphorePool.Allocate(*this));
+}
+
 SemaphoreHandle Device::RequestSemaphore(const std::string& debugName) {
 	DeviceLock();
 	auto semaphore = AllocateSemaphore(debugName);
@@ -283,6 +414,33 @@ Shader* Device::RequestShader(size_t codeSize, const void* code) {
 	return ret;
 }
 
+ImageHandle Device::RequestTransientAttachment(const vk::Extent2D& extent,
+                                               vk::Format format,
+                                               uint32_t index,
+                                               vk::SampleCountFlagBits samples,
+                                               uint32_t arrayLayers) {
+	Hasher h;
+	h(extent.width);
+	h(extent.height);
+	h(format);
+	h(index);
+	h(samples);
+	h(arrayLayers);
+	const auto hash = h.Get();
+
+	std::lock_guard<std::mutex> lock(_lock.TransientAttachmentLock);
+	auto* node = _transientAttachments.Request(hash);
+	if (node) { return node->Image; }
+
+	const auto imageCI =
+		ImageCreateInfo::TransientRenderTarget(format, extent).SetSamples(samples).SetArrayLayers(arrayLayers);
+	node = _transientAttachments.Emplace(hash, CreateImage(imageCI));
+	node->Image->SetInternalSync();
+	node->Image->GetView().SetInternalSync();
+
+	return node->Image;
+}
+
 void Device::SetObjectName(vk::ObjectType type, uint64_t handle, const std::string& name) {
 	if (!_extensions.DebugUtils) { return; }
 
@@ -293,6 +451,14 @@ void Device::SetObjectName(vk::ObjectType type, uint64_t handle, const std::stri
 /* ============================================
 ** ===== Public Synchronization Functions =====
 *  ============================================ */
+void Device::AddWaitSemaphore(CommandBufferType cmdType,
+                              SemaphoreHandle semaphore,
+                              vk::PipelineStageFlags2 stages,
+                              bool flush) {
+	DeviceLock();
+	AddWaitSemaphoreNoLock(GetQueueType(cmdType), std::move(semaphore), stages, flush);
+}
+
 SemaphoreHandle Device::ConsumeReleaseSemaphore() noexcept {
 	return std::move(_swapchainRelease);
 }
@@ -302,12 +468,18 @@ void Device::EndFrame() {
 	EndFrameNoLock();
 }
 
+void Device::FlushFrame() {
+	DeviceLock();
+	FlushFrameNoLock();
+}
+
 void Device::NextFrame() {
 	DeviceFlush();
 
 	EndFrameNoLock();
 
 	_framebuffers.BeginFrame();
+	_transientAttachments.BeginFrame();
 
 	_currentFrameContext = (_currentFrameContext + 1) % _frameContexts.size();
 	Frame().Begin();
@@ -460,6 +632,15 @@ void Device::DestroyImageView(vk::ImageView imageView) {
 
 void Device::DestroyImageViewNoLock(vk::ImageView imageView) {
 	Frame().ImageViewsToDestroy.push_back(imageView);
+}
+
+void Device::DestroySampler(vk::Sampler sampler) {
+	DeviceLock();
+	DestroySamplerNoLock(sampler);
+}
+
+void Device::DestroySamplerNoLock(vk::Sampler sampler) {
+	Frame().SamplersToDestroy.push_back(sampler);
 }
 
 void Device::DestroySemaphore(vk::Semaphore semaphore) {
@@ -627,6 +808,10 @@ void Device::EndFrameNoLock() {
 			_queueData[int(type)].NeedsFence = false;
 		}
 	}
+}
+
+void Device::FlushFrameNoLock() {
+	for (const auto type : QueueFlushOrder) { FlushQueue(type); }
 }
 
 void Device::FlushQueue(QueueType queueType) {
@@ -873,6 +1058,7 @@ void Device::WaitIdleNoLock() {
 		_device.waitIdle();
 
 		_framebuffers.Clear();
+		_transientAttachments.Clear();
 
 		for (auto& queue : _queueData) {
 			for (auto& semaphore : queue.WaitSemaphores) { _device.destroySemaphore(semaphore->Release()); }
@@ -941,7 +1127,7 @@ QueueType Device::GetQueueType(CommandBufferType type) const {
 ** ===== FrameContext Functions =====
 *  ================================== */
 Device::FrameContext::FrameContext(Device& parent, uint32_t frameIndex) : Parent(parent), FrameIndex(frameIndex) {
-	const auto threadCount = Threading::GetThreadCount();
+	const auto threadCount = Threading::GetThreadCount() + 1;
 	for (int type = 0; type < QueueTypeCount; ++type) {
 		TimelineValues[type] = Parent._queueData[type].TimelineValue;
 
@@ -1024,12 +1210,14 @@ void Device::FrameContext::Begin() {
 	for (auto framebuffer : FramebuffersToDestroy) { device.destroyFramebuffer(framebuffer); }
 	for (auto image : ImagesToDestroy) { device.destroyImage(image); }
 	for (auto imageView : ImageViewsToDestroy) { device.destroyImageView(imageView); }
+	for (auto sampler : SamplersToDestroy) { device.destroySampler(sampler); }
 	for (auto semaphore : SemaphoresToDestroy) { device.destroySemaphore(semaphore); }
 	for (auto semaphore : SemaphoresToRecycle) { Parent.FreeSemaphore(semaphore); }
 	BuffersToDestroy.clear();
 	FramebuffersToDestroy.clear();
 	ImagesToDestroy.clear();
 	ImageViewsToDestroy.clear();
+	SamplersToDestroy.clear();
 	SemaphoresToDestroy.clear();
 	SemaphoresToRecycle.clear();
 

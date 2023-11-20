@@ -1,10 +1,14 @@
+#include <imgui.h>
+
 #include <Luna/Core/Engine.hpp>
 #include <Luna/Core/Filesystem.hpp>
 #include <Luna/Core/Log.hpp>
+#include <Luna/Core/OSFilesystem.hpp>
 #include <Luna/Core/Threading.hpp>
 #include <Luna/Core/Window.hpp>
 #include <Luna/Core/WindowManager.hpp>
 #include <Luna/Renderer/Renderer.hpp>
+#include <Luna/Renderer/UIManager.hpp>
 
 namespace Luna {
 static struct EngineState {
@@ -20,6 +24,8 @@ static void Update() {
 	WindowManager::Update();
 	if (State.Window->IsCloseRequested()) { State.Running = false; }
 
+	UIManager::BeginFrame();
+	ImGui::ShowDemoWindow();
 	if (!State.Window->IsMinimized()) { Renderer::Render(); }
 
 	++State.FrameCount;
@@ -32,8 +38,10 @@ bool Engine::Initialize() {
 
 	if (!Threading::Initialize()) { return false; }
 	if (!Filesystem::Initialize()) { return false; }
+	Filesystem::RegisterProtocol("res", std::unique_ptr<FilesystemBackend>(new OSFilesystem("Resources")));
 	if (!WindowManager::Initialize()) { return false; }
 	if (!Renderer::Initialize()) { return false; }
+	if (!UIManager::Initialize()) { return false; }
 
 	State.Window = std::make_unique<Window>("Luna", 1600, 900, false);
 	if (!State.Window) { return false; }
@@ -58,6 +66,7 @@ int Engine::Run() {
 
 void Engine::Shutdown() {
 	State.Window.reset();
+	UIManager::Shutdown();
 	Renderer::Shutdown();
 	WindowManager::Shutdown();
 	Filesystem::Shutdown();

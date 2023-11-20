@@ -26,6 +26,10 @@ set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "" FORCE)
 set(ENABLE_HLSL              ON CACHE BOOL "" FORCE)
 set(SKIP_GLSLANG_INSTALL     ON CACHE BOOL "" FORCE)
 
+FetchContent_Declare(imgui
+  GIT_REPOSITORY https://github.com/ocornut/imgui
+  GIT_TAG 96b5b1724b677aa03ca4a3d720367beba9a980a3)
+
 FetchContent_Declare(shaderc
 	GIT_REPOSITORY https://github.com/google/shaderc.git
 	GIT_TAG 0d6f72f3ec57fe68377363d9e810385e6b6e37e1)
@@ -71,10 +75,20 @@ FetchContent_Declare(vma
 set(VMA_DYNAMIC_VULKAN_FUNCTIONS OFF CACHE BOOL "" FORCE)
 set(VMA_STATIC_VULKAN_FUNCTIONS  OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(glfw glm spdlog spirv-headers spirv-tools spirv-cross glslang shaderc vma)
+FetchContent_MakeAvailable(glfw glm imgui spdlog spirv-headers spirv-tools spirv-cross glslang shaderc vma)
 
 set_target_properties(glslc_exe      PROPERTIES EXCLUDE_FROM_ALL ON)
 set_target_properties(shaderc_shared PROPERTIES EXCLUDE_FROM_ALL ON)
+
+add_library(imgui STATIC)
+target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
+target_include_directories(imgui PUBLIC "${imgui_SOURCE_DIR}")
+target_sources(imgui PRIVATE
+  "${imgui_SOURCE_DIR}/imgui.cpp"
+  "${imgui_SOURCE_DIR}/imgui_demo.cpp"
+  "${imgui_SOURCE_DIR}/imgui_draw.cpp"
+  "${imgui_SOURCE_DIR}/imgui_tables.cpp"
+  "${imgui_SOURCE_DIR}/imgui_widgets.cpp")
 
 add_library(Luna STATIC)
 target_compile_definitions(Luna
@@ -82,7 +96,7 @@ target_compile_definitions(Luna
   PRIVATE GLFW_INCLUDE_VULKAN VULKAN_HPP_DISPATCH_LOADER_DYNAMIC)
 target_include_directories(Luna PUBLIC "Include")
 target_link_libraries(Luna
-  PUBLIC glm spdlog Vulkan::Headers VulkanMemoryAllocator
+  PUBLIC imgui glm spdlog Vulkan::Headers VulkanMemoryAllocator
   PRIVATE glfw shaderc spirv-cross-cpp)
 target_precompile_headers(Luna PRIVATE "Include/Luna/Common.hpp")
 

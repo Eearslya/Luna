@@ -20,8 +20,6 @@ struct ImageInitialData {
 };
 
 struct ImageCreateInfo {
-	constexpr ImageCreateInfo() = default;
-
 	constexpr ImageCreateInfo& SetDomain(ImageDomain domain) noexcept {
 		Domain = domain;
 
@@ -166,6 +164,23 @@ struct ImageCreateInfo {
 		  .AddUsage(vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc);
 	}
 
+	constexpr static ImageCreateInfo TransientRenderTarget(vk::Format format, uint32_t width, uint32_t height) {
+		return TransientRenderTarget(format, vk::Extent2D(width, height));
+	}
+
+	constexpr static ImageCreateInfo TransientRenderTarget(vk::Format format, vk::Extent2D extent) {
+		const bool depthStencil = FormatHasDepthOrStencil(format);
+
+		return ImageCreateInfo()
+		  .SetDomain(ImageDomain::Transient)
+		  .SetExtent(extent)
+		  .SetFormat(format)
+		  .SetInitialLayout(vk::ImageLayout::eUndefined)
+		  .SetUsage(depthStencil ? vk::ImageUsageFlagBits::eDepthStencilAttachment
+		                         : vk::ImageUsageFlagBits::eColorAttachment)
+		  .AddUsage(vk::ImageUsageFlagBits::eInputAttachment);
+	}
+
 	ImageDomain Domain              = ImageDomain::Physical;
 	uint32_t Width                  = 1;
 	uint32_t Height                 = 1;
@@ -285,6 +300,18 @@ class ImageView : public VulkanObject<ImageView, ImageViewDeleter>, public Cooki
 	}
 	[[nodiscard]] vk::ImageView GetView() const noexcept {
 		return _view;
+	}
+	[[nodiscard]] vk::ImageView GetFloatView() const noexcept {
+		return _depthView ? _depthView : _view;
+	}
+	[[nodiscard]] vk::ImageView GetIntegerView() const noexcept {
+		return _stencilView ? _stencilView : _view;
+	}
+	[[nodiscard]] vk::ImageView GetSrgbView() const noexcept {
+		return _srgbView;
+	}
+	[[nodiscard]] vk::ImageView GetUnormView() const noexcept {
+		return _unormView;
 	}
 	[[nodiscard]] uint32_t GetWidth() const noexcept {
 		return _createInfo.Image->GetCreateInfo().Width;

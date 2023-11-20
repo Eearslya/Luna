@@ -150,22 +150,60 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
 	// Basic control
 	void Begin();
 	void End();
+	void EndThread();
 
 	// Pipeline barriers
 	void Barrier(const vk::DependencyInfo& dependency);
+	void BarrierPrepareGenerateMipmaps(const Image& image,
+	                                   vk::ImageLayout baseLevelLayout,
+	                                   vk::PipelineStageFlags2 srcStages,
+	                                   vk::AccessFlags2 srcAccess,
+	                                   bool needTopLevelBarrier = true);
 	void BufferBarrier(const Buffer& buffer,
 	                   vk::PipelineStageFlags2 srcStages,
 	                   vk::AccessFlags2 srcAccess,
 	                   vk::PipelineStageFlags2 dstStages,
 	                   vk::AccessFlags2 dstAccess);
+	void ImageBarrier(const Image& image,
+	                  vk::ImageLayout oldLayout,
+	                  vk::ImageLayout newLayout,
+	                  vk::PipelineStageFlags2 srcStages,
+	                  vk::AccessFlags2 srcAccess,
+	                  vk::PipelineStageFlags2 dstStages,
+	                  vk::AccessFlags2 dstAccess);
+	void ImageBarriers(const std::vector<vk::ImageMemoryBarrier2>& barriers);
 
 	// Buffer transfers
 	void CopyBuffer(const Buffer& dst, const Buffer& src);
 	void CopyBuffer(const Buffer& dst, const Buffer& src, const std::vector<vk::BufferCopy>& copies);
 	void CopyBuffer(
 		const Buffer& dst, vk::DeviceSize dstOffset, const Buffer& src, vk::DeviceSize srcOffset, vk::DeviceSize size);
+	void CopyBufferToImage(const Image& dst, const Buffer& src, const std::vector<vk::BufferImageCopy>& blits);
+	void CopyBufferToImage(const Image& dst,
+	                       const Buffer& src,
+	                       vk::DeviceSize bufferOffset,
+	                       const vk::Offset3D& offset,
+	                       const vk::Extent3D& extent,
+	                       uint32_t rowLength,
+	                       uint32_t sliceHeight,
+	                       const vk::ImageSubresourceLayers& subresource);
 	void FillBuffer(const Buffer& dst, uint8_t value);
 	void FillBuffer(const Buffer& dst, uint8_t value, vk::DeviceSize offset, vk::DeviceSize size);
+
+	// Image operations
+	void BlitImage(const Image& dst,
+	               const Image& src,
+	               const vk::Offset3D& dstOffset0,
+	               const vk::Offset3D& dstExtent,
+	               const vk::Offset3D& srcOffset0,
+	               const vk::Offset3D& srcExtent,
+	               uint32_t dstLevel,
+	               uint32_t srcLevel,
+	               uint32_t dstBaseLayer = 0,
+	               uint32_t srcBaseLayer = 0,
+	               uint32_t layerCount   = 1,
+	               vk::Filter filter     = vk::Filter::eLinear);
+	void GenerateMipmaps(const Image& image);
 
 	// Descriptors
 	template <typename T>
@@ -179,6 +217,12 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
 
 	// Dispatch and Draw
 	void Dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ);
+	void Draw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);
+	void DrawIndexed(uint32_t indexCount,
+	                 uint32_t instanceCount = 1,
+	                 uint32_t firstIndex    = 0,
+	                 int32_t vertexOffset   = 0,
+	                 uint32_t firstInstance = 0);
 
 	// Render Pass control
 	void BeginRenderPass(const RenderPassInfo& rpInfo, vk::SubpassContents contents = vk::SubpassContents::eInline);
@@ -187,7 +231,39 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
 
 	// State control
 	void SetOpaqueState();
+	void SetTransparentSpriteState();
+
+	void SetAlphaBlend(vk::BlendFactor srcAlpha, vk::BlendOp op, vk::BlendFactor dstAlpha);
+	void SetBlendEnable(bool enable);
+	void SetColorBlend(vk::BlendFactor srcColor, vk::BlendOp op, vk::BlendFactor dstColor);
+	void SetColorWriteMask(uint32_t mask);
+	void SetCullMode(vk::CullModeFlagBits mode);
+	void SetDepthCompareOp(vk::CompareOp op);
+	void SetDepthTest(bool test);
+	void SetDepthWrite(bool write);
+	void SetFrontFace(vk::FrontFace face);
+
+	void SetSampler(uint32_t set, uint32_t binding, const Sampler& sampler);
+	void SetSampler(uint32_t set, uint32_t binding, StockSampler sampler);
+	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view);
+	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler);
+	void SetTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler);
+	void SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view);
+	void SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler);
+	void SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler);
+	void SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view);
+	void SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler);
+	void SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler);
+
+	void SetIndexBuffer(const Buffer& buffer, vk::DeviceSize offset, vk::IndexType indexType);
 	void SetProgram(Program* program);
+	void SetScissor(const vk::Rect2D& scissor);
+	void SetVertexAttribute(uint32_t attribute, uint32_t binding, vk::Format format, vk::DeviceSize offset);
+	void SetVertexBinding(uint32_t binding,
+	                      const Buffer& buffer,
+	                      vk::DeviceSize offset,
+	                      vk::DeviceSize stride,
+	                      vk::VertexInputRate inputRate);
 
  private:
 	CommandBuffer(Device& device,
@@ -198,6 +274,7 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
 
 	void BindPipeline(vk::PipelineBindPoint bindPoint, vk::Pipeline pipeline, CommandBufferDirtyFlags activeDynamicState);
 	Pipeline BuildComputePipeline(bool synchronous);
+	Pipeline BuildGraphicsPipeline(bool synchronous);
 	void BeginCompute();
 	void BeginContext();
 	void BeginGraphics();
@@ -206,7 +283,15 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
 	vk::Pipeline FlushComputeState(bool synchronous);
 	void FlushDescriptorSet(uint32_t set);
 	void FlushDescriptorSets();
+	bool FlushGraphicsPipeline(bool synchronous);
+	bool FlushRenderState(bool synchronous);
 	void RebindDescriptorSet(uint32_t set);
+	void SetTexture(uint32_t set,
+	                uint32_t binding,
+	                vk::ImageView floatView,
+	                vk::ImageView integerView,
+	                vk::ImageLayout layout,
+	                uint64_t cookie);
 	void SetViewportScissor(const RenderPassInfo& rpInfo, const Framebuffer* framebuffer);
 
 	// ----- Core command buffer information -----
@@ -215,6 +300,7 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
 	vk::CommandBuffer _commandBuffer;
 	uint32_t _threadIndex;
 	std::string _debugName;
+	bool _ended = false;
 
 	// ----- Descriptors State -----
 	std::array<vk::DescriptorSet, MaxDescriptorSets> _allocatedSets = {};

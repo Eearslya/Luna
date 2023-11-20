@@ -80,6 +80,30 @@ EnumCase(ShaderStage, Fragment);
 EnumCase(ShaderStage, Compute);
 EndVulkanEnum();
 
+BeginVulkanEnum(StockSampler,
+                10,
+                NearestClamp,
+                LinearClamp,
+                TrilinearClamp,
+                NearestWrap,
+                LinearWrap,
+                TrilinearWrap,
+                NearestShadow,
+                LinearShadow,
+                DefaultGeometryFilterClamp,
+                DefaultGeometryFilterWrap);
+EnumCase(StockSampler, NearestClamp);
+EnumCase(StockSampler, LinearClamp);
+EnumCase(StockSampler, TrilinearClamp);
+EnumCase(StockSampler, NearestWrap);
+EnumCase(StockSampler, LinearWrap);
+EnumCase(StockSampler, TrilinearWrap);
+EnumCase(StockSampler, NearestShadow);
+EnumCase(StockSampler, LinearShadow);
+EnumCase(StockSampler, DefaultGeometryFilterClamp);
+EnumCase(StockSampler, DefaultGeometryFilterWrap);
+EndVulkanEnum();
+
 BeginVulkanEnum(SwapchainRenderPassType, 3, ColorOnly, Depth, DepthStencil);
 EnumCase(SwapchainRenderPassType, ColorOnly);
 EnumCase(SwapchainRenderPassType, Depth);

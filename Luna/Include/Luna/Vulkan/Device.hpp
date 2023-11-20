@@ -24,6 +24,8 @@ class Device : public VulkanObject<Device> {
 	friend class PipelineLayout;
 	friend class Program;
 	friend class RenderPass;
+	friend class Sampler;
+	friend struct SamplerDeleter;
 	friend class Semaphore;
 	friend struct SemaphoreDeleter;
 	friend class Shader;
@@ -38,12 +40,16 @@ class Device : public VulkanObject<Device> {
 	[[nodiscard]] const DeviceInfo& GetDeviceInfo() const noexcept {
 		return _deviceInfo;
 	}
+	[[nodiscard]] uint32_t GetFrameIndex() const noexcept {
+		return _currentFrameContext;
+	}
 	[[nodiscard]] vk::Instance GetInstance() const noexcept {
 		return _instance;
 	}
 	[[nodiscard]] const QueueInfo& GetQueueInfo() const noexcept {
 		return _queueInfo;
 	}
+	QueueType GetQueueType(CommandBufferType type) const;
 
 	/* ==============================================
 	** ===== Public Object Management Functions =====
@@ -54,6 +60,8 @@ class Device : public VulkanObject<Device> {
 	[[nodiscard]] ImageHandle CreateImage(const ImageCreateInfo& createInfo,
 	                                      const ImageInitialData* initialData = nullptr,
 	                                      const std::string& debugName        = "");
+	[[nodiscard]] SamplerHandle CreateSampler(const SamplerCreateInfo& samplerCI, const std::string& debugName = "");
+	[[nodiscard]] const Sampler& GetStockSampler(StockSampler type) const;
 	[[nodiscard]] RenderPassInfo GetSwapchainRenderPass(
 		SwapchainRenderPassType type = SwapchainRenderPassType::ColorOnly) const noexcept;
 	[[nodiscard]] ImageView& GetSwapchainView();
@@ -62,14 +70,28 @@ class Device : public VulkanObject<Device> {
 	[[nodiscard]] const ImageView& GetSwapchainView(uint32_t index) const;
 	[[nodiscard]] DescriptorSetAllocator* RequestDescriptorSetAllocator(const DescriptorSetLayout& layout,
 	                                                                    const vk::ShaderStageFlags* stagesForBindings);
+	[[nodiscard]] const ImmutableSampler* RequestImmutableSampler(const SamplerCreateInfo& samplerCI);
 	[[nodiscard]] Program* RequestProgram(const std::array<Shader*, ShaderStageCount>& shaders);
 	[[nodiscard]] Program* RequestProgram(Shader* compute);
 	[[nodiscard]] Program* RequestProgram(const std::vector<uint32_t>& compCode);
 	[[nodiscard]] Program* RequestProgram(size_t compCodeSize, const void* compCode);
+	[[nodiscard]] Program* RequestProgram(Shader* vertex, Shader* fragment);
+	[[nodiscard]] Program* RequestProgram(const std::vector<uint32_t>& vertexCode,
+	                                      const std::vector<uint32_t>& fragmentCode);
+	[[nodiscard]] Program* RequestProgram(size_t vertexCodeSize,
+	                                      const void* vertexCode,
+	                                      size_t fragmentCodeSize,
+	                                      const void* fragmentCode);
+	[[nodiscard]] SemaphoreHandle RequestProxySemaphore();
 	[[nodiscard]] SemaphoreHandle RequestSemaphore(const std::string& debugName = "");
 	[[nodiscard]] Shader* RequestShader(Hash hash);
 	[[nodiscard]] Shader* RequestShader(const std::vector<uint32_t>& code);
 	[[nodiscard]] Shader* RequestShader(size_t codeSize, const void* code);
+	[[nodiscard]] ImageHandle RequestTransientAttachment(const vk::Extent2D& extent,
+	                                                     vk::Format format,
+	                                                     uint32_t index                  = 0,
+	                                                     vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1,
+	                                                     uint32_t arrayLayers            = 1);
 
 	/** Set the debug name for the given object. */
 	void SetObjectName(vk::ObjectType type, uint64_t handle, const std::string& name);
@@ -81,9 +103,13 @@ class Device : public VulkanObject<Device> {
 	/* ============================================
 	** ===== Public Synchronization Functions =====
 	*  ============================================ */
+	void AddWaitSemaphore(CommandBufferType cmdType,
+	                      SemaphoreHandle semaphore,
+	                      vk::PipelineStageFlags2 stages,
+	                      bool flush);
 	SemaphoreHandle ConsumeReleaseSemaphore() noexcept;
-
 	void EndFrame();
+	void FlushFrame();
 
 	/** Advance to the next frame context. */
 	void NextFrame();
@@ -144,6 +170,7 @@ class Device : public VulkanObject<Device> {
 		std::vector<vk::Framebuffer> FramebuffersToDestroy;
 		std::vector<vk::Image> ImagesToDestroy;
 		std::vector<vk::ImageView> ImageViewsToDestroy;
+		std::vector<vk::Sampler> SamplersToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToConsume;
 		std::vector<vk::Semaphore> SemaphoresToDestroy;
 		std::vector<vk::Semaphore> SemaphoresToRecycle;
@@ -180,6 +207,8 @@ class Device : public VulkanObject<Device> {
 	void DestroyImageNoLock(vk::Image image);
 	void DestroyImageView(vk::ImageView imageView);
 	void DestroyImageViewNoLock(vk::ImageView imageView);
+	void DestroySampler(vk::Sampler sampler);
+	void DestroySamplerNoLock(vk::Sampler sampler);
 	void DestroySemaphore(vk::Semaphore semaphore);
 	void DestroySemaphoreNoLock(vk::Semaphore semaphore);
 	void FreeAllocation(VmaAllocation allocation, bool mapped);
@@ -202,6 +231,7 @@ class Device : public VulkanObject<Device> {
 	                            vk::PipelineStageFlags2 stages,
 	                            bool flush);
 	void EndFrameNoLock();
+	void FlushFrameNoLock();
 	void FlushQueue(QueueType queueType);
 	CommandBufferHandle RequestCommandBufferNoLock(uint32_t threadIndex,
 	                                               CommandBufferType type,
@@ -218,7 +248,6 @@ class Device : public VulkanObject<Device> {
 	uint64_t AllocateCookie();
 	void CreateFrameContexts(uint32_t count);
 	FrameContext& Frame();
-	QueueType GetQueueType(CommandBufferType type) const;
 
 	const Extensions& _extensions;
 	const vk::Instance& _instance;
@@ -233,6 +262,7 @@ class Device : public VulkanObject<Device> {
 		std::mutex MemoryLock;
 		RWSpinLock ReadOnlyCache;
 		std::mutex FramebufferLock;
+		std::mutex TransientAttachmentLock;
 	} _lock;
 	std::atomic_uint64_t _nextCookie;
 
@@ -248,6 +278,7 @@ class Device : public VulkanObject<Device> {
 	VulkanObjectPool<Fence> _fencePool;
 	VulkanObjectPool<Image> _imagePool;
 	VulkanObjectPool<ImageView> _imageViewPool;
+	VulkanObjectPool<Sampler> _samplerPool;
 	VulkanObjectPool<Semaphore> _semaphorePool;
 
 	SemaphoreHandle _swapchainAcquire;
@@ -259,12 +290,15 @@ class Device : public VulkanObject<Device> {
 	std::array<QueueData, QueueTypeCount> _queueData;
 
 	VulkanCache<DescriptorSetAllocator> _descriptorSetAllocators;
+	VulkanCache<ImmutableSampler> _immutableSamplers;
 	VulkanCache<PipelineLayout> _pipelineLayouts;
 	VulkanCache<Program> _programs;
 	VulkanCache<RenderPass> _renderPasses;
 	VulkanCache<Shader> _shaders;
 
 	TemporaryHashMap<FramebufferNode, 8, false> _framebuffers;
+	std::array<const ImmutableSampler*, StockSamplerCount> _stockSamplers;
+	TemporaryHashMap<TransientAttachmentNode, 8, false> _transientAttachments;
 };
 }  // namespace Vulkan
 }  // namespace Luna

@@ -2,6 +2,9 @@
 #include <Luna/Renderer/RenderPass.hpp>
 
 namespace Luna {
+static constexpr RenderGraphQueueFlags ComputeQueues =
+	RenderGraphQueueFlagBits::Compute | RenderGraphQueueFlagBits::AsyncCompute;
+
 bool RenderPassInterface::RenderPassIsConditional() const {
 	return false;
 }
@@ -35,6 +38,34 @@ void RenderPassInterface::EnqueuePrepareRenderPass(RenderGraph& graph, TaskCompo
 RenderPass::RenderPass(RenderGraph& graph, uint32_t index, RenderGraphQueueFlagBits queue)
 		: _graph(graph), _index(index), _queue(queue) {}
 
+RenderTextureResource& RenderPass::AddTextureInput(const std::string& name, vk::PipelineStageFlags2 stages) {
+	auto& res = _graph.GetTextureResource(name);
+	res.AddQueue(_queue);
+	res.ReadInPass(_index);
+	res.AddImageUsage(vk::ImageUsageFlagBits::eSampled);
+
+	auto it = std::find_if(_genericTextures.begin(), _genericTextures.end(), [&](const AccessedTextureResource& acc) {
+		return acc.Texture == &res;
+	});
+	if (it != _genericTextures.end()) { return *it->Texture; }
+
+	AccessedTextureResource acc = {};
+	acc.Texture                 = &res;
+	acc.Layout                  = vk::ImageLayout::eShaderReadOnlyOptimal;
+	acc.Access                  = vk::AccessFlagBits2::eShaderSampledRead;
+	if (stages) {
+		acc.Stages = stages;
+	} else if (_queue & ComputeQueues) {
+		acc.Stages = vk::PipelineStageFlagBits2::eComputeShader;
+	} else {
+		acc.Stages = vk::PipelineStageFlagBits2::eFragmentShader;
+	}
+
+	_genericTextures.push_back(acc);
+
+	return res;
+}
+
 RenderTextureResource& RenderPass::AddColorOutput(const std::string& name,
                                                   const AttachmentInfo& info,
                                                   const std::string& input) {
@@ -60,6 +91,10 @@ RenderTextureResource& RenderPass::AddColorOutput(const std::string& name,
 	}
 
 	return res;
+}
+
+void RenderPass::MakeColorInputScaled(uint32_t index) {
+	std::swap(_colorScaleInputs[index], _colorInputs[index]);
 }
 
 bool RenderPass::GetClearColor(uint32_t index, vk::ClearColorValue* value) const {

@@ -6,6 +6,7 @@
 #include <Luna/Renderer/Renderer.hpp>
 #include <Luna/Renderer/ShaderCompiler.hpp>
 #include <Luna/Renderer/Swapchain.hpp>
+#include <Luna/Renderer/UIManager.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Context.hpp>
@@ -52,6 +53,7 @@ bool Renderer::Initialize() {
 void Renderer::Shutdown() {
 	State.BufferIn.Reset();
 	State.BufferOut.Reset();
+	State.Graph.Reset();
 	State.Device.Reset();
 	State.Context.Reset();
 }
@@ -74,17 +76,35 @@ static void BakeRenderGraph() {
 		.Format = swapchainFormat, .Width = swapchainExtent.width, .Height = swapchainExtent.height};
 	State.Graph.SetBackbufferDimensions(backbufferDimensions);
 
+	/*
 	auto& pass = State.Graph.AddPass("Main");
 	AttachmentInfo main;
 	pass.AddColorOutput("Final", main);
 	pass.SetGetClearColor([](uint32_t, vk::ClearColorValue* value) -> bool {
-		if (value) { *value = vk::ClearColorValue(0.36f, 0.0f, 0.63f, 1.0f); }
-		return true;
+	  if (value) { *value = vk::ClearColorValue(0.36f, 0.0f, 0.63f, 1.0f); }
+	  return true;
 	});
+	*/
 
-	State.Graph.SetBackbufferSource("Final");
-	State.Graph.Bake();
+	{
+		Luna::AttachmentInfo uiColor;
+
+		auto& ui = State.Graph.AddPass("UI");
+
+		ui.AddColorOutput("UI", uiColor);
+
+		ui.SetGetClearColor([](uint32_t, vk::ClearColorValue* value) -> bool {
+			if (value) { *value = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f); }
+			return true;
+		});
+		ui.SetBuildRenderPass([](Vulkan::CommandBuffer& cmd) { UIManager::Render(cmd); });
+	}
+
+	State.Graph.SetBackbufferSource("UI");
+	State.Graph.Bake(*State.Device);
 	State.Graph.InstallPhysicalBuffers(buffers);
+
+	State.Graph.Log();
 }
 
 void Renderer::Render() {
@@ -102,7 +122,7 @@ void Renderer::Render() {
 	}
 
 	TaskComposer composer;
-	State.Graph.SetupAttachments(&State.Device->GetSwapchainView());
+	State.Graph.SetupAttachments(*State.Device, &State.Device->GetSwapchainView());
 	State.Graph.EnqueueRenderPasses(*State.Device, composer);
 	composer.GetOutgoingTask()->Wait();
 

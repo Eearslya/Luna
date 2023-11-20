@@ -56,15 +56,20 @@ struct ImageInitialData;
 class ImageView;
 struct ImageViewCreateInfo;
 struct ImageViewDeleter;
+class ImmutableSampler;
 class PipelineLayout;
 class Program;
 struct ProgramResourceLayout;
 class RenderPass;
 struct RenderPassInfo;
+class Sampler;
+struct SamplerCreateInfo;
+struct SamplerDeleter;
 class Semaphore;
 struct SemaphoreDeleter;
 class Shader;
 struct ShaderResourceLayout;
+struct TransientAttachmentNode;
 
 /* ===============================
 ** ===== Handle Declarations =====
@@ -76,6 +81,7 @@ using DeviceHandle        = IntrusivePtr<Device>;
 using FenceHandle         = IntrusivePtr<Fence>;
 using ImageHandle         = IntrusivePtr<Image>;
 using ImageViewHandle     = IntrusivePtr<ImageView>;
+using SamplerHandle       = IntrusivePtr<Sampler>;
 using SemaphoreHandle     = IntrusivePtr<Semaphore>;
 
 /* ===========================
@@ -338,11 +344,12 @@ struct std::formatter<Luna::Vulkan::Size> : std::formatter<std::string> {
 
 template <typename T>
 concept HasVulkanToString = requires(T t) {
-	{vk::to_string(t)};
+	{ vk::to_string(t) };
 };
 
 template <typename T>
-requires(HasVulkanToString<T>) struct std::formatter<T> : std::formatter<std::string> {
+	requires(HasVulkanToString<T>)
+struct std::formatter<T> : std::formatter<std::string> {
 	auto format(const T value, format_context& ctx) const -> decltype(ctx.out()) {
 		return format_to(ctx.out(), "{}", vk::to_string(value));
 	}

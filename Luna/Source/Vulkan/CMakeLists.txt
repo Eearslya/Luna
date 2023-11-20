@@ -11,5 +11,7 @@ target_sources(Luna PRIVATE
   Format.cpp
   Image.cpp
   RenderPass.cpp
+  Sampler.cpp
   Semaphore.cpp
-  Shader.cpp)
+  Shader.cpp
+  TextureFormat.cpp)
