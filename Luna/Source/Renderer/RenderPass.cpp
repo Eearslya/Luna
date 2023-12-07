@@ -93,6 +93,17 @@ RenderTextureResource& RenderPass::AddColorOutput(const std::string& name,
 	return res;
 }
 
+RenderTextureResource& RenderPass::SetDepthStencilOutput(const std::string& name, const AttachmentInfo& info) {
+	auto& res = _graph.GetTextureResource(name);
+	res.AddQueue(_queue);
+	res.WrittenInPass(_index);
+	res.SetAttachmentInfo(info);
+	res.AddImageUsage(vk::ImageUsageFlagBits::eDepthStencilAttachment);
+	_depthStencilOutput = &res;
+
+	return res;
+}
+
 void RenderPass::MakeColorInputScaled(uint32_t index) {
 	std::swap(_colorScaleInputs[index], _colorInputs[index]);
 }

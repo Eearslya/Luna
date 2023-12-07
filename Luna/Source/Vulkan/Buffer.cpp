@@ -71,13 +71,6 @@ Buffer::Buffer(Device& device,
 			Log::Error("Vulkan", "Failed to map host-visible buffer: {}", vk::to_string(vk::Result(mapResult)));
 		}
 	}
-
-	// Zero-initialize or copy initial data for our buffer
-	if (initialData) {
-		WriteData(initialData, createInfo.Size, 0);
-	} else if (zeroInitialize) {
-		FillData(0, createInfo.Size, 0);
-	}
 }
 
 Buffer::~Buffer() noexcept {

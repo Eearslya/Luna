@@ -70,6 +70,8 @@ class Shader : public HashedObject<Shader> {
 		return _shaderModule;
 	}
 
+	[[nodiscard]] static ShaderResourceLayout Reflect(size_t codeSize, const void* code);
+
  private:
 	Device& _device;
 	vk::ShaderModule _shaderModule;

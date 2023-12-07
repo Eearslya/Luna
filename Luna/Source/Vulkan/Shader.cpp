@@ -1,7 +1,7 @@
 #include <Luna/Utility/BitOps.hpp>
+#include <Luna/Utility/String.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/Shader.hpp>
-#include <Luna/Utility/String.hpp>
 #include <spirv_cross.hpp>
 
 namespace Luna {
@@ -182,9 +182,15 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 	_shaderModule = _device.GetDevice().createShaderModule(shaderCI);
 	Log::Trace("Vulkan", "Shader Module created.");
 
+	_resourceLayout = Reflect(codeSize, code);
+}
+
+ShaderResourceLayout Shader::Reflect(size_t codeSize, const void* code) {
+	ShaderResourceLayout resourceLayout = {};
+
 	// Reflect the SPIR-V code and find the shader's resources.
 	const auto UpdateArrayInfo = [&](const spirv_cross::SPIRType& type, uint32_t set, uint32_t binding) {
-		auto& size = _resourceLayout.SetLayouts[set].ArraySizes[binding];
+		auto& size = resourceLayout.SetLayouts[set].ArraySizes[binding];
 		if (!type.array.empty()) {
 			if (type.array.size() != 1) {
 				Log::Error("Vulkan::Shader", "Reflection error: Array dimension must be 1.");
@@ -192,14 +198,14 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 				Log::Error("Vulkan::Shader", "Reflection error: Array dimension must be a literal.");
 			} else {
 				if (type.array.front() == 0) {
-					if (_resourceLayout.BindlessSetMask & (1u << set) && size != DescriptorSetLayout::UnsizedArray) {
+					if (resourceLayout.BindlessSetMask & (1u << set) && size != DescriptorSetLayout::UnsizedArray) {
 						Log::Error("Vulkan::Shader", "Reflection error: Bindless descriptor must be the last descriptor in a set.");
 					}
 
 					if (type.basetype != spirv_cross::SPIRType::SampledImage || type.image.dim == spv::DimBuffer) {
 						Log::Error("Vulkan::Shader", "Reflection error: Bindless can only be used for combined image samplers.");
 					} else {
-						_resourceLayout.BindlessSetMask |= 1u << set;
+						resourceLayout.BindlessSetMask |= 1u << set;
 					}
 
 					size = DescriptorSetLayout::UnsizedArray;
@@ -233,13 +239,13 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 		const auto& type   = compiler.get_type(image.type_id);
 
 		if (type.image.dim == spv::DimBuffer) {
-			_resourceLayout.SetLayouts[set].SampledTexelBufferMask |= 1u << binding;
+			resourceLayout.SetLayouts[set].SampledTexelBufferMask |= 1u << binding;
 		} else {
-			_resourceLayout.SetLayouts[set].SampledImageMask |= 1u << binding;
+			resourceLayout.SetLayouts[set].SampledImageMask |= 1u << binding;
 		}
 
 		if (compiler.get_type(type.image.type).basetype == spirv_cross::SPIRType::BaseType::Float) {
-			_resourceLayout.SetLayouts[set].FloatMask |= 1u << binding;
+			resourceLayout.SetLayouts[set].FloatMask |= 1u << binding;
 		}
 
 		UpdateArrayInfo(type, set, binding);
@@ -250,10 +256,10 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 		const auto binding = compiler.get_decoration(image.id, spv::DecorationBinding);
 		const auto& type   = compiler.get_type(image.type_id);
 
-		_resourceLayout.SetLayouts[set].InputAttachmentMask |= 1u << binding;
+		resourceLayout.SetLayouts[set].InputAttachmentMask |= 1u << binding;
 
 		if (compiler.get_type(type.image.type).basetype == spirv_cross::SPIRType::BaseType::Float) {
-			_resourceLayout.SetLayouts[set].FloatMask |= 1u << binding;
+			resourceLayout.SetLayouts[set].FloatMask |= 1u << binding;
 		}
 
 		UpdateArrayInfo(type, set, binding);
@@ -265,13 +271,13 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 		const auto& type   = compiler.get_type(image.type_id);
 
 		if (type.image.dim == spv::DimBuffer) {
-			_resourceLayout.SetLayouts[set].SampledTexelBufferMask |= 1u << binding;
+			resourceLayout.SetLayouts[set].SampledTexelBufferMask |= 1u << binding;
 		} else {
-			_resourceLayout.SetLayouts[set].SeparateImageMask |= 1u << binding;
+			resourceLayout.SetLayouts[set].SeparateImageMask |= 1u << binding;
 		}
 
 		if (compiler.get_type(type.image.type).basetype == spirv_cross::SPIRType::BaseType::Float) {
-			_resourceLayout.SetLayouts[set].FloatMask |= 1u << binding;
+			resourceLayout.SetLayouts[set].FloatMask |= 1u << binding;
 		}
 
 		UpdateArrayInfo(type, set, binding);
@@ -282,10 +288,10 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 		const auto binding = compiler.get_decoration(image.id, spv::DecorationBinding);
 		const auto& type   = compiler.get_type(image.type_id);
 
-		_resourceLayout.SetLayouts[set].StorageImageMask |= 1u << binding;
+		resourceLayout.SetLayouts[set].StorageImageMask |= 1u << binding;
 
 		if (compiler.get_type(type.image.type).basetype == spirv_cross::SPIRType::BaseType::Float) {
-			_resourceLayout.SetLayouts[set].FloatMask |= 1u << binding;
+			resourceLayout.SetLayouts[set].FloatMask |= 1u << binding;
 		}
 
 		UpdateArrayInfo(type, set, binding);
@@ -296,7 +302,7 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 		const auto binding = compiler.get_decoration(sampler.id, spv::DecorationBinding);
 		const auto& type   = compiler.get_type(sampler.type_id);
 
-		_resourceLayout.SetLayouts[set].SamplerMask |= 1u << binding;
+		resourceLayout.SetLayouts[set].SamplerMask |= 1u << binding;
 
 		UpdateArrayInfo(type, set, binding);
 	}
@@ -306,7 +312,7 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 		const auto binding = compiler.get_decoration(buffer.id, spv::DecorationBinding);
 		const auto& type   = compiler.get_type(buffer.type_id);
 
-		_resourceLayout.SetLayouts[set].UniformBufferMask |= 1u << binding;
+		resourceLayout.SetLayouts[set].UniformBufferMask |= 1u << binding;
 
 		UpdateArrayInfo(type, set, binding);
 	}
@@ -316,7 +322,7 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 		const auto binding = compiler.get_decoration(buffer.id, spv::DecorationBinding);
 		const auto& type   = compiler.get_type(buffer.type_id);
 
-		_resourceLayout.SetLayouts[set].StorageBufferMask |= 1u << binding;
+		resourceLayout.SetLayouts[set].StorageBufferMask |= 1u << binding;
 
 		UpdateArrayInfo(type, set, binding);
 	}
@@ -324,17 +330,17 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 	for (const auto& attribute : resources.stage_inputs) {
 		const auto location = compiler.get_decoration(attribute.id, spv::DecorationLocation);
 
-		_resourceLayout.InputMask |= 1u << location;
+		resourceLayout.InputMask |= 1u << location;
 	}
 
 	for (const auto& attribute : resources.stage_outputs) {
 		const auto location = compiler.get_decoration(attribute.id, spv::DecorationLocation);
 
-		_resourceLayout.OutputMask |= 1u << location;
+		resourceLayout.OutputMask |= 1u << location;
 	}
 
 	if (!resources.push_constant_buffers.empty()) {
-		_resourceLayout.PushConstantSize =
+		resourceLayout.PushConstantSize =
 			compiler.get_declared_struct_size(compiler.get_type(resources.push_constant_buffers.front().base_type_id));
 	}
 
@@ -347,14 +353,14 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 			continue;
 		}
 
-		_resourceLayout.SpecConstantMask |= 1u << constant.constant_id;
+		resourceLayout.SpecConstantMask |= 1u << constant.constant_id;
 	}
 
 	// Dump shader resources to console.
 	Log::Trace("Vulkan::Shader", "- Shader Resources:");
 
 	for (int i = 0; i < MaxDescriptorSets; ++i) {
-		const auto& set = _resourceLayout.SetLayouts[i];
+		const auto& set = resourceLayout.SetLayouts[i];
 
 		if ((set.FloatMask | set.InputAttachmentMask | set.StorageTexelBufferMask | set.SampledImageMask | set.SamplerMask |
 		     set.SeparateImageMask | set.StorageBufferMask | set.StorageImageMask | set.UniformBufferMask) == 0) {
@@ -393,21 +399,23 @@ Shader::Shader(Hash hash, Device& device, size_t codeSize, const void* code)
 		}
 	}
 
-	if (_resourceLayout.BindlessSetMask) {
-		Log::Trace("Vulkan::Shader", "    Bindless Sets: {}", MaskToBindings(_resourceLayout.BindlessSetMask));
+	if (resourceLayout.BindlessSetMask) {
+		Log::Trace("Vulkan::Shader", "    Bindless Sets: {}", MaskToBindings(resourceLayout.BindlessSetMask));
 	}
-	if (_resourceLayout.InputMask) {
-		Log::Trace("Vulkan::Shader", "    Attribute Inputs: {}", MaskToBindings(_resourceLayout.InputMask));
+	if (resourceLayout.InputMask) {
+		Log::Trace("Vulkan::Shader", "    Attribute Inputs: {}", MaskToBindings(resourceLayout.InputMask));
 	}
-	if (_resourceLayout.OutputMask) {
-		Log::Trace("Vulkan::Shader", "    Attribute Outputs: {}", MaskToBindings(_resourceLayout.OutputMask));
+	if (resourceLayout.OutputMask) {
+		Log::Trace("Vulkan::Shader", "    Attribute Outputs: {}", MaskToBindings(resourceLayout.OutputMask));
 	}
-	if (_resourceLayout.SpecConstantMask) {
-		Log::Trace("Vulkan::Shader", "    Specialization Constants: {}", MaskToBindings(_resourceLayout.SpecConstantMask));
+	if (resourceLayout.SpecConstantMask) {
+		Log::Trace("Vulkan::Shader", "    Specialization Constants: {}", MaskToBindings(resourceLayout.SpecConstantMask));
 	}
-	if (_resourceLayout.PushConstantSize) {
-		Log::Trace("Vulkan::Shader", "    Push Constant Size: {}B", _resourceLayout.PushConstantSize);
+	if (resourceLayout.PushConstantSize) {
+		Log::Trace("Vulkan::Shader", "    Push Constant Size: {}B", resourceLayout.PushConstantSize);
 	}
+
+	return resourceLayout;
 }
 
 Shader::~Shader() noexcept {

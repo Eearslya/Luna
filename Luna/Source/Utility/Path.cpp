@@ -105,11 +105,12 @@ std::string_view Path::FilePath() const {
 std::string_view Path::ParentPath() const {
 	if (_pathStr.empty() || IsRoot()) { return {}; }
 
-	const auto filePath = FilePath();
-	auto lastSlash      = filePath.find_last_of('/');
+	auto lastSlash      = _pathStr.find_last_of('/');
 	if (lastSlash == std::string::npos) { return {}; }
 
-	return filePath.substr(0, filePath.find_last_not_of('/', lastSlash) + 1);
+	if (lastSlash == 0 && IsAbsolute()) { ++lastSlash; }
+
+	return std::string_view(_pathStr).substr(0, _pathStr.find_last_not_of('/', lastSlash) + 1);
 }
 
 std::string_view Path::Protocol() const {

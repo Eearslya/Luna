@@ -188,6 +188,7 @@ class RenderPass {
 	RenderTextureResource& AddColorOutput(const std::string& name,
 	                                      const AttachmentInfo& info,
 	                                      const std::string& input = "");
+	RenderTextureResource& SetDepthStencilOutput(const std::string& name, const AttachmentInfo& info);
 
 	void MakeColorInputScaled(uint32_t index);
 

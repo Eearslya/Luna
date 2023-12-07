@@ -239,6 +239,13 @@ BufferHandle Device::CreateBuffer(const BufferCreateInfo& createInfo,
 		return {};
 	}
 
+	// Zero-initialize or copy initial data for our buffer
+	if (initialData) {
+		handle->WriteData(initialData, createInfo.Size, 0);
+	} else if (zeroInitialize) {
+		handle->FillData(0, createInfo.Size, 0);
+	}
+
 	return handle;
 }
 
@@ -1111,6 +1118,36 @@ Device::FrameContext& Device::Frame() {
 	return *_frameContexts[_currentFrameContext];
 }
 
+vk::Format Device::GetDefaultDepthFormat() const {
+	if (IsFormatSupported(
+				vk::Format::eD32Sfloat, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eD32Sfloat;
+	}
+	if (IsFormatSupported(
+				vk::Format::eX8D24UnormPack32, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eX8D24UnormPack32;
+	}
+	if (IsFormatSupported(
+				vk::Format::eD16Unorm, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eD16Unorm;
+	}
+
+	return vk::Format::eUndefined;
+}
+
+vk::Format Device::GetDefaultDepthStencilFormat() const {
+	if (IsFormatSupported(
+				vk::Format::eD24UnormS8Uint, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eD24UnormS8Uint;
+	}
+	if (IsFormatSupported(
+				vk::Format::eD32SfloatS8Uint, vk::FormatFeatureFlagBits::eDepthStencilAttachment, vk::ImageTiling::eOptimal)) {
+		return vk::Format::eD32SfloatS8Uint;
+	}
+
+	return vk::Format::eUndefined;
+}
+
 /** Return the Queue type that should be responsible for executing this command buffer type. */
 QueueType Device::GetQueueType(CommandBufferType type) const {
 	if (type != CommandBufferType::AsyncGraphics) { return static_cast<QueueType>(type); }
@@ -1121,6 +1158,14 @@ QueueType Device::GetQueueType(CommandBufferType type) const {
 	}
 
 	return QueueType::Graphics;
+}
+
+bool Device::IsFormatSupported(vk::Format format, vk::FormatFeatureFlags features, vk::ImageTiling tiling) const {
+	const auto props = _deviceInfo.PhysicalDevice.getFormatProperties(format);
+	const auto featureFlags =
+		tiling == vk::ImageTiling::eOptimal ? props.optimalTilingFeatures : props.linearTilingFeatures;
+
+	return (featureFlags & features) == features;
 }
 
 /* ==================================
@@ -1197,14 +1242,6 @@ void Device::FrameContext::Begin() {
 		for (auto& pool : queuePools) { pool.Begin(); }
 	}
 
-	if (!AllocationsToFree.empty() || !AllocationsToUnmap.empty()) {
-		std::lock_guard<std::mutex> lock(Parent._lock.MemoryLock);
-		for (auto allocation : AllocationsToUnmap) { vmaUnmapMemory(Parent._allocator, allocation); }
-		for (auto allocation : AllocationsToFree) { vmaFreeMemory(Parent._allocator, allocation); }
-	}
-	AllocationsToFree.clear();
-	AllocationsToUnmap.clear();
-
 	// Clean up all deferred object deletions.
 	for (auto buffer : BuffersToDestroy) { device.destroyBuffer(buffer); }
 	for (auto framebuffer : FramebuffersToDestroy) { device.destroyFramebuffer(framebuffer); }
@@ -1220,6 +1257,14 @@ void Device::FrameContext::Begin() {
 	SamplersToDestroy.clear();
 	SemaphoresToDestroy.clear();
 	SemaphoresToRecycle.clear();
+
+	if (!AllocationsToFree.empty() || !AllocationsToUnmap.empty()) {
+		std::lock_guard<std::mutex> lock(Parent._lock.MemoryLock);
+		for (auto allocation : AllocationsToUnmap) { vmaUnmapMemory(Parent._allocator, allocation); }
+		for (auto allocation : AllocationsToFree) { vmaFreeMemory(Parent._allocator, allocation); }
+	}
+	AllocationsToFree.clear();
+	AllocationsToUnmap.clear();
 
 	Log::Assert(SemaphoresToConsume.empty(), "Vulkan", "Not all semaphores were consumed");
 }

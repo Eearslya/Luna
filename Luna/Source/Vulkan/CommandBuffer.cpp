@@ -562,7 +562,7 @@ void CommandBuffer::SetOpaqueState() {
 	auto& state            = _pipelineState.StaticState;
 	state.FrontFace        = int(vk::FrontFace::eCounterClockwise);
 	state.CullMode         = int(vk::CullModeFlagBits::eBack);
-	state.BlendEnable      = 1;
+	state.BlendEnable      = 0;
 	state.DepthTest        = 1;
 	state.DepthCompare     = int(vk::CompareOp::eLessOrEqual);
 	state.DepthWrite       = 1;

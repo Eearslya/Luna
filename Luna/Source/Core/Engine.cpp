@@ -8,6 +8,7 @@
 #include <Luna/Core/Window.hpp>
 #include <Luna/Core/WindowManager.hpp>
 #include <Luna/Renderer/Renderer.hpp>
+#include <Luna/Renderer/ShaderManager.hpp>
 #include <Luna/Renderer/UIManager.hpp>
 
 namespace Luna {
@@ -21,6 +22,7 @@ static struct EngineState {
 
 static void Update() {
 	Filesystem::Update();
+	ShaderManager::Update();
 	WindowManager::Update();
 	if (State.Window->IsCloseRequested()) { State.Running = false; }
 
@@ -41,6 +43,7 @@ bool Engine::Initialize() {
 	Filesystem::RegisterProtocol("res", std::unique_ptr<FilesystemBackend>(new OSFilesystem("Resources")));
 	if (!WindowManager::Initialize()) { return false; }
 	if (!Renderer::Initialize()) { return false; }
+	if (!ShaderManager::Initialize()) { return false; }
 	if (!UIManager::Initialize()) { return false; }
 
 	State.Window = std::make_unique<Window>("Luna", 1600, 900, false);
@@ -67,6 +70,7 @@ int Engine::Run() {
 void Engine::Shutdown() {
 	State.Window.reset();
 	UIManager::Shutdown();
+	ShaderManager::Shutdown();
 	Renderer::Shutdown();
 	WindowManager::Shutdown();
 	Filesystem::Shutdown();

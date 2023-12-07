@@ -49,7 +49,11 @@ class Device : public VulkanObject<Device> {
 	[[nodiscard]] const QueueInfo& GetQueueInfo() const noexcept {
 		return _queueInfo;
 	}
+
+	vk::Format GetDefaultDepthFormat() const;
+	vk::Format GetDefaultDepthStencilFormat() const;
 	QueueType GetQueueType(CommandBufferType type) const;
+	bool IsFormatSupported(vk::Format format, vk::FormatFeatureFlags features, vk::ImageTiling tiling) const;
 
 	/* ==============================================
 	** ===== Public Object Management Functions =====

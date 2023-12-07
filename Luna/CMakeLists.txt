@@ -5,6 +5,10 @@ include(FindVulkan)
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
+FetchContent_Declare(fastgltf
+  GIT_REPOSITORY https://github.com/spnda/fastgltf.git
+  GIT_TAG cf8c9fa7f73c5f1e3a7dec229e18245b1536d096)
+
 FetchContent_Declare(glfw
 	GIT_REPOSITORY https://github.com/glfw/glfw.git
 	GIT_TAG 3eaf1255b29fdf5c2895856c7be7d7185ef2b241)
@@ -75,7 +79,7 @@ FetchContent_Declare(vma
 set(VMA_DYNAMIC_VULKAN_FUNCTIONS OFF CACHE BOOL "" FORCE)
 set(VMA_STATIC_VULKAN_FUNCTIONS  OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(glfw glm imgui spdlog spirv-headers spirv-tools spirv-cross glslang shaderc vma)
+FetchContent_MakeAvailable(fastgltf glfw glm imgui spdlog spirv-headers spirv-tools spirv-cross glslang shaderc vma)
 
 set_target_properties(glslc_exe      PROPERTIES EXCLUDE_FROM_ALL ON)
 set_target_properties(shaderc_shared PROPERTIES EXCLUDE_FROM_ALL ON)
@@ -97,7 +101,7 @@ target_compile_definitions(Luna
 target_include_directories(Luna PUBLIC "Include")
 target_link_libraries(Luna
   PUBLIC imgui glm spdlog Vulkan::Headers VulkanMemoryAllocator
-  PRIVATE glfw shaderc spirv-cross-cpp)
+  PRIVATE fastgltf glfw shaderc spirv-cross-cpp)
 target_precompile_headers(Luna PRIVATE "Include/Luna/Common.hpp")
 
 add_subdirectory(Source)

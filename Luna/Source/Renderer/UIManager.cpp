@@ -6,7 +6,7 @@
 #include <Luna/Core/Window.hpp>
 #include <Luna/Renderer/IconsFontAwesome6.hpp>
 #include <Luna/Renderer/Renderer.hpp>
-#include <Luna/Renderer/ShaderCompiler.hpp>
+#include <Luna/Renderer/ShaderManager.hpp>
 #include <Luna/Renderer/UIManager.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
@@ -29,7 +29,7 @@ static struct UIState {
 	std::vector<Vulkan::BufferHandle> Buffers;
 	Vulkan::ImageHandle FontImage;
 	Vulkan::SamplerHandle FontSampler;
-	Vulkan::Program* Program = nullptr;
+	ShaderProgramVariant* Program = nullptr;
 } State;
 
 static ImGuiKey ImGuiKeyMap(Key key) {
@@ -316,17 +316,8 @@ bool UIManager::Initialize() {
 	                                          .MaxLod           = 1000.0f};
 	State.FontSampler = Renderer::GetDevice().CreateSampler(samplerCI);
 
-	ShaderCompiler shaderCompiler;
-	std::string shaderError;
-
-	shaderCompiler.SetSourceFromFile("file://ImGui.vert.glsl", Vulkan::ShaderStage::Vertex);
-	shaderCompiler.Preprocess();
-	auto vertexCode = shaderCompiler.Compile(shaderError);
-	shaderCompiler.SetSourceFromFile("file://ImGui.frag.glsl", Vulkan::ShaderStage::Fragment);
-	shaderCompiler.Preprocess();
-	auto fragmentCode = shaderCompiler.Compile(shaderError);
-
-	State.Program = Renderer::GetDevice().RequestProgram(vertexCode, fragmentCode);
+	State.Program = ShaderManager::RegisterGraphics("res://Shaders/ImGui.vert.glsl", "res://Shaders/ImGui.frag.glsl")
+	                  ->RegisterVariant();
 
 	return true;
 }
@@ -429,7 +420,7 @@ void UIManager::Render(Vulkan::CommandBuffer& cmd) {
 	                           .SampleMode = ImGuiSampleMode::Standard};
 
 	const auto SetRenderState = [&cmd, &buffer, vertexSize]() {
-		cmd.SetProgram(State.Program);
+		cmd.SetProgram(State.Program->GetProgram());
 		cmd.SetTransparentSpriteState();
 		cmd.SetCullMode(vk::CullModeFlagBits::eNone);
 		cmd.SetVertexBinding(0, *buffer, 0, sizeof(ImDrawVert), vk::VertexInputRate::eVertex);
