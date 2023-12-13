@@ -189,7 +189,10 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 		this);
 
 	const std::vector<vk::ValidationFeatureEnableEXT> validationEnable = {
-		vk::ValidationFeatureEnableEXT::eBestPractices, vk::ValidationFeatureEnableEXT::eSynchronizationValidation};
+		vk::ValidationFeatureEnableEXT::eBestPractices,
+		vk::ValidationFeatureEnableEXT::eSynchronizationValidation,
+		vk::ValidationFeatureEnableEXT::eGpuAssisted,
+		vk::ValidationFeatureEnableEXT::eGpuAssistedReserveBindingSlot};
 	const std::vector<vk::ValidationFeatureDisableEXT> validationDisable;
 	const vk::ValidationFeaturesEXT validationCI(validationEnable, validationDisable);
 
@@ -380,8 +383,10 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 		}                                                             \
 	} while (0)
 
+	TryFeature(Core.multiDrawIndirect, "Multi Draw Indirect");
 	TryFeature(Core.samplerAnisotropy, "Sampler Anisotropy");
 	TryFeature(Vulkan12.scalarBlockLayout, "Scalar Block Layout");
+	TryFeature(Vulkan12.storageBuffer8BitAccess, "Storage Buffer 8-bit Access");
 	TryFeature(Vulkan12.timelineSemaphore, "Timeline Semaphores");
 	TryFeature(Vulkan13.maintenance4, "Maintenance 4");
 	TryFeature(Vulkan13.synchronization2, "Synchronization 2");

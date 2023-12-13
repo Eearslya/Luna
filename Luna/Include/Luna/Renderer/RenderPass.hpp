@@ -183,11 +183,17 @@ class RenderPass {
 		return _fakeResourceAliases;
 	}
 
+	RenderBufferResource& AddIndexBufferInput(const std::string& name);
+	RenderBufferResource& AddIndirectInput(const std::string& name);
+	RenderBufferResource& AddStorageInput(const std::string& name, vk::PipelineStageFlags2 stages = {});
 	RenderTextureResource& AddTextureInput(const std::string& name, vk::PipelineStageFlags2 stages = {});
 
 	RenderTextureResource& AddColorOutput(const std::string& name,
 	                                      const AttachmentInfo& info,
 	                                      const std::string& input = "");
+	RenderBufferResource& AddStorageOutput(const std::string& name,
+	                                       const BufferInfo& info,
+	                                       const std::string& input = "");
 	RenderTextureResource& SetDepthStencilOutput(const std::string& name, const AttachmentInfo& info);
 
 	void MakeColorInputScaled(uint32_t index);
@@ -212,6 +218,11 @@ class RenderPass {
 	void SetPhysicalPassIndex(uint32_t index) noexcept;
 
  private:
+	RenderBufferResource& AddGenericBufferInput(const std::string& name,
+	                                            vk::PipelineStageFlags2 stages,
+	                                            vk::AccessFlags2 access,
+	                                            vk::BufferUsageFlags usage);
+
 	RenderGraph& _graph;             /** The RenderGraph which owns this pass. */
 	uint32_t _index;                 /** The index of this Render Pass. */
 	std::string _name;               /** The name of this Render Pass. */

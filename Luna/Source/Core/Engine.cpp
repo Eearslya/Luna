@@ -35,7 +35,7 @@ static void Update() {
 
 bool Engine::Initialize() {
 	if (!Log::Initialize()) { return false; }
-	Log::SetLevel(Log::Level::Trace);
+	Log::SetLevel(Log::Level::Debug);
 	Log::Info("Luna", "Luna Engine initializing...");
 
 	if (!Threading::Initialize()) { return false; }

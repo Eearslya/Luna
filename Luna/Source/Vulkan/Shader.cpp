@@ -356,63 +356,69 @@ ShaderResourceLayout Shader::Reflect(size_t codeSize, const void* code) {
 		resourceLayout.SpecConstantMask |= 1u << constant.constant_id;
 	}
 
-	// Dump shader resources to console.
-	Log::Trace("Vulkan::Shader", "- Shader Resources:");
+	if constexpr (false) {
+		// Dump shader resources to console.
+		Log::Trace("Vulkan::Shader", "- Shader Resources:");
 
-	for (int i = 0; i < MaxDescriptorSets; ++i) {
-		const auto& set = resourceLayout.SetLayouts[i];
+		for (int i = 0; i < MaxDescriptorSets; ++i) {
+			const auto& set = resourceLayout.SetLayouts[i];
 
-		if ((set.FloatMask | set.InputAttachmentMask | set.StorageTexelBufferMask | set.SampledImageMask | set.SamplerMask |
-		     set.SeparateImageMask | set.StorageBufferMask | set.StorageImageMask | set.UniformBufferMask) == 0) {
-			continue;
+			if ((set.FloatMask | set.InputAttachmentMask | set.StorageTexelBufferMask | set.SampledImageMask |
+			     set.SamplerMask | set.SeparateImageMask | set.StorageBufferMask | set.StorageImageMask |
+			     set.UniformBufferMask) == 0) {
+				continue;
+			}
+
+			Log::Trace("Vulkan::Shader", "    Descriptor Set {}:", i);
+			if (set.FloatMask) {
+				Log::Trace("Vulkan::Shader", "      Floating Point Images: {}", MaskToBindings(set.FloatMask, set.ArraySizes));
+			}
+			if (set.InputAttachmentMask) {
+				Log::Trace(
+					"Vulkan::Shader", "      Input Attachments: {}", MaskToBindings(set.InputAttachmentMask, set.ArraySizes));
+			}
+			if (set.StorageTexelBufferMask) {
+				Log::Trace(
+					"Vulkan::Shader", "      Texel Buffers: {}", MaskToBindings(set.StorageTexelBufferMask, set.ArraySizes));
+			}
+			if (set.SampledImageMask) {
+				Log::Trace("Vulkan::Shader", "      Sampled Images: {}", MaskToBindings(set.SampledImageMask, set.ArraySizes));
+			}
+			if (set.SamplerMask) {
+				Log::Trace("Vulkan::Shader", "      Samplers: {}", MaskToBindings(set.SamplerMask, set.ArraySizes));
+			}
+			if (set.SeparateImageMask) {
+				Log::Trace(
+					"Vulkan::Shader", "      Separate Images: {}", MaskToBindings(set.SeparateImageMask, set.ArraySizes));
+			}
+			if (set.StorageBufferMask) {
+				Log::Trace(
+					"Vulkan::Shader", "      Storage Buffers: {}", MaskToBindings(set.StorageBufferMask, set.ArraySizes));
+			}
+			if (set.StorageImageMask) {
+				Log::Trace("Vulkan::Shader", "      Storage Images: {}", MaskToBindings(set.StorageImageMask, set.ArraySizes));
+			}
+			if (set.UniformBufferMask) {
+				Log::Trace(
+					"Vulkan::Shader", "      Uniform Buffers: {}", MaskToBindings(set.UniformBufferMask, set.ArraySizes));
+			}
 		}
 
-		Log::Trace("Vulkan::Shader", "    Descriptor Set {}:", i);
-		if (set.FloatMask) {
-			Log::Trace("Vulkan::Shader", "      Floating Point Images: {}", MaskToBindings(set.FloatMask, set.ArraySizes));
+		if (resourceLayout.BindlessSetMask) {
+			Log::Trace("Vulkan::Shader", "    Bindless Sets: {}", MaskToBindings(resourceLayout.BindlessSetMask));
 		}
-		if (set.InputAttachmentMask) {
-			Log::Trace(
-				"Vulkan::Shader", "      Input Attachments: {}", MaskToBindings(set.InputAttachmentMask, set.ArraySizes));
+		if (resourceLayout.InputMask) {
+			Log::Trace("Vulkan::Shader", "    Attribute Inputs: {}", MaskToBindings(resourceLayout.InputMask));
 		}
-		if (set.StorageTexelBufferMask) {
-			Log::Trace(
-				"Vulkan::Shader", "      Texel Buffers: {}", MaskToBindings(set.StorageTexelBufferMask, set.ArraySizes));
+		if (resourceLayout.OutputMask) {
+			Log::Trace("Vulkan::Shader", "    Attribute Outputs: {}", MaskToBindings(resourceLayout.OutputMask));
 		}
-		if (set.SampledImageMask) {
-			Log::Trace("Vulkan::Shader", "      Sampled Images: {}", MaskToBindings(set.SampledImageMask, set.ArraySizes));
+		if (resourceLayout.SpecConstantMask) {
+			Log::Trace("Vulkan::Shader", "    Specialization Constants: {}", MaskToBindings(resourceLayout.SpecConstantMask));
 		}
-		if (set.SamplerMask) {
-			Log::Trace("Vulkan::Shader", "      Samplers: {}", MaskToBindings(set.SamplerMask, set.ArraySizes));
+		if (resourceLayout.PushConstantSize) {
+			Log::Trace("Vulkan::Shader", "    Push Constant Size: {}B", resourceLayout.PushConstantSize);
 		}
-		if (set.SeparateImageMask) {
-			Log::Trace("Vulkan::Shader", "      Separate Images: {}", MaskToBindings(set.SeparateImageMask, set.ArraySizes));
-		}
-		if (set.StorageBufferMask) {
-			Log::Trace("Vulkan::Shader", "      Storage Buffers: {}", MaskToBindings(set.StorageBufferMask, set.ArraySizes));
-		}
-		if (set.StorageImageMask) {
-			Log::Trace("Vulkan::Shader", "      Storage Images: {}", MaskToBindings(set.StorageImageMask, set.ArraySizes));
-		}
-		if (set.UniformBufferMask) {
-			Log::Trace("Vulkan::Shader", "      Uniform Buffers: {}", MaskToBindings(set.UniformBufferMask, set.ArraySizes));
-		}
-	}
-
-	if (resourceLayout.BindlessSetMask) {
-		Log::Trace("Vulkan::Shader", "    Bindless Sets: {}", MaskToBindings(resourceLayout.BindlessSetMask));
-	}
-	if (resourceLayout.InputMask) {
-		Log::Trace("Vulkan::Shader", "    Attribute Inputs: {}", MaskToBindings(resourceLayout.InputMask));
-	}
-	if (resourceLayout.OutputMask) {
-		Log::Trace("Vulkan::Shader", "    Attribute Outputs: {}", MaskToBindings(resourceLayout.OutputMask));
-	}
-	if (resourceLayout.SpecConstantMask) {
-		Log::Trace("Vulkan::Shader", "    Specialization Constants: {}", MaskToBindings(resourceLayout.SpecConstantMask));
-	}
-	if (resourceLayout.PushConstantSize) {
-		Log::Trace("Vulkan::Shader", "    Push Constant Size: {}B", resourceLayout.PushConstantSize);
 	}
 
 	return resourceLayout;
@@ -560,80 +566,86 @@ void Program::Bake() {
 
 	_pipelineLayout = _device.RequestPipelineLayout(resourceLayout);
 
-	Log::Trace("Vulkan::Program", "- Program Resources:");
+	if constexpr (false) {
+		Log::Trace("Vulkan::Program", "- Program Resources:");
 
-	for (int i = 0; i < MaxDescriptorSets; ++i) {
-		const auto& set = resourceLayout.SetLayouts[i];
+		for (int i = 0; i < MaxDescriptorSets; ++i) {
+			const auto& set = resourceLayout.SetLayouts[i];
 
-		if ((set.FloatMask | set.InputAttachmentMask | set.SampledTexelBufferMask | set.SampledImageMask | set.SamplerMask |
-		     set.SeparateImageMask | set.StorageBufferMask | set.StorageImageMask | set.UniformBufferMask) == 0) {
-			continue;
-		}
+			if ((set.FloatMask | set.InputAttachmentMask | set.SampledTexelBufferMask | set.SampledImageMask |
+			     set.SamplerMask | set.SeparateImageMask | set.StorageBufferMask | set.StorageImageMask |
+			     set.UniformBufferMask) == 0) {
+				continue;
+			}
 
-		Log::Trace("Vulkan::Program", "    Descriptor Set {}:", i);
-		Log::Trace("Vulkan::Program",
-		           "      Stages: {}",
-		           vk::to_string(static_cast<vk::ShaderStageFlags>(resourceLayout.StagesForSets[i])));
-		if (set.FloatMask) {
-			Log::Trace("Vulkan::Program", "      Floating Point Images: {}", MaskToBindings(set.FloatMask, set.ArraySizes));
-		}
-		if (set.InputAttachmentMask) {
-			Log::Trace(
-				"Vulkan::Program", "      Input Attachments: {}", MaskToBindings(set.InputAttachmentMask, set.ArraySizes));
-		}
-		if (set.SampledTexelBufferMask) {
-			Log::Trace(
-				"Vulkan::Program", "      Sampled Buffers: {}", MaskToBindings(set.SampledTexelBufferMask, set.ArraySizes));
-		}
-		if (set.SampledImageMask) {
-			Log::Trace("Vulkan::Program", "      Sampled Images: {}", MaskToBindings(set.SampledImageMask, set.ArraySizes));
-		}
-		if (set.SamplerMask) {
-			Log::Trace("Vulkan::Program", "      Samplers: {}", MaskToBindings(set.SamplerMask, set.ArraySizes));
-		}
-		if (set.SeparateImageMask) {
-			Log::Trace("Vulkan::Program", "      Separate Images: {}", MaskToBindings(set.SeparateImageMask, set.ArraySizes));
-		}
-		if (set.StorageBufferMask) {
-			Log::Trace("Vulkan::Program", "      Storage Buffers: {}", MaskToBindings(set.StorageBufferMask, set.ArraySizes));
-		}
-		if (set.StorageImageMask) {
-			Log::Trace("Vulkan::Program", "      Storage Images: {}", MaskToBindings(set.StorageImageMask, set.ArraySizes));
-		}
-		if (set.UniformBufferMask) {
-			Log::Trace("Vulkan::Program", "      Uniform Buffers: {}", MaskToBindings(set.UniformBufferMask, set.ArraySizes));
-		}
-	}
-
-	if (resourceLayout.AttributeMask) {
-		Log::Trace("Vulkan::Program", "    Input Attributes: {}", MaskToBindings(resourceLayout.AttributeMask));
-	}
-	if (resourceLayout.BindlessDescriptorSetMask) {
-		Log::Trace("Vulkan::Program", "    Bindless Sets: {}", MaskToBindings(resourceLayout.BindlessDescriptorSetMask));
-	}
-	if (resourceLayout.CombinedSpecConstantMask) {
-		Log::Trace(
-			"Vulkan::Program", "    Specialization Constants: {}", MaskToBindings(resourceLayout.CombinedSpecConstantMask));
-		for (uint32_t stage = 0; stage < ShaderStageCount; ++stage) {
-			if (resourceLayout.SpecConstantMask[stage]) {
-				Log::Trace("Vulkan::Program",
-				           "      {}: {}",
-				           vk::to_string(static_cast<vk::ShaderStageFlagBits>(stage)),
-				           MaskToBindings(resourceLayout.SpecConstantMask[stage]));
+			Log::Trace("Vulkan::Program", "    Descriptor Set {}:", i);
+			Log::Trace("Vulkan::Program",
+			           "      Stages: {}",
+			           vk::to_string(static_cast<vk::ShaderStageFlags>(resourceLayout.StagesForSets[i])));
+			if (set.FloatMask) {
+				Log::Trace("Vulkan::Program", "      Floating Point Images: {}", MaskToBindings(set.FloatMask, set.ArraySizes));
+			}
+			if (set.InputAttachmentMask) {
+				Log::Trace(
+					"Vulkan::Program", "      Input Attachments: {}", MaskToBindings(set.InputAttachmentMask, set.ArraySizes));
+			}
+			if (set.SampledTexelBufferMask) {
+				Log::Trace(
+					"Vulkan::Program", "      Sampled Buffers: {}", MaskToBindings(set.SampledTexelBufferMask, set.ArraySizes));
+			}
+			if (set.SampledImageMask) {
+				Log::Trace("Vulkan::Program", "      Sampled Images: {}", MaskToBindings(set.SampledImageMask, set.ArraySizes));
+			}
+			if (set.SamplerMask) {
+				Log::Trace("Vulkan::Program", "      Samplers: {}", MaskToBindings(set.SamplerMask, set.ArraySizes));
+			}
+			if (set.SeparateImageMask) {
+				Log::Trace(
+					"Vulkan::Program", "      Separate Images: {}", MaskToBindings(set.SeparateImageMask, set.ArraySizes));
+			}
+			if (set.StorageBufferMask) {
+				Log::Trace(
+					"Vulkan::Program", "      Storage Buffers: {}", MaskToBindings(set.StorageBufferMask, set.ArraySizes));
+			}
+			if (set.StorageImageMask) {
+				Log::Trace("Vulkan::Program", "      Storage Images: {}", MaskToBindings(set.StorageImageMask, set.ArraySizes));
+			}
+			if (set.UniformBufferMask) {
+				Log::Trace(
+					"Vulkan::Program", "      Uniform Buffers: {}", MaskToBindings(set.UniformBufferMask, set.ArraySizes));
 			}
 		}
-	}
-	if (resourceLayout.DescriptorSetMask) {
-		Log::Trace("Vulkan::Program", "    Descriptor Sets: {}", MaskToBindings(resourceLayout.DescriptorSetMask));
-	}
-	if (resourceLayout.RenderTargetMask) {
-		Log::Trace("Vulkan::Program", "    Render Targets: {}", MaskToBindings(resourceLayout.RenderTargetMask));
-	}
-	if (resourceLayout.PushConstantRange.size) {
-		Log::Trace("Vulkan::Program",
-		           "    Push Constant: {}B in {}",
-		           resourceLayout.PushConstantRange.size,
-		           vk::to_string(resourceLayout.PushConstantRange.stageFlags));
+
+		if (resourceLayout.AttributeMask) {
+			Log::Trace("Vulkan::Program", "    Input Attributes: {}", MaskToBindings(resourceLayout.AttributeMask));
+		}
+		if (resourceLayout.BindlessDescriptorSetMask) {
+			Log::Trace("Vulkan::Program", "    Bindless Sets: {}", MaskToBindings(resourceLayout.BindlessDescriptorSetMask));
+		}
+		if (resourceLayout.CombinedSpecConstantMask) {
+			Log::Trace(
+				"Vulkan::Program", "    Specialization Constants: {}", MaskToBindings(resourceLayout.CombinedSpecConstantMask));
+			for (uint32_t stage = 0; stage < ShaderStageCount; ++stage) {
+				if (resourceLayout.SpecConstantMask[stage]) {
+					Log::Trace("Vulkan::Program",
+					           "      {}: {}",
+					           vk::to_string(static_cast<vk::ShaderStageFlagBits>(stage)),
+					           MaskToBindings(resourceLayout.SpecConstantMask[stage]));
+				}
+			}
+		}
+		if (resourceLayout.DescriptorSetMask) {
+			Log::Trace("Vulkan::Program", "    Descriptor Sets: {}", MaskToBindings(resourceLayout.DescriptorSetMask));
+		}
+		if (resourceLayout.RenderTargetMask) {
+			Log::Trace("Vulkan::Program", "    Render Targets: {}", MaskToBindings(resourceLayout.RenderTargetMask));
+		}
+		if (resourceLayout.PushConstantRange.size) {
+			Log::Trace("Vulkan::Program",
+			           "    Push Constant: {}B in {}",
+			           resourceLayout.PushConstantRange.size,
+			           vk::to_string(resourceLayout.PushConstantRange.stageFlags));
+		}
 	}
 }
 }  // namespace Vulkan

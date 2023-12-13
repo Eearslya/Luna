@@ -38,6 +38,33 @@ void RenderPassInterface::EnqueuePrepareRenderPass(RenderGraph& graph, TaskCompo
 RenderPass::RenderPass(RenderGraph& graph, uint32_t index, RenderGraphQueueFlagBits queue)
 		: _graph(graph), _index(index), _queue(queue) {}
 
+RenderBufferResource& RenderPass::AddIndexBufferInput(const std::string& name) {
+	return AddGenericBufferInput(name,
+	                             vk::PipelineStageFlagBits2::eVertexInput,
+	                             vk::AccessFlagBits2::eIndexRead,
+	                             vk::BufferUsageFlagBits::eIndexBuffer);
+}
+
+RenderBufferResource& RenderPass::AddIndirectInput(const std::string& name) {
+	return AddGenericBufferInput(name,
+	                             vk::PipelineStageFlagBits2::eDrawIndirect,
+	                             vk::AccessFlagBits2::eIndirectCommandRead,
+	                             vk::BufferUsageFlagBits::eIndirectBuffer);
+}
+
+RenderBufferResource& RenderPass::AddStorageInput(const std::string& name, vk::PipelineStageFlags2 stages) {
+	if (!stages) {
+		if ((_queue & ComputeQueues)) {
+			stages = vk::PipelineStageFlagBits2::eComputeShader;
+		} else {
+			stages = vk::PipelineStageFlagBits2::eVertexShader | vk::PipelineStageFlagBits2::eFragmentShader;
+		}
+	}
+
+	return AddGenericBufferInput(
+		name, stages, vk::AccessFlagBits2::eShaderStorageRead, vk::BufferUsageFlagBits::eStorageBuffer);
+}
+
 RenderTextureResource& RenderPass::AddTextureInput(const std::string& name, vk::PipelineStageFlags2 stages) {
 	auto& res = _graph.GetTextureResource(name);
 	res.AddQueue(_queue);
@@ -88,6 +115,28 @@ RenderTextureResource& RenderPass::AddColorOutput(const std::string& name,
 	} else {
 		_colorInputs.push_back(nullptr);
 		_colorScaleInputs.push_back(nullptr);
+	}
+
+	return res;
+}
+
+RenderBufferResource& RenderPass::AddStorageOutput(const std::string& name,
+                                                   const BufferInfo& info,
+                                                   const std::string& input) {
+	auto& res = _graph.GetBufferResource(name);
+	res.AddQueue(_queue);
+	res.WrittenInPass(_index);
+	res.SetBufferInfo(info);
+	res.AddBufferUsage(vk::BufferUsageFlagBits::eStorageBuffer);
+	_storageOutputs.push_back(&res);
+
+	if (!input.empty()) {
+		auto& inputRes = _graph.GetBufferResource(input);
+		inputRes.ReadInPass(_index);
+		inputRes.AddBufferUsage(vk::BufferUsageFlagBits::eStorageBuffer);
+		_storageInputs.push_back(&inputRes);
+	} else {
+		_storageInputs.push_back(nullptr);
 	}
 
 	return res;
@@ -192,5 +241,24 @@ void RenderPass::SetName(const std::string& name) noexcept {
 
 void RenderPass::SetPhysicalPassIndex(uint32_t index) noexcept {
 	_physicalPass = index;
+}
+
+RenderBufferResource& RenderPass::AddGenericBufferInput(const std::string& name,
+                                                        vk::PipelineStageFlags2 stages,
+                                                        vk::AccessFlags2 access,
+                                                        vk::BufferUsageFlags usage) {
+	auto& res = _graph.GetBufferResource(name);
+	res.AddQueue(_queue);
+	res.ReadInPass(_index);
+	res.AddBufferUsage(usage);
+
+	AccessedBufferResource acc = {};
+	acc.Buffer                 = &res;
+	acc.Layout                 = vk::ImageLayout::eGeneral;
+	acc.Access                 = access;
+	acc.Stages                 = stages;
+	_genericBuffers.push_back(acc);
+
+	return res;
 }
 }  // namespace Luna

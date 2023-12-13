@@ -1,0 +1,17 @@
+#extension GL_EXT_shader_explicit_arithmetic_types : require
+
+#define MeshletIdBits 24u
+#define MeshletPrimitiveBits 8u
+#define MeshletIdMask ((1u << MeshletIdBits) - 1u)
+#define MeshletPrimitiveMask ((1u << MeshletPrimitiveBits) - 1u)
+
+struct Meshlet {
+  uint VertexOffset;
+  uint IndexOffset;
+  uint TriangleOffset;
+  uint IndexCount;
+  uint TriangleCount;
+  uint InstanceID;
+  vec4 AABBMin;
+  vec4 AABBMax;
+};

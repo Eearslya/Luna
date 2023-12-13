@@ -29,6 +29,9 @@ class RenderGraph {
 	void Reset();
 
 	RenderPass& AddPass(const std::string& name, RenderGraphQueueFlagBits queue = RenderGraphQueueFlagBits::Graphics);
+	[[nodiscard]] RenderBufferResource& GetBufferResource(const std::string& name);
+	[[nodiscard]] Vulkan::Buffer& GetPhysicalBufferResource(const RenderBufferResource& resource);
+	[[nodiscard]] Vulkan::Buffer& GetPhysicalBufferResource(uint32_t index);
 	[[nodiscard]] ResourceDimensions GetResourceDimensions(const RenderBufferResource& resource) const;
 	[[nodiscard]] ResourceDimensions GetResourceDimensions(const RenderTextureResource& resource) const;
 	[[nodiscard]] RenderTextureResource& GetTextureResource(const std::string& name);

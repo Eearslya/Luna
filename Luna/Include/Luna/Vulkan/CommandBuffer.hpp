@@ -189,6 +189,11 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
 	                       const vk::ImageSubresourceLayers& subresource);
 	void FillBuffer(const Buffer& dst, uint8_t value);
 	void FillBuffer(const Buffer& dst, uint8_t value, vk::DeviceSize offset, vk::DeviceSize size);
+	void UpdateBuffer(const Buffer& dst, size_t dataSize, const void* data, vk::DeviceSize offset = 0);
+	template <typename T>
+	void UpdateBuffer(const Buffer& dst, const T& data, vk::DeviceSize offset = 0) {
+		UpdateBuffer(dst, sizeof(data), &data, offset);
+	}
 
 	// Image operations
 	void BlitImage(const Image& dst,
@@ -214,15 +219,22 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
 	void SetStorageBuffer(uint32_t set, uint32_t binding, const Buffer& buffer);
 	void SetStorageBuffer(
 		uint32_t set, uint32_t binding, const Buffer& buffer, vk::DeviceSize offset, vk::DeviceSize range);
+	void SetUniformBuffer(
+		uint32_t set, uint32_t binding, const Buffer& buffer, vk::DeviceSize offset = 0, vk::DeviceSize range = 0);
 
 	// Dispatch and Draw
 	void Dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ);
+	void DispatchIndirect(const Buffer& buffer, vk::DeviceSize offset = 0);
 	void Draw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);
 	void DrawIndexed(uint32_t indexCount,
 	                 uint32_t instanceCount = 1,
 	                 uint32_t firstIndex    = 0,
 	                 int32_t vertexOffset   = 0,
 	                 uint32_t firstInstance = 0);
+	void DrawIndexedIndirect(const Buffer& buffer,
+	                         uint32_t drawCount,
+	                         vk::DeviceSize offset = 0,
+	                         vk::DeviceSize stride = sizeof(vk::DrawIndexedIndirectCommand));
 
 	// Render Pass control
 	void BeginRenderPass(const RenderPassInfo& rpInfo, vk::SubpassContents contents = vk::SubpassContents::eInline);
@@ -242,6 +254,7 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
 	void SetDepthTest(bool test);
 	void SetDepthWrite(bool write);
 	void SetFrontFace(vk::FrontFace face);
+	void SetPrimitiveTopology(vk::PrimitiveTopology topology);
 
 	void SetSampler(uint32_t set, uint32_t binding, const Sampler& sampler);
 	void SetSampler(uint32_t set, uint32_t binding, StockSampler sampler);

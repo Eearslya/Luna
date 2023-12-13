@@ -96,6 +96,7 @@ class ShaderManager {
 	static Vulkan::Program* GetGraphics(const Path& vertex,
 	                                    const Path& fragment,
 	                                    const std::vector<std::pair<std::string, int>>& defines = {});
+	static ShaderProgram* RegisterCompute(const Path& compute);
 	static ShaderProgram* RegisterGraphics(const Path& vertex, const Path& fragment);
 };
 }  // namespace Luna

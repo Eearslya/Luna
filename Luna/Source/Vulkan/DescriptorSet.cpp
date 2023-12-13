@@ -69,11 +69,9 @@ DescriptorSetAllocator::DescriptorSetAllocator(Hash hash,
 		}
 	}
 
-	if (!bindings.empty()) {
-		layoutCI.setBindings(bindings);
-		_setLayout = _device.GetDevice().createDescriptorSetLayout(layoutCI);
-		Log::Trace("Vulkan", "Descriptor Set Layout created.");
-	}
+	layoutCI.setBindings(bindings);
+	_setLayout = _device.GetDevice().createDescriptorSetLayout(layoutCI);
+	Log::Trace("Vulkan", "Descriptor Set Layout created.");
 }
 
 DescriptorSetAllocator::~DescriptorSetAllocator() noexcept {

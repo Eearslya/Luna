@@ -383,6 +383,20 @@ Vulkan::Program* ShaderManager::GetGraphics(const Path& vertex,
 	return variant->GetProgram();
 }
 
+ShaderProgram* ShaderManager::RegisterCompute(const Path& compute) {
+	auto* computeTemplate = GetTemplate(compute, Vulkan::ShaderStage::Compute);
+	if (!computeTemplate) { return nullptr; }
+
+	Hasher h;
+	h(computeTemplate->GetPathHash());
+	const auto hash = h.Get();
+
+	auto* ret = State.Programs.Find(hash);
+	if (!ret) { ret = State.Programs.EmplaceYield(hash, *computeTemplate); }
+
+	return ret;
+}
+
 ShaderProgram* ShaderManager::RegisterGraphics(const Path& vertex, const Path& fragment) {
 	auto* vertexTemplate   = GetTemplate(vertex, Vulkan::ShaderStage::Vertex);
 	auto* fragmentTemplate = GetTemplate(fragment, Vulkan::ShaderStage::Fragment);

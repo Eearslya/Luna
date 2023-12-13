@@ -2,205 +2,65 @@
 
 #include <Luna/Core/Engine.hpp>
 #include <Luna/Core/Filesystem.hpp>
+#include <Luna/Core/Input.hpp>
 #include <Luna/Core/Window.hpp>
 #include <Luna/Core/WindowManager.hpp>
+#include <Luna/Renderer/Camera.hpp>
 #include <Luna/Renderer/RenderGraph.hpp>
 #include <Luna/Renderer/RenderPass.hpp>
 #include <Luna/Renderer/Renderer.hpp>
+#include <Luna/Renderer/Scene.hpp>
 #include <Luna/Renderer/ShaderManager.hpp>
 #include <Luna/Renderer/Swapchain.hpp>
 #include <Luna/Renderer/UIManager.hpp>
+#include <Luna/Utility/Time.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Context.hpp>
 #include <Luna/Vulkan/Device.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
-#include <fastgltf/parser.hpp>
-#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <glm/gtx/normal.hpp>
-
-template <class... Ts>
-struct Overloaded : Ts... {
-	using Ts::operator()...;
-};
-template <class... Ts>
-Overloaded(Ts...) -> Overloaded<Ts...>;
 
 namespace Luna {
-enum class VertexAttributeBits {
-	Position  = 1 << 1,
-	Normal    = 1 << 2,
-	Tangent   = 1 << 3,
-	Texcoord0 = 1 << 4,
-	Texcoord1 = 1 << 5,
-	Color0    = 1 << 6,
-	Joints0   = 1 << 7,
-	Weights0  = 1 << 8,
-	Index     = 1 << 9
-};
-using VertexAttributes = Luna::Bitmask<VertexAttributeBits>;
-template <>
-struct EnableBitmaskOperators<VertexAttributeBits> : std::true_type {};
+struct PerFrameBuffer {
+	Vulkan::Buffer& Get(vk::DeviceSize size = vk::WholeSize) {
+		const auto frameIndex = Renderer::GetDevice().GetFrameIndex();
+		if (frameIndex >= Buffers.size()) { Buffers.resize(frameIndex + 1); }
 
-enum class MeshProcessingStepBits {
-	UnpackVertices       = 1 << 1,
-	GenerateFlatNormals  = 1 << 2,
-	GenerateTangentSpace = 1 << 3,
-	WeldVertices         = 1 << 4
-};
-using MeshProcessingSteps = Luna::Bitmask<MeshProcessingStepBits>;
-template <>
-struct EnableBitmaskOperators<MeshProcessingStepBits> : std::true_type {};
+		if (!Buffers[frameIndex] || (size != vk::WholeSize && Buffers[frameIndex]->GetCreateInfo().Size < size)) {
+			const Vulkan::BufferCreateInfo bufferCI(
+				Vulkan::BufferDomain::Host,
+				size,
+				vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eStorageBuffer);
+			Buffers[frameIndex] = Renderer::GetDevice().CreateBuffer(bufferCI);
+		}
 
-template <typename T>
-struct AccessorType {
-	using UnderlyingT                                  = void;
-	constexpr static fastgltf::AccessorType Type       = fastgltf::AccessorType::Invalid;
-	constexpr static fastgltf::ComponentType Component = fastgltf::ComponentType::Invalid;
-	constexpr static size_t Count                      = 0;
-};
-template <>
-struct AccessorType<glm::vec2> {
-	using UnderlyingT                                  = typename glm::vec2::value_type;
-	constexpr static fastgltf::AccessorType Type       = fastgltf::AccessorType::Vec2;
-	constexpr static fastgltf::ComponentType Component = fastgltf::ComponentType::Float;
-	constexpr static size_t Count                      = 2;
-};
-template <>
-struct AccessorType<glm::vec3> {
-	using UnderlyingT                                  = typename glm::vec3::value_type;
-	constexpr static fastgltf::AccessorType Type       = fastgltf::AccessorType::Vec3;
-	constexpr static fastgltf::ComponentType Component = fastgltf::ComponentType::Float;
-	constexpr static size_t Count                      = 3;
-};
-template <>
-struct AccessorType<glm::vec4> {
-	using UnderlyingT                                  = typename glm::vec4::value_type;
-	constexpr static fastgltf::AccessorType Type       = fastgltf::AccessorType::Vec4;
-	constexpr static fastgltf::ComponentType Component = fastgltf::ComponentType::Float;
-	constexpr static size_t Count                      = 4;
-};
-template <>
-struct AccessorType<glm::uvec4> {
-	using UnderlyingT                                  = typename glm::uvec4::value_type;
-	constexpr static fastgltf::AccessorType Type       = fastgltf::AccessorType::Vec4;
-	constexpr static fastgltf::ComponentType Component = fastgltf::ComponentType::UnsignedInt;
-	constexpr static size_t Count                      = 4;
-};
-template <>
-struct AccessorType<uint8_t> {
-	using UnderlyingT                                  = uint8_t;
-	constexpr static fastgltf::AccessorType Type       = fastgltf::AccessorType::Scalar;
-	constexpr static fastgltf::ComponentType Component = fastgltf::ComponentType::UnsignedByte;
-	constexpr static size_t Count                      = 1;
-};
-template <>
-struct AccessorType<uint16_t> {
-	using UnderlyingT                                  = uint16_t;
-	constexpr static fastgltf::AccessorType Type       = fastgltf::AccessorType::Scalar;
-	constexpr static fastgltf::ComponentType Component = fastgltf::ComponentType::UnsignedShort;
-	constexpr static size_t Count                      = 1;
-};
-template <>
-struct AccessorType<uint32_t> {
-	using UnderlyingT                                  = uint32_t;
-	constexpr static fastgltf::AccessorType Type       = fastgltf::AccessorType::Scalar;
-	constexpr static fastgltf::ComponentType Component = fastgltf::ComponentType::UnsignedInt;
-	constexpr static size_t Count                      = 1;
-};
-
-struct Vertex {
-	glm::vec3 Normal    = glm::vec3(0.0f);
-	glm::vec4 Tangent   = glm::vec4(0.0f);
-	glm::vec2 Texcoord0 = glm::vec2(0.0f);
-	glm::vec2 Texcoord1 = glm::vec2(0.0f);
-	glm::vec4 Color0    = glm::vec4(0.0f);
-	glm::uvec4 Joints0  = glm::uvec4(0);
-	glm::vec4 Weights0  = glm::vec4(0.0f);
-
-	bool operator==(const Vertex& other) const {
-		return Normal == other.Normal && Tangent == other.Tangent && Texcoord0 == other.Texcoord0 &&
-		       Texcoord1 == other.Texcoord1 && Color0 == other.Color0 && Joints0 == other.Joints0 &&
-		       Weights0 == other.Weights0;
+		return *Buffers[frameIndex];
 	}
-};
 
-struct CombinedVertex {
-	glm::vec3 Position;
-	Vertex Attributes;
-
-	bool operator==(const CombinedVertex& other) const {
-		return Position == other.Position && Attributes == other.Attributes;
+	void Reset() {
+		Buffers.clear();
 	}
-};
-}  // namespace Luna
 
-template <>
-struct std::hash<Luna::Vertex> {
-	size_t operator()(const Luna::Vertex& v) {
-		Luna::Hasher h;
-		h.Data(sizeof(v.Normal), glm::value_ptr(v.Normal));
-		h.Data(sizeof(v.Tangent), glm::value_ptr(v.Tangent));
-		h.Data(sizeof(v.Texcoord0), glm::value_ptr(v.Texcoord0));
-		h.Data(sizeof(v.Texcoord1), glm::value_ptr(v.Texcoord1));
-		h.Data(sizeof(v.Color0), glm::value_ptr(v.Color0));
-		h.Data(sizeof(v.Joints0), glm::value_ptr(v.Joints0));
-		h.Data(sizeof(v.Weights0), glm::value_ptr(v.Weights0));
-
-		return static_cast<size_t>(h.Get());
-	}
-};
-template <>
-struct std::hash<Luna::CombinedVertex> {
-	size_t operator()(const Luna::CombinedVertex& v) const {
-		Luna::Hasher h;
-		h.Data(sizeof(v.Position), glm::value_ptr(v.Position));
-		h(v.Attributes);
-
-		return static_cast<size_t>(h.Get());
-	}
+	std::vector<Vulkan::BufferHandle> Buffers;
 };
 
-namespace Luna {
-struct PushConstant {
-	glm::mat4 Camera = glm::mat4(1.0f);
-	glm::mat4 Model  = glm::mat4(1.0f);
+struct SceneData {
+	glm::mat4 Projection;
+	glm::mat4 View;
+	glm::mat4 ViewProjection;
+	glm::vec4 CameraPosition;
+	glm::vec4 FrustumPlanes[6];
 };
 
-struct ModelBuffer {
-	std::vector<uint8_t> Data;
+struct ComputeUniforms {
+	uint32_t MeshletCount = 0;
 };
 
-struct ModelPrimitive {
-	vk::DeviceSize VertexCount = 0;
-	vk::DeviceSize IndexCount  = 0;
-	vk::DeviceSize FirstVertex = 0;
-	vk::DeviceSize FirstIndex  = 0;
-};
-
-struct ModelMesh {
-	std::vector<ModelPrimitive> Submeshes;
-	vk::DeviceSize TotalVertexCount = 0;
-	vk::DeviceSize TotalIndexCount  = 0;
-	size_t PositionSize             = 0;
-	size_t AttributeSize            = 0;
-
-	Vulkan::BufferHandle PositionBuffer;
-	Vulkan::BufferHandle AttributeBuffer;
-};
-
-struct ModelNode {
-	ModelNode* Parent = nullptr;
-	std::vector<ModelNode*> Children;
-	ModelMesh* Mesh = nullptr;
-};
-
-struct Model {
-	std::vector<ModelMesh> Meshes;
-	std::vector<ModelNode> Nodes;
-
-	std::vector<ModelNode*> RootNodes;
+struct DebugLine {
+	glm::vec3 Start;
+	glm::vec3 End;
+	glm::vec3 Color;
 };
 
 static struct RendererState {
@@ -209,478 +69,102 @@ static struct RendererState {
 	Hash LastSwapchainHash = 0;
 
 	RenderGraph Graph;
+	ElapsedTime FrameTimer;
 
-	glm::vec3 CameraPosition;
-	glm::vec3 CameraTarget;
-	Model Model;
-	PushConstant PC;
+	EditorCamera Camera;
+	bool CameraActive            = false;
+	glm::dvec2 LastMousePosition = glm::dvec2(0);
+	Scene Scene;
+	RenderScene RenderScene;
 	ShaderProgramVariant* Program;
+
+	PerFrameBuffer SceneBuffer;
+	PerFrameBuffer ComputeUniforms;
+	PerFrameBuffer MeshletBuffer;
+	PerFrameBuffer TransformBuffer;
+	PerFrameBuffer DebugLinesBuffer;
+
+	std::vector<DebugLine> DebugLines;
+	SceneData SceneData;
+	glm::mat4 CullFrustum = glm::mat4(1.0f);
+
+	bool FreezeCullFrustum = false;
+	bool ShowCullFrustum   = false;
 } State;
 
-template <typename Source, typename Destination>
-static std::vector<Destination> ConvertAccessorData(const fastgltf::Asset& gltfAsset,
-                                                    const std::vector<ModelBuffer>& buffers,
-                                                    const fastgltf::Accessor& gltfAccessor,
-                                                    bool vertexAccessor) {
-	static_assert(AccessorType<Destination>::Count > 0, "Unknown type conversion given to ConvertAccessorData");
-	using D = typename AccessorType<Destination>::UnderlyingT;
+static glm::vec2 WorldToPixel(const glm::mat4& viewProjection, const glm::vec3& worldPos, const glm::vec2& imageSize) {
+	glm::vec4 ndc = viewProjection * glm::vec4(worldPos, 1.0f);
+	ndc /= ndc.w;
+	glm::vec2 remap01 = glm::clamp((ndc + 1.0f) * 0.5f, 0.0f, 1.0f);
+	remap01.y         = 1.0f - remap01.y;
 
-	constexpr auto dstCount   = AccessorType<Destination>::Count;
-	constexpr Source srcMax   = std::numeric_limits<Source>::max();
-	constexpr bool srcSigned  = std::numeric_limits<Source>::is_signed;
-	constexpr auto srcSize    = sizeof(Source);
-	constexpr auto attrStride = srcSize * dstCount;
-	// Accessors used for vertex data must have each element aligned to 4-byte boundaries.
-	constexpr auto vertexStride = attrStride % 4 == 0 ? attrStride : attrStride + 4 - (attrStride % 4);
-
-	const auto count           = gltfAccessor.count;
-	const auto normalized      = gltfAccessor.normalized;
-	const auto& gltfBufferView = gltfAsset.bufferViews[*gltfAccessor.bufferViewIndex];
-	const auto& gltfBytes      = buffers[gltfBufferView.bufferIndex].Data;
-	const uint8_t* bufferData  = &gltfBytes.data()[gltfAccessor.byteOffset + gltfBufferView.byteOffset];
-	const auto byteStride      = gltfBufferView.byteStride.value_or(vertexAccessor ? vertexStride : attrStride);
-
-	auto Get = [bufferData, byteStride, normalized](size_t attributeIndex, uint8_t componentIndex) -> D {
-		const uint8_t* dataPtr = bufferData + (attributeIndex * byteStride) + (componentIndex * srcSize);
-		const Source v         = *reinterpret_cast<const Source*>(dataPtr);
-
-		if (normalized) {
-			if (srcSigned) {
-				return std::max(static_cast<D>(v) / static_cast<D>(srcMax), static_cast<D>(-1.0));
-			} else {
-				return static_cast<D>(v) / static_cast<D>(srcMax);
-			}
-		} else {
-			return static_cast<D>(v);
-		}
-	};
-
-	std::vector<Destination> dst(count);
-
-	if constexpr (dstCount == 1) {
-		for (size_t i = 0; i < count; ++i) { dst[i] = static_cast<D>(Get(i, 0)); }
-	} else {
-		for (size_t i = 0; i < count; ++i) {
-			dst[i][0] = static_cast<D>(Get(i, 0));
-			dst[i][1] = static_cast<D>(Get(i, 1));
-			if constexpr (dstCount >= 3) { dst[i][2] = static_cast<D>(Get(i, 2)); }
-			if constexpr (dstCount >= 4) { dst[i][3] = static_cast<D>(Get(i, 3)); }
-		}
-	}
-
-	return dst;
+	return glm::clamp(remap01 * imageSize, glm::vec2(0), imageSize);
 }
 
-template <typename T>
-static std::vector<T> GetAccessorData(const fastgltf::Asset& gltfAsset,
-                                      const std::vector<ModelBuffer>& buffers,
-                                      const fastgltf::Accessor& gltfAccessor,
-                                      bool vertexAccessor = false) {
-	constexpr auto outType          = AccessorType<T>::Type;
-	constexpr auto outComponentType = AccessorType<T>::Component;
-	const auto accessorType         = gltfAccessor.type;
-
-	if (outType == accessorType) {
-		switch (gltfAccessor.componentType) {
-			case fastgltf::ComponentType::Byte:
-				return ConvertAccessorData<int8_t, T>(gltfAsset, buffers, gltfAccessor, vertexAccessor);
-			case fastgltf::ComponentType::UnsignedByte:
-				return ConvertAccessorData<uint8_t, T>(gltfAsset, buffers, gltfAccessor, vertexAccessor);
-			case fastgltf::ComponentType::Short:
-				return ConvertAccessorData<int16_t, T>(gltfAsset, buffers, gltfAccessor, vertexAccessor);
-			case fastgltf::ComponentType::UnsignedShort:
-				return ConvertAccessorData<uint16_t, T>(gltfAsset, buffers, gltfAccessor, vertexAccessor);
-			case fastgltf::ComponentType::UnsignedInt:
-				return ConvertAccessorData<uint32_t, T>(gltfAsset, buffers, gltfAccessor, vertexAccessor);
-			case fastgltf::ComponentType::Float:
-				return ConvertAccessorData<float, T>(gltfAsset, buffers, gltfAccessor, vertexAccessor);
-			case fastgltf::ComponentType::Double:
-				return ConvertAccessorData<double, T>(gltfAsset, buffers, gltfAccessor, vertexAccessor);
-			default:
-				break;
-		}
-	}
-
-	return {};
+static glm::vec3 UnprojectUV(const glm::mat4& invVP, float depth, glm::vec2 uv) {
+	const glm::vec4 ndc   = glm::vec4(uv * 2.0f - 1.0f, depth, 1.0f);
+	const glm::vec4 world = invVP * ndc;
+	return glm::vec3(world / world.w);
 }
 
-template <typename T>
-static std::vector<T> GetAccessorData(const fastgltf::Asset& gltfAsset,
-                                      const std::vector<ModelBuffer>& buffers,
-                                      const fastgltf::Primitive& gltfPrimitive,
-                                      VertexAttributeBits attribute) {
-	if (attribute == VertexAttributeBits::Index) {
-		if (gltfPrimitive.indicesAccessor.has_value()) {
-			return GetAccessorData<T>(gltfAsset, buffers, gltfAsset.accessors[*gltfPrimitive.indicesAccessor]);
-		}
-	} else {
-		const auto FindAttribute = [&](const char* attributeName) ->
-			typename decltype(gltfPrimitive.attributes)::const_iterator {
-				for (auto it = gltfPrimitive.attributes.begin(); it != gltfPrimitive.attributes.end(); ++it) {
-					if (it->first == attributeName) { return it; }
-				}
+static void DrawLine(const glm::vec3& start,
+                     const glm::vec3& end,
+                     ImColor color = ImColor(255, 255, 255, 255),
+                     float width   = 1.0f) {
+	const auto& backbuffer     = State.Graph.GetTextureResource("Final");
+	const auto& backbufferDims = State.Graph.GetResourceDimensions(backbuffer);
 
-				return gltfPrimitive.attributes.end();
-			};
+	const glm::vec2 offset(0, 0);
+	const glm::vec2 imageSize(backbufferDims.Width, backbufferDims.Height);
 
-		auto it = gltfPrimitive.attributes.end();
-		switch (attribute) {
-			case VertexAttributeBits::Position:
-				it = FindAttribute("POSITION");
-				break;
-			case VertexAttributeBits::Normal:
-				it = FindAttribute("NORMAL");
-				break;
-			case VertexAttributeBits::Tangent:
-				it = FindAttribute("TANGENT");
-				break;
-			case VertexAttributeBits::Texcoord0:
-				it = FindAttribute("TEXCOORD_0");
-				break;
-			case VertexAttributeBits::Texcoord1:
-				it = FindAttribute("TEXCOORD_1");
-				break;
-			case VertexAttributeBits::Color0:
-				it = FindAttribute("COLOR_0");
-				break;
-			case VertexAttributeBits::Joints0:
-				it = FindAttribute("JOINTS_0");
-				break;
-			case VertexAttributeBits::Weights0:
-				it = FindAttribute("WEIGHTS_0");
-				break;
-			default:
-				throw std::runtime_error("Requested unknown vertex attribute!");
-				break;
-		}
+	const auto startPixel = WorldToPixel(State.SceneData.ViewProjection, start, imageSize) + offset;
+	const auto endPixel   = WorldToPixel(State.SceneData.ViewProjection, end, imageSize) + offset;
 
-		if (it != gltfPrimitive.attributes.end()) {
-			return GetAccessorData<T>(gltfAsset, buffers, gltfAsset.accessors[it->second], true);
-		}
-	}
-
-	return {};
+	auto* drawList = ImGui::GetBackgroundDrawList();
+	drawList->AddLine(ImVec2(startPixel.x, startPixel.y), ImVec2(endPixel.x, endPixel.y), color, width);
 }
 
-static VertexAttributes GetAvailableAttributes(const fastgltf::Primitive& prim) {
-	VertexAttributes attr = {};
-
-	for (const auto& [attributeName, attributeValue] : prim.attributes) {
-		if (attributeName.compare("POSITION") == 0) { attr |= VertexAttributeBits::Position; }
-		if (attributeName.compare("NORMAL") == 0) { attr |= VertexAttributeBits::Normal; }
-		if (attributeName.compare("TANGENT") == 0) { attr |= VertexAttributeBits::Tangent; }
-		if (attributeName.compare("TEXCOORD_0") == 0) { attr |= VertexAttributeBits::Texcoord0; }
-		if (attributeName.compare("TEXCOORD_1") == 0) { attr |= VertexAttributeBits::Texcoord1; }
-		if (attributeName.compare("COLOR_0") == 0) { attr |= VertexAttributeBits::Color0; }
-		if (attributeName.compare("JOINTS_0") == 0) { attr |= VertexAttributeBits::Joints0; }
-		if (attributeName.compare("WEIGHTS_0") == 0) { attr |= VertexAttributeBits::Weights0; }
-	}
-	if (prim.indicesAccessor.has_value()) { attr |= VertexAttributeBits::Index; }
-
-	return attr;
-}
-static MeshProcessingSteps GetProcessingSteps(VertexAttributes attributes) {
-	MeshProcessingSteps steps = {};
-
-	if (!(attributes & VertexAttributeBits::Normal)) {
-		// No normals provided. We must generate flat normals, then generate tangents using MikkTSpace.
-		steps |= MeshProcessingStepBits::UnpackVertices;
-		steps |= MeshProcessingStepBits::GenerateFlatNormals;
-		steps |= MeshProcessingStepBits::GenerateTangentSpace;
-		steps |= MeshProcessingStepBits::WeldVertices;
-	}
-	if (!(attributes & VertexAttributeBits::Tangent)) {
-		// No tangents provided. We must generate tangents using MikkTSPace.
-		steps |= MeshProcessingStepBits::UnpackVertices;
-		steps |= MeshProcessingStepBits::GenerateTangentSpace;
-		steps |= MeshProcessingStepBits::WeldVertices;
-	}
-	if (!(attributes & VertexAttributeBits::Index)) {
-		// No indices provided. We will weld the mesh and create our own index buffer.
-		steps |= MeshProcessingStepBits::WeldVertices;
-	}
-
-	return steps;
-}
-
-static void LoadModel() {
-	fastgltf::Parser parser(fastgltf::Extensions::KHR_texture_basisu);
-
-	// Load glTF/glb file.
-	fastgltf::GltfDataBuffer gltfDataBuffer;
-	{
-		auto gltfFile = Filesystem::OpenReadOnlyMapping("res://Models/Bistro.glb");
-		gltfDataBuffer.copyBytes(gltfFile->Data<uint8_t>(), gltfFile->GetSize());
-	}
-
-	// Parse file into glTF asset.
-	fastgltf::Asset gltfAsset;
-	{
-		const auto gltfFileType = fastgltf::determineGltfFileType(&gltfDataBuffer);
-		if (gltfFileType == fastgltf::GltfType::glTF) {
-			auto asset = parser.loadGLTF(&gltfDataBuffer, "", fastgltf::Options::None);
-			if (asset.error() != fastgltf::Error::None) {
-				Log::Error("Renderer", "Failed to load glTF: {}", fastgltf::getErrorMessage(asset.error()));
-				return;
-			}
-			gltfAsset = std::move(asset.get());
-		} else {
-			auto asset = parser.loadBinaryGLTF(&gltfDataBuffer, "", fastgltf::Options::LoadGLBBuffers);
-			if (asset.error() != fastgltf::Error::None) {
-				Log::Error("Renderer", "Failed to load glb: {}", fastgltf::getErrorMessage(asset.error()));
-				return;
-			}
-			gltfAsset = std::move(asset.get());
-		}
-	}
-
-	auto& model = State.Model;
-
-	// Load Buffers.
-	std::vector<ModelBuffer> buffers(gltfAsset.buffers.size());
-	{
-		for (size_t bufferIndex = 0; bufferIndex < gltfAsset.buffers.size(); ++bufferIndex) {
-			const auto& gltfBuffer = gltfAsset.buffers[bufferIndex];
-			auto& buffer           = buffers[bufferIndex];
-			std::visit(Overloaded{[](auto& arg) {},
-			                      [&](const fastgltf::sources::Vector& vector) { buffer.Data = vector.bytes; },
-			                      [&](const fastgltf::sources::ByteView& byteView) {
-															buffer.Data = std::vector<uint8_t>(
-																reinterpret_cast<const uint8_t*>(byteView.bytes.data()),
-																reinterpret_cast<const uint8_t*>(byteView.bytes.data() + byteView.bytes.size()));
-														},
-			                      [&](const fastgltf::sources::URI& uri) {}},
-			           gltfBuffer.data);
-		}
-	}
-
-	// Load Meshes.
-	{
-		model.Meshes.resize(gltfAsset.meshes.size());
-		for (size_t meshIndex = 0; meshIndex < gltfAsset.meshes.size(); ++meshIndex) {
-			const auto& gltfMesh = gltfAsset.meshes[meshIndex];
-			auto& mesh           = model.Meshes[meshIndex];
-
-			const size_t defaultMaterialIndex = gltfAsset.materials.size();
-			std::vector<fastgltf::Primitive> gltfPrimitives(gltfMesh.primitives.begin(), gltfMesh.primitives.end());
-			std::sort(gltfPrimitives.begin(),
-			          gltfPrimitives.end(),
-			          [defaultMaterialIndex](const fastgltf::Primitive& a, const fastgltf::Primitive& b) -> bool {
-									return a.materialIndex.value_or(defaultMaterialIndex) >
-				                 b.materialIndex.value_or(defaultMaterialIndex);
-								});
-
-			std::vector<std::vector<int>> materialPrimitives(gltfAsset.materials.size() + 1);
-			for (uint32_t i = 0; i < gltfPrimitives.size(); ++i) {
-				const auto& gltfPrimitive = gltfPrimitives[i];
-				materialPrimitives[gltfPrimitive.materialIndex.value_or(defaultMaterialIndex)].push_back(i);
-			}
-			materialPrimitives.erase(std::remove_if(materialPrimitives.begin(),
-			                                        materialPrimitives.end(),
-			                                        [](const std::vector<int>& material) { return material.empty(); }),
-			                         materialPrimitives.end());
-
-			std::vector<glm::vec3> meshPositions;
-			std::vector<Vertex> meshVertices;
-			std::vector<uint32_t> meshIndices;
-
-			for (size_t materialIndex = 0; materialIndex < materialPrimitives.size(); ++materialIndex) {
-				const auto& primitiveList = materialPrimitives[materialIndex];
-				auto& submesh             = mesh.Submeshes.emplace_back();
-
-				submesh.FirstVertex = meshVertices.size();
-				submesh.FirstIndex  = meshIndices.size();
-				submesh.VertexCount = 0;
-				submesh.IndexCount  = 0;
-
-				glm::vec3 boundsMin(std::numeric_limits<float>::max());
-				glm::vec3 boundsMax(std::numeric_limits<float>::lowest());
-
-				for (const auto gltfPrimitiveIndex : primitiveList) {
-					const auto& gltfPrimitive = gltfPrimitives[gltfPrimitiveIndex];
-					const auto primAttributes = GetAvailableAttributes(gltfPrimitive);
-					const auto primProcessing = GetProcessingSteps(primAttributes);
-
-					std::vector<glm::vec3> positions;
-					std::vector<Vertex> vertices;
-					std::vector<uint32_t> indices;
-
-					{
-						positions    = GetAccessorData<glm::vec3>(gltfAsset, buffers, gltfPrimitive, VertexAttributeBits::Position);
-						auto normals = GetAccessorData<glm::vec3>(gltfAsset, buffers, gltfPrimitive, VertexAttributeBits::Normal);
-						auto tangents = GetAccessorData<glm::vec4>(gltfAsset, buffers, gltfPrimitive, VertexAttributeBits::Tangent);
-						auto texcoord0 =
-							GetAccessorData<glm::vec2>(gltfAsset, buffers, gltfPrimitive, VertexAttributeBits::Texcoord0);
-
-						normals.resize(positions.size());
-						tangents.resize(positions.size());
-						texcoord0.resize(positions.size());
-
-						vertices.reserve(positions.size());
-						for (size_t i = 0; i < positions.size(); ++i) {
-							vertices.push_back(Vertex{.Normal = normals[i], .Tangent = tangents[i], .Texcoord0 = texcoord0[i]});
-						}
-
-						indices = GetAccessorData<uint32_t>(gltfAsset, buffers, gltfPrimitive, VertexAttributeBits::Index);
-					}
-
-					if (primProcessing & MeshProcessingStepBits::UnpackVertices) {
-						if (indices.size() > 0) {
-							std::vector<glm::vec3> newPositions(indices.size());
-							std::vector<Vertex> newAttributes(indices.size());
-
-							uint32_t newIndex = 0;
-							for (const uint32_t index : indices) {
-								newPositions[newIndex]  = positions[index];
-								newAttributes[newIndex] = vertices[index];
-								++newIndex;
-							}
-							positions = std::move(newPositions);
-							vertices  = std::move(newAttributes);
-						}
-					}
-
-					if (primProcessing & MeshProcessingStepBits::GenerateFlatNormals) {
-						const size_t faceCount = vertices.size() / 3;
-
-						for (size_t i = 0; i < faceCount; ++i) {
-							auto& p1     = positions[i * 3 + 0];
-							auto& p2     = positions[i * 3 + 1];
-							auto& p3     = positions[i * 3 + 2];
-							auto& v1     = vertices[i * 3 + 0];
-							auto& v2     = vertices[i * 3 + 1];
-							auto& v3     = vertices[i * 3 + 2];
-							const auto n = glm::normalize(glm::triangleNormal(p1, p2, p3));
-
-							v1.Normal = n;
-							v2.Normal = n;
-							v3.Normal = n;
-						}
-					}
-
-					if (primProcessing & MeshProcessingStepBits::GenerateTangentSpace) {
-						// MikkTContext context{positions, vertices};
-						// mikktContext.m_pUserData = &context;
-						// genTangSpaceDefault(&mikktContext);
-					}
-
-					if (primProcessing & MeshProcessingStepBits::WeldVertices) {
-						indices.clear();
-						indices.reserve(vertices.size());
-						std::unordered_map<CombinedVertex, uint32_t> uniqueVertices;
-
-						const size_t oldVertexCount = vertices.size();
-						uint32_t newVertexCount     = 0;
-						for (size_t i = 0; i < oldVertexCount; ++i) {
-							const CombinedVertex v = {positions[i], vertices[i]};
-
-							const auto it = uniqueVertices.find(v);
-							if (it == uniqueVertices.end()) {
-								const uint32_t index = newVertexCount++;
-								uniqueVertices.insert(std::make_pair(v, index));
-								positions[index] = v.Position;
-								vertices[index]  = v.Attributes;
-								indices.push_back(index);
-							} else {
-								indices.push_back(it->second);
-							}
-						}
-						positions.resize(newVertexCount);
-						vertices.resize(newVertexCount);
-					}
-
-					for (const auto& v : positions) {
-						boundsMin = glm::min(v, boundsMin);
-						boundsMax = glm::max(v, boundsMax);
-					}
-
-					for (auto& i : indices) { i += submesh.VertexCount; }
-
-					meshPositions.reserve(meshPositions.size() + positions.size());
-					meshPositions.insert(meshPositions.end(), positions.begin(), positions.end());
-					meshVertices.reserve(meshVertices.size() + vertices.size());
-					meshVertices.insert(meshVertices.end(), vertices.begin(), vertices.end());
-					meshIndices.reserve(meshIndices.size() + indices.size());
-					meshIndices.insert(meshIndices.end(), indices.begin(), indices.end());
-
-					submesh.VertexCount += positions.size();
-					submesh.IndexCount += indices.size();
-				}
-			}
-
-			const vk::DeviceSize positionSize = meshPositions.size() * sizeof(glm::vec3);
-			const vk::DeviceSize vertexSize   = meshVertices.size() * sizeof(Vertex);
-			const vk::DeviceSize indexSize    = meshIndices.size() * sizeof(uint32_t);
-
-			std::vector<uint8_t> bufferData(positionSize + indexSize + vertexSize);
-			memcpy(bufferData.data(), meshPositions.data(), positionSize);
-			memcpy(bufferData.data() + positionSize, meshIndices.data(), indexSize);
-			memcpy(bufferData.data() + positionSize + indexSize, meshVertices.data(), vertexSize);
-
-			const Vulkan::BufferCreateInfo bufferCI(
-				Vulkan::BufferDomain::Device,
-				positionSize + indexSize,
-				vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eVertexBuffer);
-			mesh.PositionBuffer = State.Device->CreateBuffer(bufferCI, bufferData.data());
-
-			const Vulkan::BufferCreateInfo bufferCI2(
-				Vulkan::BufferDomain::Device, vertexSize, vk::BufferUsageFlagBits::eVertexBuffer);
-			mesh.AttributeBuffer = State.Device->CreateBuffer(bufferCI2, bufferData.data() + positionSize + indexSize);
-
-			mesh.TotalVertexCount = meshPositions.size();
-			mesh.TotalIndexCount  = meshIndices.size();
-			mesh.PositionSize     = positionSize;
-			mesh.AttributeSize    = vertexSize;
-		}
-	}
-
-	// Load Nodes.
-	{
-		model.Nodes.resize(gltfAsset.nodes.size());
-		for (size_t nodeIndex = 0; nodeIndex < gltfAsset.nodes.size(); ++nodeIndex) {
-			const auto& gltfNode = gltfAsset.nodes[nodeIndex];
-			auto& node           = model.Nodes[nodeIndex];
-
-			if (gltfNode.meshIndex.has_value()) { node.Mesh = &model.Meshes[gltfNode.meshIndex.value()]; }
-
-			for (auto childIndex : gltfNode.children) {
-				model.Nodes[childIndex].Parent = &node;
-				node.Children.push_back(&model.Nodes[childIndex]);
-			}
-		}
-	}
-
-	// Load Scene.
-	{
-		const auto& gltfScene = gltfAsset.scenes[gltfAsset.defaultScene.value_or(0)];
-		for (auto nodeIndex : gltfScene.nodeIndices) { model.RootNodes.push_back(&model.Nodes[nodeIndex]); }
-	}
-}
-
-static void RenderNode(const ModelNode& node, Vulkan::CommandBuffer& cmd) {
-	if (node.Mesh) {
-		const auto& mesh = *node.Mesh;
-		cmd.SetVertexBinding(0, *mesh.PositionBuffer, 0, sizeof(glm::vec3), vk::VertexInputRate::eVertex);
-		cmd.SetVertexBinding(1, *mesh.AttributeBuffer, 0, sizeof(Vertex), vk::VertexInputRate::eVertex);
-		cmd.SetIndexBuffer(*mesh.PositionBuffer, mesh.PositionSize, vk::IndexType::eUint32);
-		cmd.PushConstants(State.PC);
-
-		for (const auto& submesh : mesh.Submeshes) {
-			cmd.DrawIndexed(submesh.IndexCount, 1, submesh.FirstIndex, submesh.FirstVertex, 0);
-		}
-	}
-
-	for (auto child : node.Children) { RenderNode(*child, cmd); }
+static void DrawDebugLine(const glm::vec3& start, const glm::vec3& end, const glm::vec3& color = glm::vec3(1)) {
+	State.DebugLines.emplace_back(start, end, color);
 }
 
 static void RendererUI() {
 	if (ImGui::Begin("Model")) {
-		ImGui::DragFloat3("Position", glm::value_ptr(State.CameraPosition));
-		ImGui::DragFloat3("Target", glm::value_ptr(State.CameraTarget));
-		ImGui::Text("Meshes: %llu", State.Model.Meshes.size());
-		ImGui::Text("Nodes: %llu", State.Model.Nodes.size());
+		ImGui::Checkbox("Freeze Culling Frustum", &State.FreezeCullFrustum);
+		ImGui::Checkbox("Show Culling Frustum", &State.ShowCullFrustum);
 	}
 	ImGui::End();
+
+	if (State.ShowCullFrustum) {
+		const auto& invVP    = glm::inverse(State.CullFrustum);
+		glm::vec3 corners[8] = {glm::vec3(-1, -1, 0),
+		                        glm::vec3(1, -1, 0),
+		                        glm::vec3(-1, 1, 0),
+		                        glm::vec3(1, 1, 0),
+		                        glm::vec3(-1, -1, 1),
+		                        glm::vec3(1, -1, 1),
+		                        glm::vec3(-1, 1, 1),
+		                        glm::vec3(1, 1, 1)};
+		for (auto& corner : corners) {
+			glm::vec4 c = invVP * glm::vec4(corner, 1.0f);
+			corner      = c / c.w;
+		}
+
+		DrawDebugLine(corners[0], corners[1]);
+		DrawDebugLine(corners[0], corners[2]);
+		DrawDebugLine(corners[3], corners[1]);
+		DrawDebugLine(corners[3], corners[2]);
+
+		DrawDebugLine(corners[4], corners[5]);
+		DrawDebugLine(corners[4], corners[6]);
+		DrawDebugLine(corners[7], corners[5]);
+		DrawDebugLine(corners[7], corners[6]);
+
+		DrawDebugLine(corners[0], corners[4]);
+		DrawDebugLine(corners[1], corners[5]);
+		DrawDebugLine(corners[2], corners[6]);
+		DrawDebugLine(corners[3], corners[7]);
+	}
 }
 
 bool Renderer::Initialize() {
@@ -690,18 +174,40 @@ bool Renderer::Initialize() {
 	State.Context = MakeHandle<Vulkan::Context>(instanceExtensions, deviceExtensions);
 	State.Device  = MakeHandle<Vulkan::Device>(*State.Context);
 
-	LoadModel();
-	State.CameraPosition = glm::vec3(-20, 10, -2);
-	State.CameraTarget   = glm::vec3(0, 2, -2);
+	State.Camera.SetPosition({0, 0, 0.025});
+	State.Scene.LoadModel("res://Models/Bistro.glb");
+
+	Input::OnKey += [](Key key, InputAction action, InputMods mods) {};
+	Input::OnMouseButton += [](MouseButton button, InputAction action, InputMods mods) {
+		auto& io = ImGui::GetIO();
+		if (button == MouseButton::Right) {
+			if (!State.CameraActive && !io.WantCaptureMouse) {
+				State.CameraActive = true;
+				Input::SetCursorHidden(true);
+			} else if (State.CameraActive) {
+				State.CameraActive = false;
+				Input::SetCursorHidden(false);
+			}
+		}
+	};
+	Input::OnMouseMoved += [](const glm::dvec2& pos) {
+		if (State.CameraActive) {
+			const float sensitivity = 0.5f;
+			State.Camera.Rotate(pos.y * sensitivity, -pos.x * sensitivity);
+		}
+		State.LastMousePosition = pos;
+	};
 
 	return true;
 }
 
 void Renderer::Shutdown() {
-	for (auto& mesh : State.Model.Meshes) {
-		mesh.PositionBuffer.Reset();
-		mesh.AttributeBuffer.Reset();
-	}
+	State.Scene.Clear();
+	State.SceneBuffer.Reset();
+	State.DebugLinesBuffer.Reset();
+	State.ComputeUniforms.Reset();
+	State.MeshletBuffer.Reset();
+	State.TransformBuffer.Reset();
 	State.Graph.Reset();
 	State.Device.Reset();
 	State.Context.Reset();
@@ -729,30 +235,205 @@ static void BakeRenderGraph() {
 		ShaderManager::RegisterGraphics("res://Shaders/StaticMesh.vert.glsl", "res://Shaders/StaticMesh.frag.glsl")
 			->RegisterVariant();
 
-	auto& pass = State.Graph.AddPass("Main");
+	constexpr static unsigned int MaxMeshlets          = 262'144;
+	constexpr static unsigned int MaxMeshletsPerBatch  = 65'536;
+	constexpr static unsigned int MaxMeshletBatches    = MaxMeshlets / MaxMeshletsPerBatch;
+	constexpr static unsigned int MaxTrianglesPerBatch = MaxMeshletsPerBatch * 64;
+	constexpr static unsigned int MaxIndicesPerBatch   = MaxTrianglesPerBatch * 3;
+
+	{
+		auto& pass = State.Graph.AddPass("Meshlet Cull", RenderGraphQueueFlagBits::Compute);
+
+		BufferInfo visibleMeshletsInfo = {.Size  = sizeof(uint32_t) * MaxMeshlets,
+		                                  .Usage = vk::BufferUsageFlagBits::eStorageBuffer};
+		auto& visibleMeshletsRes       = pass.AddStorageOutput("VisibleMeshletIDs", visibleMeshletsInfo);
+
+		BufferInfo cullTriangleDispatchInfo = {.Size  = sizeof(vk::DispatchIndirectCommand) * MaxMeshletBatches,
+		                                       .Usage = vk::BufferUsageFlagBits::eStorageBuffer |
+		                                                vk::BufferUsageFlagBits::eIndirectBuffer |
+		                                                vk::BufferUsageFlagBits::eTransferDst};
+		auto& cullTriangleDispatchRes       = pass.AddStorageOutput("CullTriangleDispatch", cullTriangleDispatchInfo);
+
+		pass.SetBuildRenderPass([&](Vulkan::CommandBuffer& cmd) {
+			auto& visibleMeshlets      = State.Graph.GetPhysicalBufferResource(visibleMeshletsRes);
+			auto& cullTriangleDispatch = State.Graph.GetPhysicalBufferResource(cullTriangleDispatchRes);
+
+			std::array<vk::DispatchIndirectCommand, MaxMeshletBatches> dispatch;
+			dispatch.fill(vk::DispatchIndirectCommand(0, 1, 1));
+			cmd.UpdateBuffer(cullTriangleDispatch, dispatch.size() * sizeof(dispatch[0]), dispatch.data());
+			cmd.BufferBarrier(cullTriangleDispatch,
+			                  vk::PipelineStageFlagBits2::eTransfer,
+			                  vk::AccessFlagBits2::eTransferWrite,
+			                  vk::PipelineStageFlagBits2::eComputeShader,
+			                  vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite);
+
+			struct PushConstant {
+				uint32_t BatchID;
+				uint32_t MeshletsPerBatch;
+			};
+			PushConstant pc = PushConstant{.BatchID = 0, .MeshletsPerBatch = MaxMeshletsPerBatch};
+
+			cmd.SetProgram(
+				ShaderManager::RegisterCompute("res://Shaders/CullMeshlets.comp.glsl")->RegisterVariant()->GetProgram());
+			cmd.SetUniformBuffer(0, 0, State.SceneBuffer.Get());
+			cmd.SetUniformBuffer(1, 0, State.ComputeUniforms.Get());
+			cmd.SetStorageBuffer(1, 1, cullTriangleDispatch);
+			cmd.SetStorageBuffer(1, 2, visibleMeshlets);
+			cmd.SetStorageBuffer(1, 3, State.MeshletBuffer.Get());
+			cmd.SetStorageBuffer(1, 4, State.TransformBuffer.Get());
+
+			uint32_t meshletCount = std::min<uint32_t>(State.RenderScene.Meshlets.size(), MaxMeshlets);
+			while (meshletCount > 0) {
+				if (pc.BatchID >= MaxMeshletBatches) { break; }
+
+				const auto dispatch = std::min(meshletCount, MaxMeshletsPerBatch);
+				cmd.PushConstants(pc);
+				cmd.Dispatch(dispatch, 1, 1);
+				pc.BatchID++;
+
+				const auto b = vk::MemoryBarrier2(vk::PipelineStageFlagBits2::eAllCommands,
+				                                  vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+				                                  vk::PipelineStageFlagBits2::eAllCommands,
+				                                  vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite);
+				const vk::DependencyInfo superBarrier({}, b);
+				cmd.Barrier(superBarrier);
+
+				if (meshletCount > MaxMeshletsPerBatch) {
+					meshletCount -= MaxMeshletsPerBatch;
+				} else {
+					meshletCount = 0;
+				}
+			}
+		});
+	}
+
+	{
+		auto& pass = State.Graph.AddPass("Triangle Cull", RenderGraphQueueFlagBits::Compute);
+
+		auto& visibleMeshletsRes      = pass.AddStorageInput("VisibleMeshletIDs");
+		auto& cullTriangleDispatchRes = pass.AddIndirectInput("CullTriangleDispatch");
+
+		BufferInfo drawIndirectInfo = {.Size  = sizeof(vk::DrawIndexedIndirectCommand) * MaxMeshletBatches,
+		                               .Usage = vk::BufferUsageFlagBits::eStorageBuffer |
+		                                        vk::BufferUsageFlagBits::eIndirectBuffer |
+		                                        vk::BufferUsageFlagBits::eTransferDst};
+		auto& drawIndirectRes       = pass.AddStorageOutput("DrawIndirect", drawIndirectInfo);
+
+		BufferInfo meshletIndicesInfo = {.Size  = MaxIndicesPerBatch * MaxMeshletBatches * sizeof(uint32_t),
+		                                 .Usage = vk::BufferUsageFlagBits::eIndexBuffer};
+		auto& meshletIndicesRes       = pass.AddStorageOutput("MeshletIndices", meshletIndicesInfo);
+
+		pass.SetBuildRenderPass([&](Vulkan::CommandBuffer& cmd) {
+			auto& visibleMeshlets      = State.Graph.GetPhysicalBufferResource(visibleMeshletsRes);
+			auto& cullTriangleDispatch = State.Graph.GetPhysicalBufferResource(cullTriangleDispatchRes);
+			auto& drawIndirect         = State.Graph.GetPhysicalBufferResource(drawIndirectRes);
+			auto& meshletIndices       = State.Graph.GetPhysicalBufferResource(meshletIndicesRes);
+
+			std::array<vk::DrawIndexedIndirectCommand, MaxMeshletBatches> indirect;
+			indirect.fill(vk::DrawIndexedIndirectCommand(0, 1, 0, 0, 0));
+			for (int i = 0; i < MaxMeshletBatches; ++i) { indirect[i].firstIndex = i * MaxIndicesPerBatch; }
+			cmd.UpdateBuffer(drawIndirect, sizeof(indirect[0]) * indirect.size(), indirect.data());
+			cmd.BufferBarrier(drawIndirect,
+			                  vk::PipelineStageFlagBits2::eTransfer,
+			                  vk::AccessFlagBits2::eTransferWrite,
+			                  vk::PipelineStageFlagBits2::eComputeShader,
+			                  vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite);
+
+			cmd.SetProgram(
+				ShaderManager::RegisterCompute("res://Shaders/CullTriangles.comp.glsl")->RegisterVariant()->GetProgram());
+			cmd.SetUniformBuffer(0, 0, State.SceneBuffer.Get());
+			cmd.SetUniformBuffer(1, 0, State.ComputeUniforms.Get());
+			cmd.SetStorageBuffer(1, 1, visibleMeshlets);
+			cmd.SetStorageBuffer(1, 2, State.MeshletBuffer.Get());
+			cmd.SetStorageBuffer(1, 3, drawIndirect);
+			cmd.SetStorageBuffer(1, 4, meshletIndices);
+
+			struct PushConstant {
+				uint32_t BatchID;
+				uint32_t MeshletsPerBatch;
+				uint32_t IndicesPerBatch;
+			};
+			PushConstant pc =
+				PushConstant{.BatchID = 0, .MeshletsPerBatch = MaxMeshletsPerBatch, .IndicesPerBatch = MaxIndicesPerBatch};
+
+			for (int i = 0; i < MaxMeshletBatches; ++i) {
+				pc.BatchID = i;
+				cmd.PushConstants(pc);
+				cmd.DispatchIndirect(cullTriangleDispatch, sizeof(vk::DispatchIndirectCommand) * pc.BatchID);
+
+				const auto b = vk::MemoryBarrier2(vk::PipelineStageFlagBits2::eAllCommands,
+				                                  vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
+				                                  vk::PipelineStageFlagBits2::eAllCommands,
+				                                  vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite);
+				const vk::DependencyInfo superBarrier({}, b);
+				cmd.Barrier(superBarrier);
+			}
+		});
+	}
+
 	AttachmentInfo main;
-	AttachmentInfo depth = main.Copy().SetFormat(State.Device->GetDefaultDepthFormat());
-	pass.AddColorOutput("Final", main);
-	pass.SetDepthStencilOutput("Depth", depth);
-	pass.SetGetClearColor([](uint32_t, vk::ClearColorValue* value) -> bool {
-		if (value) { *value = vk::ClearColorValue(0.36f, 0.0f, 0.63f, 1.0f); }
-		return true;
-	});
-	pass.SetGetClearDepthStencil([](vk::ClearDepthStencilValue* value) -> bool {
-		if (value) { *value = vk::ClearDepthStencilValue(1.0f, 0); }
-		return true;
-	});
-	pass.SetBuildRenderPass([](Vulkan::CommandBuffer& cmd) {
-		cmd.SetOpaqueState();
-		cmd.SetProgram(State.Program->GetProgram());
-		cmd.SetCullMode(vk::CullModeFlagBits::eBack);
-		cmd.SetVertexAttribute(0, 0, vk::Format::eR32G32B32Sfloat, 0);
-		cmd.SetVertexAttribute(1, 1, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, Normal));
-		cmd.SetVertexAttribute(2, 1, vk::Format::eR32G32B32A32Sfloat, offsetof(Vertex, Tangent));
-		cmd.SetVertexAttribute(3, 1, vk::Format::eR32G32Sfloat, offsetof(Vertex, Texcoord0));
-		cmd.SetVertexAttribute(4, 1, vk::Format::eR32G32Sfloat, offsetof(Vertex, Texcoord1));
-		for (auto rootNode : State.Model.RootNodes) { RenderNode(*rootNode, cmd); }
-	});
+
+	{
+		auto& pass = State.Graph.AddPass("Main");
+
+		AttachmentInfo depth = main.Copy().SetFormat(State.Device->GetDefaultDepthFormat());
+		pass.AddColorOutput("Main", main);
+		pass.SetDepthStencilOutput("Depth", depth);
+		auto& drawIndirectRes   = pass.AddIndirectInput("DrawIndirect");
+		auto& meshletIndicesRes = pass.AddIndexBufferInput("MeshletIndices");
+
+		pass.SetGetClearColor([](uint32_t, vk::ClearColorValue* value) -> bool {
+			if (value) { *value = vk::ClearColorValue(0.1f, 0.1f, 0.1f, 1.0f); }
+			return true;
+		});
+		pass.SetGetClearDepthStencil([](vk::ClearDepthStencilValue* value) -> bool {
+			if (value) { *value = vk::ClearDepthStencilValue(0.0f, 0); }
+			return true;
+		});
+		pass.SetBuildRenderPass([&](Vulkan::CommandBuffer& cmd) {
+			auto& drawIndirect   = State.Graph.GetPhysicalBufferResource(drawIndirectRes);
+			auto& meshletIndices = State.Graph.GetPhysicalBufferResource(meshletIndicesRes);
+
+			cmd.SetOpaqueState();
+			cmd.SetProgram(State.Program->GetProgram());
+			cmd.SetCullMode(vk::CullModeFlagBits::eBack);
+			cmd.SetDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
+			cmd.SetUniformBuffer(0, 0, State.SceneBuffer.Get());
+			cmd.SetStorageBuffer(1, 1, State.MeshletBuffer.Get());
+			cmd.SetStorageBuffer(1, 2, State.Scene.GetPositionBuffer());
+			cmd.SetStorageBuffer(1, 3, State.Scene.GetVertexBuffer());
+			cmd.SetStorageBuffer(1, 4, State.Scene.GetIndexBuffer());
+			cmd.SetStorageBuffer(1, 5, State.Scene.GetTriangleBuffer());
+			cmd.SetStorageBuffer(1, 6, State.TransformBuffer.Get());
+			cmd.SetIndexBuffer(meshletIndices, 0, vk::IndexType::eUint32);
+			cmd.DrawIndexedIndirect(drawIndirect, MaxMeshletBatches, 0);
+		});
+	}
+
+	{
+		auto& pass = State.Graph.AddPass("Debug Lines");
+
+		pass.AddColorOutput("Final", main, "Main");
+
+		pass.SetBuildRenderPass([&](Vulkan::CommandBuffer& cmd) {
+			if (State.DebugLines.empty()) { return; }
+
+			struct PushConstant {
+				uint32_t DebugLineCount;
+			};
+			const auto pc = PushConstant{.DebugLineCount = uint32_t(State.DebugLines.size())};
+
+			cmd.SetOpaqueState();
+			cmd.SetProgram(
+				ShaderManager::RegisterGraphics("res://Shaders/DebugLines.vert.glsl", "res://Shaders/DebugLines.frag.glsl")
+					->RegisterVariant()
+					->GetProgram());
+			cmd.SetPrimitiveTopology(vk::PrimitiveTopology::eLineList);
+			cmd.SetUniformBuffer(0, 0, State.SceneBuffer.Get());
+			cmd.SetStorageBuffer(1, 0, State.DebugLinesBuffer.Get());
+			cmd.Draw(State.DebugLines.size() * 2, 1, 0, 0);
+		});
+	}
 
 	{
 		Luna::AttachmentInfo uiColor;
@@ -772,7 +453,7 @@ static void BakeRenderGraph() {
 	State.Graph.Bake(*State.Device);
 	State.Graph.InstallPhysicalBuffers(buffers);
 
-	State.Graph.Log();
+	// State.Graph.Log();
 }
 
 void Renderer::Render() {
@@ -789,12 +470,67 @@ void Renderer::Render() {
 		State.LastSwapchainHash = Engine::GetMainWindow()->GetSwapchainHash();
 	}
 
-	RendererUI();
+	State.FrameTimer.Update();
+	const auto deltaT = State.FrameTimer.Get().AsSeconds();
+
+	State.DebugLines.clear();
+
 	const auto swapchainExtent = Engine::GetMainWindow()->GetSwapchain().GetExtent();
-	const glm::mat4 projection =
-		glm::perspective(glm::radians(70.0f), float(swapchainExtent.width) / float(swapchainExtent.height), 0.01f, 1000.0f);
-	const glm::mat4 view = glm::lookAt(State.CameraPosition, State.CameraTarget, glm::vec3(0, 1, 0));
-	State.PC.Camera      = projection * view;
+	State.Camera.SetPerspective(70.0f, 0.01f, 100.0f);
+	State.Camera.SetViewport(swapchainExtent.width, swapchainExtent.height);
+
+	if (State.CameraActive) {
+		const float speed  = 3.0f * deltaT;
+		glm::vec3 movement = glm::vec3(0);
+		if (Input::GetKey(Key::W) == InputAction::Press) { movement += glm::vec3(0, 0, speed); }
+		if (Input::GetKey(Key::S) == InputAction::Press) { movement -= glm::vec3(0, 0, speed); }
+		if (Input::GetKey(Key::D) == InputAction::Press) { movement += glm::vec3(speed, 0, 0); }
+		if (Input::GetKey(Key::A) == InputAction::Press) { movement -= glm::vec3(speed, 0, 0); }
+		if (Input::GetKey(Key::E) == InputAction::Press) { movement += glm::vec3(0, speed, 0); }
+		if (Input::GetKey(Key::Q) == InputAction::Press) { movement -= glm::vec3(0, speed, 0); }
+		State.Camera.Move(movement);
+	}
+
+	State.SceneData.Projection     = State.Camera.GetProjection();
+	State.SceneData.View           = State.Camera.GetView();
+	State.SceneData.ViewProjection = State.SceneData.Projection * State.SceneData.View;
+	State.SceneData.CameraPosition = glm::vec4(State.Camera.GetPosition(), 1.0);
+
+	RendererUI();
+
+	if (!State.FreezeCullFrustum) {
+		State.CullFrustum = State.SceneData.ViewProjection;
+
+		const auto& vp = State.CullFrustum;
+		auto& p        = State.SceneData.FrustumPlanes;
+		for (int i = 0; i < 4; ++i) { p[0][i] = vp[i][3] + vp[i][0]; }
+		for (int i = 0; i < 4; ++i) { p[1][i] = vp[i][3] - vp[i][0]; }
+		for (int i = 0; i < 4; ++i) { p[2][i] = vp[i][3] + vp[i][1]; }
+		for (int i = 0; i < 4; ++i) { p[3][i] = vp[i][3] - vp[i][1]; }
+		for (int i = 0; i < 4; ++i) { p[4][i] = vp[i][3] + vp[i][2]; }
+		for (int i = 0; i < 4; ++i) { p[5][i] = vp[i][3] - vp[i][2]; }
+		for (auto& plane : p) {
+			plane /= glm::length(glm::vec3(plane));
+			plane.w = -plane.w;
+		}
+	}
+
+	State.RenderScene     = State.Scene.Flatten();
+	auto& sceneBuffer     = State.SceneBuffer.Get(sizeof(SceneData));
+	auto& meshletBuffer   = State.MeshletBuffer.Get(sizeof(Meshlet) * State.RenderScene.Meshlets.size());
+	auto& transformBuffer = State.TransformBuffer.Get(sizeof(glm::mat4) * State.RenderScene.Transforms.size());
+	sceneBuffer.WriteData(&State.SceneData, sizeof(State.SceneData));
+	meshletBuffer.WriteData(State.RenderScene.Meshlets.data(), sizeof(Meshlet) * State.RenderScene.Meshlets.size());
+	transformBuffer.WriteData(State.RenderScene.Transforms.data(),
+	                          sizeof(glm::mat4) * State.RenderScene.Transforms.size());
+
+	if (!State.DebugLines.empty()) {
+		auto& debugLinesBuffer = State.DebugLinesBuffer.Get(sizeof(DebugLine) * State.DebugLines.size());
+		debugLinesBuffer.WriteData(State.DebugLines.data(), sizeof(DebugLine) * State.DebugLines.size());
+	}
+
+	ComputeUniforms compute{.MeshletCount = uint32_t(State.RenderScene.Meshlets.size())};
+	State.ComputeUniforms.Get(sizeof(compute)).WriteData(&compute, sizeof(compute));
 
 	TaskComposer composer;
 	State.Graph.SetupAttachments(*State.Device, &State.Device->GetSwapchainView());

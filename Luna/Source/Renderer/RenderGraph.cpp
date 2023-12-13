@@ -353,6 +353,30 @@ RenderPass& RenderGraph::AddPass(const std::string& name, RenderGraphQueueFlagBi
 	return *_passes.back();
 }
 
+RenderBufferResource& RenderGraph::GetBufferResource(const std::string& name) {
+	auto it = _resourceToIndex.find(name);
+	if (it != _resourceToIndex.end()) {
+		assert(_resources[it->second]->GetType() == RenderResource::Type::Buffer);
+
+		return static_cast<RenderBufferResource&>(*_resources[it->second]);
+	}
+
+	uint32_t index = _resources.size();
+	_resources.emplace_back(new RenderBufferResource(index));
+	_resources.back()->SetName(name);
+	_resourceToIndex[name] = index;
+
+	return static_cast<RenderBufferResource&>(*_resources.back());
+}
+
+Vulkan::Buffer& RenderGraph::GetPhysicalBufferResource(const RenderBufferResource& resource) {
+	return GetPhysicalBufferResource(resource.GetPhysicalIndex());
+}
+
+Vulkan::Buffer& RenderGraph::GetPhysicalBufferResource(uint32_t index) {
+	return *_physicalBuffers[index];
+}
+
 ResourceDimensions RenderGraph::GetResourceDimensions(const RenderBufferResource& resource) const {
 	ResourceDimensions dim = {};
 	auto& info             = resource.GetBufferInfo();
@@ -639,7 +663,7 @@ void RenderGraph::FilterPasses() {
 void RenderGraph::ReorderPasses() {}
 
 void RenderGraph::BuildPhysicalResources() {
-	uint32_t physicalIndex;
+	uint32_t physicalIndex = 0;
 
 	for (const auto passIndex : _passStack) {
 		auto& pass = *_passes[passIndex];
@@ -1674,7 +1698,12 @@ void RenderGraph::EnqueuePhysicalPassGPU(Vulkan::Device& device,
 	state.RenderingDependency = group;
 }
 
-void RenderGraph::RecordComputeCommands(const PhysicalPass& physicalPass, PassSubmissionState& state) {}
+void RenderGraph::RecordComputeCommands(const PhysicalPass& physicalPass, PassSubmissionState& state) {
+	auto& cmd = *state.Cmd;
+
+	auto& pass = *_passes[physicalPass.Passes.front()];
+	pass.BuildRenderPass(cmd, 0);
+}
 
 void RenderGraph::RecordGraphicsCommands(const PhysicalPass& physicalPass, PassSubmissionState& state) {
 	auto& cmd = *state.Cmd;
@@ -1988,7 +2017,12 @@ void RenderGraph::PhysicalPassTransferOwnership(const PhysicalPass& physicalPass
 	}
 }
 
-void RenderGraph::PassSubmissionState::EmitPrePassBarriers() {}
+void RenderGraph::PassSubmissionState::EmitPrePassBarriers() {
+	if (!ImageBarriers.empty() || !BufferBarriers.empty()) {
+		const vk::DependencyInfo dep({}, nullptr, BufferBarriers, ImageBarriers);
+		Cmd->Barrier(dep);
+	}
+}
 
 void RenderGraph::PassSubmissionState::Submit(Vulkan::Device& device) {
 	if (!Cmd) { return; }

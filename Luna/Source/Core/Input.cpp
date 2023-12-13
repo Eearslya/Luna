@@ -68,7 +68,14 @@ void Input::MouseButtonEvent(MouseButton button, InputAction action, InputMods m
 }
 
 void Input::MouseMovedEvent(const glm::dvec2& position) {
-	OnMouseMoved(position);
+	if (State.CursorHidden) {
+		State.Position     = {State.LastPosition - position};
+		State.LastPosition = position;
+	} else {
+		State.Position = position;
+	}
+
+	OnMouseMoved(State.Position);
 }
 
 void Input::MouseScrolledEvent(const glm::dvec2& wheelDelta) {

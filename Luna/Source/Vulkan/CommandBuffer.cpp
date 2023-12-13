@@ -267,6 +267,10 @@ void CommandBuffer::FillBuffer(const Buffer& dst, uint8_t value, vk::DeviceSize 
 	_commandBuffer.fillBuffer(dst.GetBuffer(), offset, size, value);
 }
 
+void CommandBuffer::UpdateBuffer(const Buffer& dst, size_t dataSize, const void* data, vk::DeviceSize offset) {
+	_commandBuffer.updateBuffer(dst.GetBuffer(), offset, dataSize, data);
+}
+
 void CommandBuffer::BlitImage(const Image& dst,
                               const Image& src,
                               const vk::Offset3D& dstOffset,
@@ -352,8 +356,32 @@ void CommandBuffer::SetStorageBuffer(
 	_dirtySets |= 1u << set;
 }
 
+void CommandBuffer::SetUniformBuffer(
+	uint32_t set, uint32_t binding, const Buffer& buffer, vk::DeviceSize offset, vk::DeviceSize range) {
+	if (range == 0) { range = buffer.GetCreateInfo().Size; }
+
+	auto& bind = _resources.Bindings[set][binding];
+
+	if (buffer.GetCookie() == _resources.Bindings[set][binding].Cookie && bind.Buffer.range == range) {
+		if (bind.DynamicOffset != offset) {
+			_dirtySetsDynamic |= 1u << set;
+			bind.DynamicOffset = offset;
+		}
+	} else {
+		bind.Buffer                                       = vk::DescriptorBufferInfo(buffer.GetBuffer(), 0, range);
+		bind.DynamicOffset                                = offset;
+		_resources.Bindings[set][binding].Cookie          = buffer.GetCookie();
+		_resources.Bindings[set][binding].SecondaryCookie = 0;
+		_dirtySets |= 1u << set;
+	}
+}
+
 void CommandBuffer::Dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) {
 	if (FlushComputeState(true)) { _commandBuffer.dispatch(groupsX, groupsY, groupsZ); }
+}
+
+void CommandBuffer::DispatchIndirect(const Buffer& buffer, vk::DeviceSize offset) {
+	if (FlushComputeState(true)) { _commandBuffer.dispatchIndirect(buffer.GetBuffer(), offset); }
 }
 
 void CommandBuffer::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
@@ -365,6 +393,13 @@ void CommandBuffer::DrawIndexed(
 	if (FlushRenderState(true)) {
 		_commandBuffer.drawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 	}
+}
+
+void CommandBuffer::DrawIndexedIndirect(const Buffer& buffer,
+                                        uint32_t drawCount,
+                                        vk::DeviceSize offset,
+                                        vk::DeviceSize stride) {
+	if (FlushRenderState(true)) { _commandBuffer.drawIndexedIndirect(buffer.GetBuffer(), offset, drawCount, stride); }
 }
 
 void CommandBuffer::BeginRenderPass(const RenderPassInfo& rpInfo, vk::SubpassContents contents) {
@@ -480,6 +515,10 @@ void CommandBuffer::SetDepthWrite(bool write) {
 
 void CommandBuffer::SetFrontFace(vk::FrontFace face) {
 	SetStaticState(FrontFace, face);
+}
+
+void CommandBuffer::SetPrimitiveTopology(vk::PrimitiveTopology topology) {
+	SetStaticState(Topology, topology);
 }
 
 void CommandBuffer::SetSampler(uint32_t set, uint32_t binding, const Sampler& sampler) {
