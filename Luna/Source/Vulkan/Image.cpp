@@ -443,8 +443,7 @@ Image::Image(Device& device,
 			types[semaphoreCount]  = CommandBufferType::Generic;
 			stages[semaphoreCount] = vk::PipelineStageFlagBits2::eAllCommands;
 			semaphoreCount++;
-		}
-		if (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncGraphics) {
+		} else if (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncGraphics) {
 			types[semaphoreCount]  = CommandBufferType::AsyncGraphics;
 			stages[semaphoreCount] = vk::PipelineStageFlagBits2::eAllCommands;
 			semaphoreCount++;
@@ -454,7 +453,7 @@ Image::Image(Device& device,
 			stages[semaphoreCount] = vk::PipelineStageFlagBits2::eAllCommands;
 			semaphoreCount++;
 		}
-		if (_createInfo.MiscFlags & ImageCreateFlagBits::ConcurrentQueueAsyncTransfer) {
+		if (queueFlags & ImageCreateFlagBits::ConcurrentQueueAsyncTransfer) {
 			types[semaphoreCount]  = CommandBufferType::AsyncTransfer;
 			stages[semaphoreCount] = vk::PipelineStageFlagBits2::eAllCommands;
 			semaphoreCount++;
@@ -547,6 +546,9 @@ constexpr vk::ImageViewType Image::GetImageViewType(const ImageCreateInfo& image
 		case vk::ImageType::e3D:
 			return vk::ImageViewType::e3D;
 	}
+
+	// Unreachable code, but MSVC complains.
+	return vk::ImageViewType::e1D;
 }
 
 void ImageViewDeleter::operator()(ImageView* imageView) {

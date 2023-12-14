@@ -34,38 +34,6 @@ int FormatChannelCount(vk::Format format) {
 	return vk::componentCount(format);
 }
 
-bool FormatHasDepth(vk::Format format) {
-	switch (format) {
-		case vk::Format::eD16Unorm:
-		case vk::Format::eD16UnormS8Uint:
-		case vk::Format::eD24UnormS8Uint:
-		case vk::Format::eD32Sfloat:
-		case vk::Format::eX8D24UnormPack32:
-		case vk::Format::eD32SfloatS8Uint:
-			return true;
-
-		default:
-			return false;
-	}
-}
-
-bool FormatHasStencil(vk::Format format) {
-	switch (format) {
-		case vk::Format::eS8Uint:
-		case vk::Format::eD16UnormS8Uint:
-		case vk::Format::eD24UnormS8Uint:
-		case vk::Format::eD32SfloatS8Uint:
-			return true;
-
-		default:
-			return false;
-	}
-}
-
-bool FormatHasDepthOrStencil(vk::Format format) {
-	return FormatHasDepth(format) || FormatHasStencil(format);
-}
-
 bool FormatIsSrgb(vk::Format format) {
 	const char* comp = vk::componentName(format, 0);
 

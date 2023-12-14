@@ -61,7 +61,7 @@ inline void ForEachBit64(uint64_t value, const T& func) {
 	while (value) {
 		const uint32_t bit = TrailingZeroes64(value);
 		func(bit);
-		value &= ~(1u << bit);
+		value &= ~(1llu << bit);
 	}
 }
 

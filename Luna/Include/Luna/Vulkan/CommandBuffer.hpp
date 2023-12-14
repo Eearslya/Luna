@@ -348,7 +348,7 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
 	VertexBindingState _vertexBindings = {};
 
 	uint32_t _activeVBOs           = 0;
-	CommandBufferDirtyFlags _dirty = ~0u;
+	CommandBufferDirtyFlags _dirty = ~CommandBufferDirtyFlags{};
 	uint32_t _dirtySets            = 0;
 	uint32_t _dirtySetsDynamic     = 0;
 	uint32_t _dirtyVBOs            = 0;

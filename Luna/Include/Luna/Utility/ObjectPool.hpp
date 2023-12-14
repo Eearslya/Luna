@@ -10,7 +10,7 @@ class ObjectPool {
 	template <typename... Args>
 	T* Allocate(Args&&... args) {
 		if (_available.empty()) {
-			std::size_t newObjects = 64u << _memory.size();
+			std::size_t newObjects = std::size_t(64) << _memory.size();
 			T* ptr = static_cast<T*>(AllocateAligned(newObjects * sizeof(T), std::max<std::size_t>(64u, alignof(T))));
 			if (!ptr) { return nullptr; }
 

@@ -89,7 +89,9 @@ static constexpr const CursorShape ResizeAll = {
 };
 // clang-format on
 
-static struct WindowManagerState { std::array<GLFWcursor*, 9> Cursors; } State;
+static struct WindowManagerState {
+	std::array<GLFWcursor*, 9> Cursors;
+} State;
 
 static void GlfwErrorCallback(int errorCode, const char* errorDescription) {
 	Log::Error("WindowManager", "GLFW Error {}: {}", errorCode, errorDescription);
@@ -110,7 +112,7 @@ bool WindowManager::Initialize() {
 
 	const auto AddCursor = [](const CursorShape& shape) -> GLFWcursor* {
 		const int pixelCount = shape.Width * shape.Height;
-		unsigned char cursorPixels[pixelCount * 4];
+		std::vector<unsigned char> cursorPixels(pixelCount * 4);
 		for (int i = 0; i < pixelCount; ++i) {
 			if (shape.Pixels[i] == 'X') {
 				cursorPixels[i * 4 + 0] = 0;
@@ -129,7 +131,7 @@ bool WindowManager::Initialize() {
 				cursorPixels[i * 4 + 3] = 0;
 			}
 		}
-		const GLFWimage cursorImage{.width = shape.Width, .height = shape.Height, .pixels = cursorPixels};
+		const GLFWimage cursorImage{.width = shape.Width, .height = shape.Height, .pixels = cursorPixels.data()};
 
 		return glfwCreateCursor(&cursorImage, shape.X, shape.Y);
 	};

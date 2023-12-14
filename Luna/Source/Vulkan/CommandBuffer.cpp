@@ -743,7 +743,7 @@ void CommandBuffer::BeginCompute() {
 }
 
 void CommandBuffer::BeginContext() {
-	_dirty                                                       = ~0u;
+	_dirty                                                       = ~CommandBufferDirtyFlags{};
 	_dirtySets                                                   = ~0u;
 	_dirtyVBOs                                                   = ~0u;
 	_currentPipeline                                             = {};
@@ -810,7 +810,7 @@ Pipeline CommandBuffer::BuildComputePipeline(bool synchronous) {
 		return {};
 	}
 
-	auto returnPipeline = _pipelineState.Program->AddPipeline(_pipelineState.CachedHash, {result.value, 0});
+	auto returnPipeline = _pipelineState.Program->AddPipeline(_pipelineState.CachedHash, {result.value, {}});
 	if (returnPipeline.Pipeline != result.value) { _device.GetDevice().destroyPipeline(result.value); }
 
 	return returnPipeline;
@@ -984,7 +984,7 @@ Pipeline CommandBuffer::BuildGraphicsPipeline(bool synchronous) {
 	                                                0);
 	const auto pipelineResult = _device.GetDevice().createGraphicsPipeline(nullptr, pipelineCI);
 	const auto returnedPipeline =
-		_pipelineState.Program->AddPipeline(_pipelineState.CachedHash, {pipelineResult.value, 0});
+		_pipelineState.Program->AddPipeline(_pipelineState.CachedHash, {pipelineResult.value, {}});
 	if (returnedPipeline.Pipeline != pipelineResult.value) { _device.GetDevice().destroyPipeline(pipelineResult.value); }
 
 	return returnedPipeline;

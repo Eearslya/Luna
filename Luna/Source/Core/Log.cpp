@@ -72,5 +72,7 @@ spdlog::level::level_enum Log::ToSpdlog(Level level) {
 		case Level::Trace:
 			return spdlog::level::trace;
 	}
+
+	return spdlog::level::info;
 }
 }  // namespace Luna
