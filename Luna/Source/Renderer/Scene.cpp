@@ -561,22 +561,20 @@ static void CombineMeshlets(GltfContext& context) {
 		const auto& meshletTriangles = rawMesh.MeshletTriangles;
 
 		for (const auto& meshlet : rawMesh.Meshlets) {
-			glm::vec3 aabbMin(std::numeric_limits<float>::max());
-			glm::vec3 aabbMax(std::numeric_limits<float>::lowest());
-			for (uint32_t i = 0; i < meshlet.triangle_count * 3; ++i) {
-				const auto& pos =
-					rawMesh.Positions[meshletIndices[meshlet.vertex_offset + meshletTriangles[meshlet.triangle_offset + i]]];
-				aabbMin = glm::min(aabbMin, pos);
-				aabbMax = glm::max(aabbMax, pos);
-			}
+			const meshopt_Bounds bounds =
+				meshopt_computeMeshletBounds(rawMesh.MeshletIndices.data() + meshlet.vertex_offset,
+			                               rawMesh.MeshletTriangles.data() + meshlet.triangle_offset,
+			                               meshlet.triangle_count,
+			                               reinterpret_cast<float*>(rawMesh.Positions.data()),
+			                               rawMesh.Positions.size(),
+			                               sizeof(glm::vec3));
 
 			mesh.Meshlets.emplace_back(Meshlet{.VertexOffset   = uint32_t(vertexOffset),
 			                                   .IndexOffset    = uint32_t(indexOffset + meshlet.vertex_offset),
 			                                   .TriangleOffset = uint32_t(triangleOffset + meshlet.triangle_offset),
 			                                   .IndexCount     = uint32_t(meshlet.vertex_count),
 			                                   .TriangleCount  = uint32_t(meshlet.triangle_count),
-			                                   .AABBMin        = glm::vec4(aabbMin, 0.0),
-			                                   .AABBMax        = glm::vec4(aabbMax, 0.0)});
+			                                   .BoundingSphere = glm::vec4(glm::make_vec3(bounds.center), bounds.radius)});
 		}
 
 		vertexOffset += rawMesh.Positions.size();
@@ -622,6 +620,7 @@ RenderScene Scene::Flatten() const {
 			scene.Transforms.emplace_back(node.GetGlobalTransform());
 			for (auto& meshlet : node.Mesh->Meshlets) {
 				meshlet.InstanceID = instanceId;
+				scene.TriangleCount += meshlet.TriangleCount;
 				scene.Meshlets.push_back(meshlet);
 			}
 		}

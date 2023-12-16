@@ -43,6 +43,9 @@ class Device : public VulkanObject<Device> {
 	[[nodiscard]] uint32_t GetFrameIndex() const noexcept {
 		return _currentFrameContext;
 	}
+	[[nodiscard]] uint32_t GetFramesInFlight() const noexcept {
+		return _frameContexts.size();
+	}
 	[[nodiscard]] vk::Instance GetInstance() const noexcept {
 		return _instance;
 	}

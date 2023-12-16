@@ -21,6 +21,9 @@ void RenderGraph::EnqueueRenderPasses(Vulkan::Device& device, TaskComposer& comp
 	_passSubmissionStates.clear();
 	_passSubmissionStates.resize(count);
 
+	composer.BeginPipelineStage().Enqueue(
+		[&]() { device.GetDevice().resetQueryPool(_queryPools[device.GetFrameIndex()], 0, (_passes.size() * 2) + 2); });
+
 	for (size_t i = 0; i < count; ++i) {
 		EnqueueRenderPass(device, _physicalPasses[i], _passSubmissionStates[i], composer);
 	}
@@ -203,6 +206,24 @@ void RenderGraph::Bake(Vulkan::Device& device) {
 
 	BuildAliases();
 
+	// TODO: Defer query pool destruction
+	Renderer::GetDevice().WaitIdle();
+	for (const auto& pool : _queryPools) { Renderer::GetDevice().GetDevice().destroyQueryPool(pool); }
+
+	const vk::QueryPoolCreateInfo queryPoolCI({}, vk::QueryType::eTimestamp, (_passes.size() * 2) + 2);
+	for (size_t i = 0; i < Renderer::GetDevice().GetFramesInFlight(); ++i) {
+		_queryPools.push_back(Renderer::GetDevice().GetDevice().createQueryPool(queryPoolCI));
+	}
+
+	_profiling.resize(_passes.size());
+	uint32_t timestampIndex = 0;
+	_startTimestamp         = timestampIndex++;
+	_endTimestamp           = timestampIndex++;
+	for (size_t i = 0; i < _passes.size(); ++i) {
+		_profiling[i].StartTimestamp = timestampIndex++;
+		_profiling[i].EndTimestamp   = timestampIndex++;
+	}
+
 	for (auto& physicalPass : _physicalPasses) {
 		for (auto passIndex : physicalPass.Passes) { _passes[passIndex]->Setup(); }
 	}
@@ -326,6 +347,8 @@ void RenderGraph::Log() {
 }
 
 void RenderGraph::Reset() {
+	Renderer::GetDevice().WaitIdle();
+	for (const auto& pool : _queryPools) { Renderer::GetDevice().GetDevice().destroyQueryPool(pool); }
 	_passes.clear();
 	_resources.clear();
 	_passToIndex.clear();
@@ -1701,8 +1724,15 @@ void RenderGraph::EnqueuePhysicalPassGPU(Vulkan::Device& device,
 void RenderGraph::RecordComputeCommands(const PhysicalPass& physicalPass, PassSubmissionState& state) {
 	auto& cmd = *state.Cmd;
 
-	auto& pass = *_passes[physicalPass.Passes.front()];
+	auto& pass      = *_passes[physicalPass.Passes.front()];
+	auto& profiling = _profiling[physicalPass.Passes.front()];
+	cmd.GetCommandBuffer().writeTimestamp(vk::PipelineStageFlagBits::eComputeShader,
+	                                      _queryPools[Renderer::GetDevice().GetFrameIndex()],
+	                                      profiling.StartTimestamp);
 	pass.BuildRenderPass(cmd, 0);
+	cmd.GetCommandBuffer().writeTimestamp(vk::PipelineStageFlagBits::eComputeShader,
+	                                      _queryPools[Renderer::GetDevice().GetFrameIndex()],
+	                                      profiling.EndTimestamp);
 }
 
 void RenderGraph::RecordGraphicsCommands(const PhysicalPass& physicalPass, PassSubmissionState& state) {

@@ -322,6 +322,8 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 	};
 	for (const auto& ext : requiredExtensions) { TryExtension(ext); }
 
+	_extensions.MemoryBudget = TryExtension(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+
 	auto familyProps = _deviceInfo.QueueFamilies;
 	std::vector<std::vector<float>> familyPriorities(familyProps.size());
 	std::vector<vk::DeviceQueueCreateInfo> queueCIs(QueueTypeCount);
@@ -385,6 +387,7 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 		}                                                             \
 	} while (0)
 
+	TryFeature(Vulkan12.hostQueryReset, "Host Query Reset");
 	TryFeature(Core.multiDrawIndirect, "Multi Draw Indirect");
 	TryFeature(Core.samplerAnisotropy, "Sampler Anisotropy");
 	TryFeature(Vulkan12.scalarBlockLayout, "Scalar Block Layout");

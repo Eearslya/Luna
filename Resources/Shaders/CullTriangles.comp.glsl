@@ -8,14 +8,6 @@
 layout(constant_id = 0) const uint MaxMeshletTriangles = 64;
 layout(local_size_x = 64) in;
 
-struct DrawIndexedIndirectCommand {
-  uint IndexCount;
-  uint InstanceCount;
-  uint FirstIndex;
-  int VertexOffset;
-  uint FirstInstance;
-};
-
 layout(set = 0, binding = 0, scalar) uniform SceneBuffer {
   SceneData Scene;
 };
@@ -137,13 +129,13 @@ void main() {
   barrier();
 
   if (localId == 0) {
-    sBaseIndex = atomicAdd(DrawCommands[0].IndexCount, sPrimitivesPassed * 3);
+    sBaseIndex = atomicAdd(DrawCommands[batchId].IndexCount, sPrimitivesPassed * 3);
   }
 
   barrier();
 
   if (primitivePassed) {
-    uint indexOffset = sBaseIndex + (0 * Uniforms.IndicesPerBatch) + activePrimitiveId * 3;
+    uint indexOffset = sBaseIndex + (batchId * Uniforms.IndicesPerBatch) + activePrimitiveId * 3;
     MeshletIndices[indexOffset + 0] = (meshletId << MeshletPrimitiveBits) | ((triangleId + 0) & MeshletPrimitiveMask);
     MeshletIndices[indexOffset + 1] = (meshletId << MeshletPrimitiveBits) | ((triangleId + 1) & MeshletPrimitiveMask);
     MeshletIndices[indexOffset + 2] = (meshletId << MeshletPrimitiveBits) | ((triangleId + 2) & MeshletPrimitiveMask);

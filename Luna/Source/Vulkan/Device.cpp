@@ -68,6 +68,7 @@ Device::Device(Context& context)
 #undef VmaFn
 
 		VmaAllocatorCreateFlags allocatorFlags = VMA_ALLOCATOR_CREATE_EXTERNALLY_SYNCHRONIZED_BIT;
+		if (_extensions.MemoryBudget) { allocatorFlags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT; }
 		if (_deviceInfo.EnabledFeatures.Vulkan12.bufferDeviceAddress) {
 			allocatorFlags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 		}
@@ -495,6 +496,7 @@ void Device::NextFrame() {
 	_transientAttachments.BeginFrame();
 
 	_currentFrameContext = (_currentFrameContext + 1) % _frameContexts.size();
+	vmaSetCurrentFrameIndex(_allocator, _currentFrameContext);
 	Frame().Begin();
 }
 
@@ -1035,30 +1037,15 @@ void Device::SubmitStagingNoLock(CommandBufferHandle commandBuffer, vk::Pipeline
 	// We perform all staging transfers/fills on the transfer queue, if available.
 	// Because this can be a separate queue, the only way to synchronize it with other queues is via semaphores.
 
-	// Determine which queues are different from the transfer queue. Only different queues will need semaphore sync. Any
-	// queues which are the same as transfer are handled by the pipeline barrier instead.
-	int semaphoreCount = 0;
-	if (!_queueInfo.SameQueue(QueueType::Transfer, QueueType::Graphics)) { semaphoreCount++; }
-	if (!_queueInfo.SameQueue(QueueType::Transfer, QueueType::Compute)) { semaphoreCount++; }
-
-	// Submit our staging work, signalling each of the semaphores given (or possibly no semaphores).
-	std::vector<SemaphoreHandle> semaphores(semaphoreCount);
+	// Submit our staging work, signalling each of the semaphores given.
+	std::vector<SemaphoreHandle> semaphores(2);
 	SubmitNoLock(commandBuffer, nullptr, &semaphores);
 
 	// Set each semaphore as internally synchronized.
 	for (auto& semaphore : semaphores) { semaphore->SetInternalSync(); }
 
-	// Add a wait on our Graphics queue, if applicable.
-	if (!_queueInfo.SameQueue(QueueType::Transfer, QueueType::Graphics)) {
-		AddWaitSemaphoreNoLock(QueueType::Graphics, semaphores.back(), stages, true);
-		semaphores.pop_back();
-	}
-
-	// Add a wait on our Compute queue, if applicable.
-	if (!_queueInfo.SameQueue(QueueType::Transfer, QueueType::Compute)) {
-		AddWaitSemaphoreNoLock(QueueType::Compute, semaphores.back(), stages, true);
-		semaphores.pop_back();
-	}
+	AddWaitSemaphoreNoLock(QueueType::Graphics, semaphores[0], vk::PipelineStageFlagBits2::eAllGraphics, true);
+	AddWaitSemaphoreNoLock(QueueType::Compute, semaphores[1], vk::PipelineStageFlagBits2::eComputeShader, true);
 }
 
 /** Flushes all pending work and waits for the Vulkan device to be idle. */

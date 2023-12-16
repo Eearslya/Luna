@@ -106,6 +106,7 @@ constexpr int MaxSpecConstants         = MaxUserSpecConstants + MaxInternalSpecC
 struct Extensions {
 	bool DebugUtils              = false;
 	bool GetSurfaceCapabilities2 = false;
+	bool MemoryBudget            = false;
 	bool Surface                 = false;
 	bool SurfaceMaintenance1     = false;
 	bool SwapchainColorspace     = false;

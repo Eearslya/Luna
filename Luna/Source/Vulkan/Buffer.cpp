@@ -33,6 +33,7 @@ Buffer::Buffer(Device& device,
 
 	// Set up Allocation info
 	VmaAllocationCreateInfo bufferAI = {};
+	bufferAI.flags                   = VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT;
 	bufferAI.usage                   = VMA_MEMORY_USAGE_AUTO;
 	if (createInfo.Domain == BufferDomain::Host) {
 		bufferAI.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
@@ -99,14 +100,7 @@ void Buffer::FillData(uint8_t data, vk::DeviceSize dataSize, vk::DeviceSize offs
 		CommandBufferHandle cmd = _device.RequestCommandBuffer(CommandBufferType::AsyncTransfer, commandBufferName);
 		cmd->FillBuffer(*this, data, offset, dataSize);
 
-		const auto stages = Buffer::UsageToStages(_createInfo.Usage);
-		cmd->BufferBarrier(*this,
-		                   vk::PipelineStageFlagBits2::eTransfer,
-		                   vk::AccessFlagBits2::eTransferWrite,
-		                   Buffer::UsageToStages(_createInfo.Usage),
-		                   Buffer::UsageToAccess(_createInfo.Usage));
-
-		_device.SubmitStaging(cmd, stages, true);
+		_device.SubmitStaging(cmd, {}, true);
 	}
 }
 
@@ -138,14 +132,7 @@ void Buffer::WriteData(const void* data, vk::DeviceSize dataSize, vk::DeviceSize
 		cmd = _device.RequestCommandBuffer(CommandBufferType::AsyncTransfer, commandBufferName);
 		cmd->CopyBuffer(*this, *stagingBuffer);
 
-		const auto stages = Buffer::UsageToStages(_createInfo.Usage);
-		cmd->BufferBarrier(*this,
-		                   vk::PipelineStageFlagBits2::eTransfer,
-		                   vk::AccessFlagBits2::eTransferWrite,
-		                   Buffer::UsageToStages(_createInfo.Usage),
-		                   Buffer::UsageToAccess(_createInfo.Usage));
-
-		_device.SubmitStaging(cmd, stages, true);
+		_device.SubmitStaging(cmd, {}, true);
 	}
 }
 

@@ -74,6 +74,12 @@ class RenderGraph {
 		vk::ImageLayout Layout;
 	};
 
+	struct Profiling {
+		uint32_t StartTimestamp;
+		uint32_t EndTimestamp;
+		uint64_t TimestampValue;
+	};
+
 	struct ScaledClearRequest {
 		uint32_t Target;
 		uint32_t PhysicalResource;
@@ -202,8 +208,14 @@ class RenderGraph {
 	std::vector<bool> _physicalImageHasHistory;
 	std::vector<std::string> _physicalNames;
 	std::vector<PhysicalPass> _physicalPasses;
+	std::vector<Profiling> _profiling;
 
 	// Render Graph execution state
 	std::vector<PassSubmissionState> _passSubmissionStates;
+
+	// Profiling resources
+	std::vector<vk::QueryPool> _queryPools;
+	uint32_t _startTimestamp = 0;
+	uint32_t _endTimestamp   = 0;
 };
 }  // namespace Luna

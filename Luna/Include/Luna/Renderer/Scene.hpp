@@ -39,8 +39,7 @@ struct Meshlet {
 	uint32_t IndexCount;
 	uint32_t TriangleCount;
 	uint32_t InstanceID;
-	glm::vec4 AABBMin;
-	glm::vec4 AABBMax;
+	glm::vec4 BoundingSphere;
 };
 
 struct Mesh {
@@ -50,6 +49,7 @@ struct Mesh {
 struct RenderScene {
 	std::vector<Meshlet> Meshlets;
 	std::vector<glm::mat4> Transforms;
+	uint64_t TriangleCount = 0;
 };
 
 class Scene {

@@ -1,3 +1,11 @@
+struct DrawIndexedIndirectCommand {
+  uint IndexCount;
+  uint InstanceCount;
+  uint FirstIndex;
+  int VertexOffset;
+  uint FirstInstance;
+};
+
 struct Vertex {
   vec3 Normal;
   vec4 Tangent;
