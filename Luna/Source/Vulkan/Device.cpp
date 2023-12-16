@@ -347,6 +347,12 @@ Program* Device::RequestProgram(const std::array<Shader*, ShaderStageCount>& sha
 	for (const auto shader : shaders) { h(shader ? shader->GetHash() : Hash(0)); }
 	const auto hash = h.Get();
 
+	bool anyShaders = false;
+	for (const auto shader : shaders) {
+		if (shader != nullptr) { anyShaders = true; }
+	}
+	if (!anyShaders) { return nullptr; }
+
 	DeviceCacheLock();
 
 	Program* ret = _programs.Find(hash);

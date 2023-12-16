@@ -16,7 +16,7 @@ std::vector<uint32_t> ShaderCompiler::Compile(std::string& error,
 	for (const auto& def : defines) { options.AddMacroDefinition(def.first, std::to_string(def.second)); }
 	options.SetOptimizationLevel(shaderc_optimization_level_performance);
 	options.SetGenerateDebugInfo();
-	options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_2);
+	options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_3);
 	options.SetSourceLanguage(shaderc_source_language_glsl);
 
 	shaderc_shader_kind shaderKind;

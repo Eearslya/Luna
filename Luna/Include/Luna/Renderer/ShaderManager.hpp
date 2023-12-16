@@ -12,7 +12,8 @@ struct ShaderTemplateVariant : public IntrusiveHashMapEnabled<ShaderTemplateVari
 	Hash SpirvHash   = 0;
 	std::vector<uint32_t> Spirv;
 	std::vector<std::pair<std::string, int>> Defines;
-	uint32_t Instance = 0;
+	uint32_t Instance                 = 0;
+	Vulkan::Shader* PrecompiledShader = nullptr;
 
 	Vulkan::Shader* Resolve() const;
 };
@@ -34,7 +35,8 @@ class ShaderTemplate : public IntrusiveHashMapEnabled<ShaderTemplate> {
 
 	void Recompile();
 	void RegisterDependencies();
-	const ShaderTemplateVariant* RegisterVariant(const std::vector<std::pair<std::string, int>>& defines = {});
+	const ShaderTemplateVariant* RegisterVariant(const std::vector<std::pair<std::string, int>>& defines = {},
+	                                             Vulkan::Shader* precompiledShader                       = nullptr);
 
  private:
 	void RecompileVariant(ShaderTemplateVariant& variant);

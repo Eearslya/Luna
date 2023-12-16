@@ -4,16 +4,6 @@
 #include "Common.glsli"
 #include "VisBuffer.glsli"
 
-struct Vertex {
-  vec3 Normal;
-  vec4 Tangent;
-  vec2 Texcoord0;
-  vec2 Texcoord1;
-  vec4 Color0;
-  uvec4 Joints0;
-  vec4 Weights0;
-};
-
 layout(set = 0, binding = 0, scalar) uniform SceneBuffer {
   SceneData Scene;
 };

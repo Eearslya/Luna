@@ -98,7 +98,11 @@ static void RegisterDependencyNoLock(ShaderTemplate* shader, const Path& depende
 }
 
 Vulkan::Shader* ShaderTemplateVariant::Resolve() const {
-	if (Spirv.empty()) {
+	if (PrecompiledShader) {
+		return PrecompiledShader;
+	} else if (Spirv.empty() && SpirvHash == 0) {
+		return nullptr;
+	} else if (Spirv.empty()) {
 		return Renderer::GetDevice().RequestShader(SpirvHash);
 	} else {
 		return Renderer::GetDevice().RequestShader(Spirv.size() * sizeof(uint32_t), Spirv.data());
@@ -122,6 +126,8 @@ ShaderTemplate::ShaderTemplate(const Path& shaderPath,
 		_compiler->SetSourceFromFile(_path, _stage);
 		_compiler->SetIncludeDirectories(_includeDirs);
 		if (!_compiler->Preprocess()) {
+			_compiler.reset();
+
 			Log::Error("ShaderManager", "Failed to preprocess {} shader!", VulkanEnumToString(_stage));
 			throw std::runtime_error("[ShaderManager] Failed to preprocess shader source.");
 		}
@@ -132,6 +138,7 @@ ShaderTemplate::ShaderTemplate(const Path& shaderPath,
 ShaderTemplate::~ShaderTemplate() noexcept {}
 
 void ShaderTemplate::Recompile() {
+	Log::Debug("ShaderManager", "Recompiling {} shader: {}", VulkanEnumToString(_stage), _path);
 	auto newCompiler = std::make_unique<ShaderCompiler>();
 	newCompiler->SetSourceFromFile(_path, _stage);
 	newCompiler->SetIncludeDirectories(_includeDirs);
@@ -153,7 +160,8 @@ void ShaderTemplate::RegisterDependencies() {
 	}
 }
 
-const ShaderTemplateVariant* ShaderTemplate::RegisterVariant(const std::vector<std::pair<std::string, int>>& defines) {
+const ShaderTemplateVariant* ShaderTemplate::RegisterVariant(const std::vector<std::pair<std::string, int>>& defines,
+                                                             Vulkan::Shader* precompiledShader) {
 	Hasher h;
 	h(defines.size());
 	for (const auto& def : defines) {
@@ -170,16 +178,22 @@ const ShaderTemplateVariant* ShaderTemplate::RegisterVariant(const std::vector<s
 		auto* variant        = _variants.Allocate();
 		variant->VariantHash = completeHash;
 
-		auto* precompiledSpirv = State.MetaCache.VariantToShader.Find(completeHash);
-		if (precompiledSpirv) {
-			if (!Renderer::GetDevice().RequestShader(precompiledSpirv->ShaderHash)) {
-				precompiledSpirv = nullptr;
-			} else if (_sourceHash != precompiledSpirv->SourceHash) {
-				precompiledSpirv = nullptr;
+		PrecomputedMeta* precompiledSpirv = nullptr;
+		if (!precompiledShader) {
+			precompiledSpirv = State.MetaCache.VariantToShader.Find(completeHash);
+
+			if (precompiledSpirv) {
+				if (!Renderer::GetDevice().RequestShader(precompiledSpirv->ShaderHash)) {
+					precompiledSpirv = nullptr;
+				} else if (_sourceHash != precompiledSpirv->SourceHash) {
+					precompiledSpirv = nullptr;
+				}
 			}
 		}
 
-		if (!precompiledSpirv) {
+		if (precompiledShader) {
+			variant->PrecompiledShader = precompiledShader;
+		} else if (!precompiledSpirv) {
 			if (!_staticShader.empty()) {
 				variant->Spirv = _staticShader;
 				UpdateVariantCache(*variant);
@@ -188,9 +202,9 @@ const ShaderTemplateVariant* ShaderTemplate::RegisterVariant(const std::vector<s
 				variant->Spirv = _compiler->Compile(error, defines);
 
 				if (variant->Spirv.empty()) {
-					Log::Error("ShaderManager", "Failed to compile {} shader: {}", VulkanEnumToString(_stage), error);
-					_variants.Free(variant);
-					return nullptr;
+					Log::Error("ShaderManager", "Failed to compile {} shader:\n{}", VulkanEnumToString(_stage), error);
+					variant->Spirv.clear();
+					variant->SpirvHash = 0;
 				}
 
 				UpdateVariantCache(*variant);
@@ -211,10 +225,11 @@ const ShaderTemplateVariant* ShaderTemplate::RegisterVariant(const std::vector<s
 }
 
 void ShaderTemplate::RecompileVariant(ShaderTemplateVariant& variant) {
+	Log::Debug("ShaderManager", "Recompiling shader variant...");
 	std::string error;
 	auto newSpv = _compiler->Compile(error, variant.Defines);
 	if (newSpv.empty()) {
-		Log::Error("ShaderManager", "Failed to recompile {} shader: {}", VulkanEnumToString(_stage), error);
+		Log::Error("ShaderManager", "Failed to recompile {} shader:\n{}", VulkanEnumToString(_stage), error);
 		return;
 	}
 
@@ -251,13 +266,12 @@ ShaderProgramVariant::ShaderProgramVariant() {
 ShaderProgramVariant::~ShaderProgramVariant() noexcept {}
 
 Vulkan::Program* ShaderProgramVariant::GetProgram() {
-	auto* vert = _stages[int(Vulkan::ShaderStage::Vertex)];
 	auto* frag = _stages[int(Vulkan::ShaderStage::Fragment)];
 	auto* comp = _stages[int(Vulkan::ShaderStage::Compute)];
 
 	if (comp) {
 		return GetCompute();
-	} else if (vert && frag) {
+	} else if (frag) {
 		return GetGraphics();
 	}
 
@@ -307,8 +321,8 @@ Vulkan::Program* ShaderProgramVariant::GetGraphics() {
 	    fragInstance.load(std::memory_order_relaxed) != frag->Instance) {
 		ret = Renderer::GetDevice().RequestProgram(vert->Resolve(), frag->Resolve());
 		_program.store(ret, std::memory_order_relaxed);
-		vertInstance.store(vert->Instance, std::memory_order_relaxed);
-		fragInstance.store(frag->Instance, std::memory_order_relaxed);
+		vertInstance.store(vert->Instance, std::memory_order_release);
+		fragInstance.store(frag->Instance, std::memory_order_release);
 	} else {
 		ret = _program.load(std::memory_order_relaxed);
 	}

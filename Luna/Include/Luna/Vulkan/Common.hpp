@@ -11,7 +11,7 @@
 #include <Luna/Vulkan/InternalSync.hpp>
 #include <vulkan/vulkan.hpp>
 
-#define LUNA_VULKAN_DEBUG
+// #define LUNA_VULKAN_DEBUG
 
 namespace Luna {
 namespace Vulkan {
@@ -273,8 +273,8 @@ struct std::formatter<Luna::Vulkan::Size> : std::formatter<std::string> {
 
 template <typename T>
 concept HasVulkanToString = requires(T t) {
-															{ vk::to_string(t) };
-														};
+	{ vk::to_string(t) };
+};
 
 template <typename T>
 	requires(HasVulkanToString<T>)

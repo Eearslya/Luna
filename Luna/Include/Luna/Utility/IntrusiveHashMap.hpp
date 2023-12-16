@@ -432,9 +432,8 @@ class ThreadSafeIntrusiveHashMapReadCached {
 
 	template <typename... Args>
 	T* Allocate(Args&&... args) noexcept {
-		_spinLock.LockWrite();
+		RWSpinLockWriteHolder guard(_spinLock);
 		T* t = _objectPool.Allocate(std::forward<Args>(args)...);
-		_spinLock.UnlockWrite();
 
 		return t;
 	}

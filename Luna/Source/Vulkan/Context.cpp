@@ -192,7 +192,9 @@ void Context::CreateInstance(const std::vector<const char*>& requiredExtensions)
 		vk::ValidationFeatureEnableEXT::eBestPractices,
 		vk::ValidationFeatureEnableEXT::eSynchronizationValidation,
 		vk::ValidationFeatureEnableEXT::eGpuAssisted,
-		vk::ValidationFeatureEnableEXT::eGpuAssistedReserveBindingSlot};
+		vk::ValidationFeatureEnableEXT::eGpuAssistedReserveBindingSlot,
+		// vk::ValidationFeatureEnableEXT::eDebugPrintf
+	};
 	const std::vector<vk::ValidationFeatureDisableEXT> validationDisable;
 	const vk::ValidationFeaturesEXT validationCI(validationEnable, validationDisable);
 

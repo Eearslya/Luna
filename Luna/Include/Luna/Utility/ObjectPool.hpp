@@ -20,7 +20,12 @@ class ObjectPool {
 
 		T* ptr = _available.back();
 		_available.pop_back();
-		new (ptr) T(std::forward<Args>(args)...);
+		try {
+			new (ptr) T(std::forward<Args>(args)...);
+		} catch (const std::exception& e) {
+			_available.push_back(ptr);
+			throw;
+		}
 
 		return ptr;
 	}

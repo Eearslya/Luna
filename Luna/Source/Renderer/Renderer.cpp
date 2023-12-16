@@ -22,6 +22,12 @@
 #include <glm/gtc/type_ptr.hpp>
 
 namespace Luna {
+constexpr static unsigned int MaxMeshlets          = 262'144;
+constexpr static unsigned int MaxMeshletsPerBatch  = 65'536;
+constexpr static unsigned int MaxMeshletBatches    = MaxMeshlets / MaxMeshletsPerBatch;
+constexpr static unsigned int MaxTrianglesPerBatch = MaxMeshletsPerBatch * 64;
+constexpr static unsigned int MaxIndicesPerBatch   = MaxTrianglesPerBatch * 3;
+
 struct PerFrameBuffer {
 	Vulkan::Buffer& Get(vk::DeviceSize size = vk::WholeSize) {
 		const auto frameIndex = Renderer::GetDevice().GetFrameIndex();
@@ -54,7 +60,8 @@ struct SceneData {
 };
 
 struct ComputeUniforms {
-	uint32_t MeshletCount = 0;
+	uint32_t MeshletCount    = 0;
+	uint32_t IndicesPerBatch = 0;
 };
 
 struct DebugLine {
@@ -235,12 +242,6 @@ static void BakeRenderGraph() {
 		ShaderManager::RegisterGraphics("res://Shaders/StaticMesh.vert.glsl", "res://Shaders/StaticMesh.frag.glsl")
 			->RegisterVariant();
 
-	constexpr static unsigned int MaxMeshlets          = 262'144;
-	constexpr static unsigned int MaxMeshletsPerBatch  = 65'536;
-	constexpr static unsigned int MaxMeshletBatches    = MaxMeshlets / MaxMeshletsPerBatch;
-	constexpr static unsigned int MaxTrianglesPerBatch = MaxMeshletsPerBatch * 64;
-	constexpr static unsigned int MaxIndicesPerBatch   = MaxTrianglesPerBatch * 3;
-
 	{
 		auto& pass = State.Graph.AddPass("Meshlet Cull", RenderGraphQueueFlagBits::Compute);
 
@@ -248,70 +249,9 @@ static void BakeRenderGraph() {
 		                                  .Usage = vk::BufferUsageFlagBits::eStorageBuffer};
 		auto& visibleMeshletsRes       = pass.AddStorageOutput("VisibleMeshletIDs", visibleMeshletsInfo);
 
-		BufferInfo cullTriangleDispatchInfo = {.Size  = sizeof(vk::DispatchIndirectCommand) * MaxMeshletBatches,
-		                                       .Usage = vk::BufferUsageFlagBits::eStorageBuffer |
-		                                                vk::BufferUsageFlagBits::eIndirectBuffer |
-		                                                vk::BufferUsageFlagBits::eTransferDst};
-		auto& cullTriangleDispatchRes       = pass.AddStorageOutput("CullTriangleDispatch", cullTriangleDispatchInfo);
-
-		pass.SetBuildRenderPass([&](Vulkan::CommandBuffer& cmd) {
-			auto& visibleMeshlets      = State.Graph.GetPhysicalBufferResource(visibleMeshletsRes);
-			auto& cullTriangleDispatch = State.Graph.GetPhysicalBufferResource(cullTriangleDispatchRes);
-
-			std::array<vk::DispatchIndirectCommand, MaxMeshletBatches> dispatch;
-			dispatch.fill(vk::DispatchIndirectCommand(0, 1, 1));
-			cmd.UpdateBuffer(cullTriangleDispatch, dispatch.size() * sizeof(dispatch[0]), dispatch.data());
-			cmd.BufferBarrier(cullTriangleDispatch,
-			                  vk::PipelineStageFlagBits2::eTransfer,
-			                  vk::AccessFlagBits2::eTransferWrite,
-			                  vk::PipelineStageFlagBits2::eComputeShader,
-			                  vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite);
-
-			struct PushConstant {
-				uint32_t BatchID;
-				uint32_t MeshletsPerBatch;
-			};
-			PushConstant pc = PushConstant{.BatchID = 0, .MeshletsPerBatch = MaxMeshletsPerBatch};
-
-			cmd.SetProgram(
-				ShaderManager::RegisterCompute("res://Shaders/CullMeshlets.comp.glsl")->RegisterVariant()->GetProgram());
-			cmd.SetUniformBuffer(0, 0, State.SceneBuffer.Get());
-			cmd.SetUniformBuffer(1, 0, State.ComputeUniforms.Get());
-			cmd.SetStorageBuffer(1, 1, cullTriangleDispatch);
-			cmd.SetStorageBuffer(1, 2, visibleMeshlets);
-			cmd.SetStorageBuffer(1, 3, State.MeshletBuffer.Get());
-			cmd.SetStorageBuffer(1, 4, State.TransformBuffer.Get());
-
-			uint32_t meshletCount = std::min<uint32_t>(State.RenderScene.Meshlets.size(), MaxMeshlets);
-			while (meshletCount > 0) {
-				if (pc.BatchID >= MaxMeshletBatches) { break; }
-
-				const auto dispatch = std::min(meshletCount, MaxMeshletsPerBatch);
-				cmd.PushConstants(pc);
-				cmd.Dispatch(dispatch, 1, 1);
-				pc.BatchID++;
-
-				const auto b = vk::MemoryBarrier2(vk::PipelineStageFlagBits2::eAllCommands,
-				                                  vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
-				                                  vk::PipelineStageFlagBits2::eAllCommands,
-				                                  vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite);
-				const vk::DependencyInfo superBarrier({}, b);
-				cmd.Barrier(superBarrier);
-
-				if (meshletCount > MaxMeshletsPerBatch) {
-					meshletCount -= MaxMeshletsPerBatch;
-				} else {
-					meshletCount = 0;
-				}
-			}
-		});
-	}
-
-	{
-		auto& pass = State.Graph.AddPass("Triangle Cull", RenderGraphQueueFlagBits::Compute);
-
-		auto& visibleMeshletsRes      = pass.AddStorageInput("VisibleMeshletIDs");
-		auto& cullTriangleDispatchRes = pass.AddIndirectInput("CullTriangleDispatch");
+		BufferInfo meshletBatchInfo = {.Size  = sizeof(uint32_t) * MaxMeshletBatches,
+		                               .Usage = vk::BufferUsageFlagBits::eStorageBuffer};
+		auto& meshletBatchRes       = pass.AddStorageOutput("MeshletBatches", meshletBatchInfo);
 
 		BufferInfo drawIndirectInfo = {.Size  = sizeof(vk::DrawIndexedIndirectCommand) * MaxMeshletBatches,
 		                               .Usage = vk::BufferUsageFlagBits::eStorageBuffer |
@@ -324,50 +264,97 @@ static void BakeRenderGraph() {
 		auto& meshletIndicesRes       = pass.AddStorageOutput("MeshletIndices", meshletIndicesInfo);
 
 		pass.SetBuildRenderPass([&](Vulkan::CommandBuffer& cmd) {
-			auto& visibleMeshlets      = State.Graph.GetPhysicalBufferResource(visibleMeshletsRes);
-			auto& cullTriangleDispatch = State.Graph.GetPhysicalBufferResource(cullTriangleDispatchRes);
-			auto& drawIndirect         = State.Graph.GetPhysicalBufferResource(drawIndirectRes);
-			auto& meshletIndices       = State.Graph.GetPhysicalBufferResource(meshletIndicesRes);
+			auto& visibleMeshlets = State.Graph.GetPhysicalBufferResource(visibleMeshletsRes);
+			auto& meshletBatches  = State.Graph.GetPhysicalBufferResource(meshletBatchRes);
+			auto& drawIndirect    = State.Graph.GetPhysicalBufferResource(drawIndirectRes);
+			auto& meshletIndices  = State.Graph.GetPhysicalBufferResource(meshletIndicesRes);
 
+			// =====
+			// Initialize our indirect command buffers
+			// =====
 			std::array<vk::DrawIndexedIndirectCommand, MaxMeshletBatches> indirect;
 			indirect.fill(vk::DrawIndexedIndirectCommand(0, 1, 0, 0, 0));
 			for (int i = 0; i < MaxMeshletBatches; ++i) { indirect[i].firstIndex = i * MaxIndicesPerBatch; }
-			cmd.UpdateBuffer(drawIndirect, sizeof(indirect[0]) * indirect.size(), indirect.data());
-			cmd.BufferBarrier(drawIndirect,
-			                  vk::PipelineStageFlagBits2::eTransfer,
-			                  vk::AccessFlagBits2::eTransferWrite,
-			                  vk::PipelineStageFlagBits2::eComputeShader,
-			                  vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite);
 
-			cmd.SetProgram(
-				ShaderManager::RegisterCompute("res://Shaders/CullTriangles.comp.glsl")->RegisterVariant()->GetProgram());
+			cmd.FillBuffer(meshletBatches, 0);
+			cmd.UpdateBuffer(drawIndirect, sizeof(indirect[0]) * indirect.size(), indirect.data());
+
+			const vk::BufferMemoryBarrier2 updateBarriers[] = {
+				vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eTransfer,
+			                           vk::AccessFlagBits2::eTransferWrite,
+			                           vk::PipelineStageFlagBits2::eComputeShader,
+			                           vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
+			                           vk::QueueFamilyIgnored,
+			                           vk::QueueFamilyIgnored,
+			                           meshletBatches.GetBuffer(),
+			                           0,
+			                           vk::WholeSize),
+				vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eTransfer,
+			                           vk::AccessFlagBits2::eTransferWrite,
+			                           vk::PipelineStageFlagBits2::eComputeShader,
+			                           vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
+			                           vk::QueueFamilyIgnored,
+			                           vk::QueueFamilyIgnored,
+			                           drawIndirect.GetBuffer(),
+			                           0,
+			                           vk::WholeSize)};
+			const vk::DependencyInfo updateBarrier({}, nullptr, updateBarriers, nullptr);
+			cmd.Barrier(updateBarrier);
+
+			// Read-Only
 			cmd.SetUniformBuffer(0, 0, State.SceneBuffer.Get());
 			cmd.SetUniformBuffer(1, 0, State.ComputeUniforms.Get());
-			cmd.SetStorageBuffer(1, 1, visibleMeshlets);
-			cmd.SetStorageBuffer(1, 2, State.MeshletBuffer.Get());
-			cmd.SetStorageBuffer(1, 3, drawIndirect);
-			cmd.SetStorageBuffer(1, 4, meshletIndices);
+			cmd.SetStorageBuffer(1, 1, State.MeshletBuffer.Get());
+			cmd.SetStorageBuffer(1, 2, State.Scene.GetPositionBuffer());
+			cmd.SetStorageBuffer(1, 3, State.Scene.GetVertexBuffer());
+			cmd.SetStorageBuffer(1, 4, State.Scene.GetIndexBuffer());
+			cmd.SetStorageBuffer(1, 5, State.Scene.GetTriangleBuffer());
+			cmd.SetStorageBuffer(1, 6, State.TransformBuffer.Get());
 
-			struct PushConstant {
-				uint32_t BatchID;
-				uint32_t MeshletsPerBatch;
-				uint32_t IndicesPerBatch;
-			};
-			PushConstant pc =
-				PushConstant{.BatchID = 0, .MeshletsPerBatch = MaxMeshletsPerBatch, .IndicesPerBatch = MaxIndicesPerBatch};
+			// Write-Only
+			cmd.SetStorageBuffer(1, 7, visibleMeshlets);
+			cmd.SetStorageBuffer(1, 8, meshletBatches);
+			cmd.SetStorageBuffer(1, 9, drawIndirect);
+			cmd.SetStorageBuffer(1, 10, meshletIndices);
 
-			for (int i = 0; i < MaxMeshletBatches; ++i) {
-				pc.BatchID = i;
-				cmd.PushConstants(pc);
-				cmd.DispatchIndirect(cullTriangleDispatch, sizeof(vk::DispatchIndirectCommand) * pc.BatchID);
+			// =====
+			// Cull entire meshlets
+			// =====
+			cmd.SetProgram(
+				ShaderManager::RegisterCompute("res://Shaders/CullMeshlets.comp.glsl")->RegisterVariant()->GetProgram());
+			cmd.Dispatch(MaxMeshletsPerBatch, MaxMeshletBatches, 1);
 
-				const auto b = vk::MemoryBarrier2(vk::PipelineStageFlagBits2::eAllCommands,
-				                                  vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
-				                                  vk::PipelineStageFlagBits2::eAllCommands,
-				                                  vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite);
-				const vk::DependencyInfo superBarrier({}, b);
-				cmd.Barrier(superBarrier);
-			}
+			// ====
+			// Barrier storage buffers
+			// ====
+			const vk::BufferMemoryBarrier2 updateBarriers2[] = {
+				vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eComputeShader,
+			                           vk::AccessFlagBits2::eShaderStorageWrite,
+			                           vk::PipelineStageFlagBits2::eComputeShader,
+			                           vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
+			                           vk::QueueFamilyIgnored,
+			                           vk::QueueFamilyIgnored,
+			                           visibleMeshlets.GetBuffer(),
+			                           0,
+			                           vk::WholeSize),
+				vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eComputeShader,
+			                           vk::AccessFlagBits2::eShaderStorageWrite,
+			                           vk::PipelineStageFlagBits2::eComputeShader,
+			                           vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
+			                           vk::QueueFamilyIgnored,
+			                           vk::QueueFamilyIgnored,
+			                           meshletBatches.GetBuffer(),
+			                           0,
+			                           vk::WholeSize)};
+			const vk::DependencyInfo updateBarrier2({}, nullptr, updateBarriers2, nullptr);
+			cmd.Barrier(updateBarrier);
+
+			// =====
+			// Cull individual triangles
+			// =====
+			cmd.SetProgram(
+				ShaderManager::RegisterCompute("res://Shaders/CullTriangles.comp.glsl")->RegisterVariant()->GetProgram());
+			cmd.Dispatch(MaxMeshletsPerBatch, MaxMeshletBatches, 1);
 		});
 	}
 
@@ -480,7 +467,8 @@ void Renderer::Render() {
 	State.Camera.SetViewport(swapchainExtent.width, swapchainExtent.height);
 
 	if (State.CameraActive) {
-		const float speed  = 3.0f * deltaT;
+		float speed = 3.0f * deltaT;
+		if (Input::GetKey(Key::ShiftLeft) == InputAction::Press) { speed *= 5.0f; }
 		glm::vec3 movement = glm::vec3(0);
 		if (Input::GetKey(Key::W) == InputAction::Press) { movement += glm::vec3(0, 0, speed); }
 		if (Input::GetKey(Key::S) == InputAction::Press) { movement -= glm::vec3(0, 0, speed); }
@@ -529,7 +517,8 @@ void Renderer::Render() {
 		debugLinesBuffer.WriteData(State.DebugLines.data(), sizeof(DebugLine) * State.DebugLines.size());
 	}
 
-	ComputeUniforms compute{.MeshletCount = uint32_t(State.RenderScene.Meshlets.size())};
+	ComputeUniforms compute{.MeshletCount    = uint32_t(State.RenderScene.Meshlets.size()),
+	                        .IndicesPerBatch = MaxIndicesPerBatch};
 	State.ComputeUniforms.Get(sizeof(compute)).WriteData(&compute, sizeof(compute));
 
 	TaskComposer composer;
