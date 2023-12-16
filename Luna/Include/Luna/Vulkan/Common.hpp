@@ -60,6 +60,9 @@ class ImmutableSampler;
 class PipelineLayout;
 class Program;
 struct ProgramResourceLayout;
+class QueryPool;
+class QueryResult;
+struct QueryResultDeleter;
 class RenderPass;
 struct RenderPassInfo;
 class Sampler;
@@ -69,6 +72,7 @@ class Semaphore;
 struct SemaphoreDeleter;
 class Shader;
 struct ShaderResourceLayout;
+class TimestampInterval;
 struct TransientAttachmentNode;
 
 /* ===============================
@@ -81,6 +85,7 @@ using DeviceHandle        = IntrusivePtr<Device>;
 using FenceHandle         = IntrusivePtr<Fence>;
 using ImageHandle         = IntrusivePtr<Image>;
 using ImageViewHandle     = IntrusivePtr<ImageView>;
+using QueryResultHandle   = IntrusivePtr<QueryResult>;
 using SamplerHandle       = IntrusivePtr<Sampler>;
 using SemaphoreHandle     = IntrusivePtr<Semaphore>;
 
@@ -144,10 +149,17 @@ struct Pipeline {
 	CommandBufferDirtyFlags DynamicMask;
 };
 
+struct TimestampReport {
+	double TimePerAccumulation          = 0.0;
+	double TimePerFrameContext          = 0.0;
+	double AccumulationsPerFrameContext = 0.0;
+};
+
 struct QueueInfo {
 	std::array<uint32_t, QueueTypeCount> Families;
 	std::array<uint32_t, QueueTypeCount> Indices;
 	std::array<vk::Queue, QueueTypeCount> Queues;
+	uint32_t TimestampValidBits = 0;
 
 	QueueInfo() {
 		std::fill(Families.begin(), Families.end(), VK_QUEUE_FAMILY_IGNORED);

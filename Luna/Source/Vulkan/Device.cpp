@@ -24,6 +24,16 @@ namespace Vulkan {
 
 constexpr static const QueueType QueueFlushOrder[] = {QueueType::Transfer, QueueType::Graphics, QueueType::Compute};
 
+static int64_t ConvertToSignedDelta(uint64_t startTicks, uint64_t endTicks, uint32_t validBits) {
+	uint32_t shamt = 64 - validBits;
+	startTicks <<= shamt;
+	endTicks <<= shamt;
+	auto ticksDelta = int64_t(endTicks - startTicks);
+	ticksDelta >>= shamt;
+
+	return ticksDelta;
+}
+
 Device::Device(Context& context)
 		: _extensions(context._extensions),
 			_instance(context._instance),
@@ -314,6 +324,25 @@ const ImageView& Device::GetSwapchainView(uint32_t index) const {
 	return _swapchainImages[_swapchainIndex]->GetView();
 }
 
+TimestampReport Device::GetTimestampReport(const std::string& name) {
+	Hasher h(name);
+	const auto hash = h.Get();
+
+	const auto* ts = _timestamps.Find(hash);
+	if (ts) {
+		return TimestampReport{.TimePerAccumulation          = ts->GetTimePerAccumulation(),
+		                       .TimePerFrameContext          = ts->GetTotalTime(),
+		                       .AccumulationsPerFrameContext = double(ts->GetTotalAccumulations())};
+	}
+
+	return {};
+}
+
+void Device::RegisterTimeInterval(QueryResultHandle start, QueryResultHandle end, const std::string& name) {
+	DeviceLock();
+	RegisterTimeIntervalNoLock(std::move(start), std::move(end), name);
+}
+
 DescriptorSetAllocator* Device::RequestDescriptorSetAllocator(const DescriptorSetLayout& layout,
                                                               const vk::ShaderStageFlags* stagesForBindings) {
 	Hasher h;
@@ -453,6 +482,11 @@ ImageHandle Device::RequestTransientAttachment(const vk::Extent2D& extent,
 	node->Image->GetView().SetInternalSync();
 
 	return node->Image;
+}
+
+QueryResultHandle Device::WriteTimestamp(vk::CommandBuffer cmd, vk::PipelineStageFlags2 stages) {
+	DeviceLock();
+	return WriteTimestampNoLock(cmd, stages);
 }
 
 void Device::SetObjectName(vk::ObjectType type, uint64_t handle, const std::string& name) {
@@ -685,6 +719,20 @@ void Device::FreeSemaphore(vk::Semaphore semaphore) {
 	_availableSemaphores.push_back(semaphore);
 }
 
+TimestampInterval* Device::GetTimestampTag(const std::string& name) {
+	Hasher h(name);
+	const auto hash = h.Get();
+
+	return _timestamps.EmplaceYield(hash, name);
+}
+
+void Device::RegisterTimeIntervalNoLock(QueryResultHandle start, QueryResultHandle end, const std::string& name) {
+	if (start && end) {
+		auto* timestampTag = GetTimestampTag(name);
+		Frame().TimestampIntervals.emplace_back(start, end, timestampTag);
+	}
+}
+
 void Device::RecycleSemaphore(vk::Semaphore semaphore) {
 	DeviceLock();
 	RecycleSemaphoreNoLock(semaphore);
@@ -792,6 +840,10 @@ void Device::ResetFenceNoLock(vk::Fence fence, bool observedWait) {
 	} else {
 		Frame().FencesToRecycle.push_back(fence);
 	}
+}
+
+QueryResultHandle Device::WriteTimestampNoLock(vk::CommandBuffer cmd, vk::PipelineStageFlags2 stages) {
+	return Frame().QueryPool.WriteTimestamp(cmd, stages);
 }
 
 /* =============================================
@@ -1106,6 +1158,12 @@ void Device::CreateFrameContexts(uint32_t count) {
 	for (uint32_t i = 0; i < count; ++i) { _frameContexts.emplace_back(new FrameContext(*this, i)); }
 }
 
+double Device::ConvertDeviceTimestampDelta(uint64_t startTicks, uint64_t endTicks) const {
+	int64_t ticksDelta = ConvertToSignedDelta(startTicks, endTicks, _queueInfo.TimestampValidBits);
+
+	return double(int64_t(ticksDelta)) * _deviceInfo.Properties.Core.limits.timestampPeriod * 1e-9;
+}
+
 /** Return the current frame context. */
 Device::FrameContext& Device::Frame() {
 	return *_frameContexts[_currentFrameContext];
@@ -1164,7 +1222,8 @@ bool Device::IsFormatSupported(vk::Format format, vk::FormatFeatureFlags feature
 /* ==================================
 ** ===== FrameContext Functions =====
 *  ================================== */
-Device::FrameContext::FrameContext(Device& parent, uint32_t frameIndex) : Parent(parent), FrameIndex(frameIndex) {
+Device::FrameContext::FrameContext(Device& parent, uint32_t frameIndex)
+		: Parent(parent), FrameIndex(frameIndex), QueryPool(Parent) {
 	const auto threadCount = Threading::GetThreadCount() + 1;
 	for (int type = 0; type < QueueTypeCount; ++type) {
 		TimelineValues[type] = Parent._queueData[type].TimelineValue;
@@ -1213,7 +1272,7 @@ void Device::FrameContext::Begin() {
 			const vk::SemaphoreWaitInfo waitInfo({}, semaphoreCount, semaphores.data(), timelineValues.data());
 			const auto waitResult = device.waitSemaphores(waitInfo, std::numeric_limits<uint64_t>::max());
 			if (waitResult != vk::Result::eSuccess) {
-				Log::Error("Vulakn", "Failed to wait on semaphores: {}", vk::to_string(waitResult));
+				Log::Error("Vulkan", "Failed to wait on semaphores: {}", vk::to_string(waitResult));
 			}
 		}
 	}
@@ -1234,6 +1293,7 @@ void Device::FrameContext::Begin() {
 	for (auto& queuePools : CommandPools) {
 		for (auto& pool : queuePools) { pool.Begin(); }
 	}
+	QueryPool.Begin();
 
 	// Clean up all deferred object deletions.
 	for (auto buffer : BuffersToDestroy) { device.destroyBuffer(buffer); }
@@ -1260,6 +1320,20 @@ void Device::FrameContext::Begin() {
 	AllocationsToUnmap.clear();
 
 	Log::Assert(SemaphoresToConsume.empty(), "Vulkan", "Not all semaphores were consumed");
+
+	for (auto& ts : TimestampIntervals) {
+		if (ts.Start->IsSignalled() && ts.End->IsSignalled()) {
+			const auto startTs = ts.Start->GetTimestampTicks();
+			const auto endTs   = ts.End->GetTimestampTicks();
+			ts.TimestampTag->Reset();
+			if (ts.Start->IsDeviceTimebase()) {
+				ts.TimestampTag->AccumulateTime(Parent.ConvertDeviceTimestampDelta(startTs, endTs));
+			} else {
+				ts.TimestampTag->AccumulateTime(1e-9 * double(endTs - startTs));
+			}
+		}
+	}
+	TimestampIntervals.clear();
 }
 
 void Device::FrameContext::Trim() {}

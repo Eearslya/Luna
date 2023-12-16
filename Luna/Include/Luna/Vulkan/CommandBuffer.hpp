@@ -151,6 +151,7 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
 	void Begin();
 	void End();
 	void EndThread();
+	QueryResultHandle WriteTimestamp(vk::PipelineStageFlags2 stages);
 
 	// Pipeline barriers
 	void Barrier(const vk::DependencyInfo& dependency);

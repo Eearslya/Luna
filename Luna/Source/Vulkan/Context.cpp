@@ -363,6 +363,8 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 		_queueInfo.Index(QueueType::Transfer)  = _queueInfo.Index(QueueType::Compute);
 	}
 
+	_queueInfo.TimestampValidBits = _deviceInfo.QueueFamilies[_queueInfo.Family(QueueType::Graphics)].timestampValidBits;
+
 	Log::Trace("Vulkan::Context", "Vulkan device queues:");
 	for (size_t i = 0; i < QueueTypeCount; ++i) {
 		Log::Trace("Vulkan::Context", "  {}: Queue {}.{}", QueueType(i), _queueInfo.Families[i], _queueInfo.Indices[i]);

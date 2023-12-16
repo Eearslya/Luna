@@ -1722,17 +1722,15 @@ void RenderGraph::EnqueuePhysicalPassGPU(Vulkan::Device& device,
 }
 
 void RenderGraph::RecordComputeCommands(const PhysicalPass& physicalPass, PassSubmissionState& state) {
-	auto& cmd = *state.Cmd;
+	auto& cmd  = *state.Cmd;
+	auto& pass = *_passes[physicalPass.Passes.front()];
 
-	auto& pass      = *_passes[physicalPass.Passes.front()];
-	auto& profiling = _profiling[physicalPass.Passes.front()];
-	cmd.GetCommandBuffer().writeTimestamp(vk::PipelineStageFlagBits::eComputeShader,
-	                                      _queryPools[Renderer::GetDevice().GetFrameIndex()],
-	                                      profiling.StartTimestamp);
+	Vulkan::QueryResultHandle start, end;
+	start = cmd.WriteTimestamp(vk::PipelineStageFlagBits2::eComputeShader);
 	pass.BuildRenderPass(cmd, 0);
-	cmd.GetCommandBuffer().writeTimestamp(vk::PipelineStageFlagBits::eComputeShader,
-	                                      _queryPools[Renderer::GetDevice().GetFrameIndex()],
-	                                      profiling.EndTimestamp);
+	end = cmd.WriteTimestamp(vk::PipelineStageFlagBits2::eComputeShader);
+
+	Renderer::GetDevice().RegisterTimeInterval(std::move(start), std::move(end), pass.GetName());
 }
 
 void RenderGraph::RecordGraphicsCommands(const PhysicalPass& physicalPass, PassSubmissionState& state) {

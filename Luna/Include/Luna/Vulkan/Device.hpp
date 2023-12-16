@@ -3,6 +3,7 @@
 #include <Luna/Utility/SpinLock.hpp>
 #include <Luna/Utility/TemporaryHashMap.hpp>
 #include <Luna/Vulkan/Common.hpp>
+#include <Luna/Vulkan/QueryPool.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
 
 namespace Luna {
@@ -24,6 +25,9 @@ class Device : public VulkanObject<Device> {
 	friend class PipelineLayout;
 	friend class Program;
 	friend class RenderPass;
+	friend class QueryPool;
+	friend class QueryResult;
+	friend struct QueryResultDeleter;
 	friend class Sampler;
 	friend struct SamplerDeleter;
 	friend class Semaphore;
@@ -75,6 +79,8 @@ class Device : public VulkanObject<Device> {
 	[[nodiscard]] const ImageView& GetSwapchainView() const;
 	[[nodiscard]] ImageView& GetSwapchainView(uint32_t index);
 	[[nodiscard]] const ImageView& GetSwapchainView(uint32_t index) const;
+	[[nodiscard]] TimestampReport GetTimestampReport(const std::string& name);
+	void RegisterTimeInterval(QueryResultHandle start, QueryResultHandle end, const std::string& name);
 	[[nodiscard]] DescriptorSetAllocator* RequestDescriptorSetAllocator(const DescriptorSetLayout& layout,
 	                                                                    const vk::ShaderStageFlags* stagesForBindings);
 	[[nodiscard]] const ImmutableSampler* RequestImmutableSampler(const SamplerCreateInfo& samplerCI);
@@ -99,6 +105,7 @@ class Device : public VulkanObject<Device> {
 	                                                     uint32_t index                  = 0,
 	                                                     vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1,
 	                                                     uint32_t arrayLayers            = 1);
+	[[nodiscard]] QueryResultHandle WriteTimestamp(vk::CommandBuffer cmd, vk::PipelineStageFlags2 stages);
 
 	/** Set the debug name for the given object. */
 	void SetObjectName(vk::ObjectType type, uint64_t handle, const std::string& name);
@@ -159,6 +166,12 @@ class Device : public VulkanObject<Device> {
 		FrameContext& operator=(const FrameContext&) = delete;
 		~FrameContext() noexcept;
 
+		struct Timestamp {
+			QueryResultHandle Start;
+			QueryResultHandle End;
+			TimestampInterval* TimestampTag;
+		};
+
 		void Begin();
 		void Trim();
 
@@ -166,8 +179,10 @@ class Device : public VulkanObject<Device> {
 		const uint32_t FrameIndex;
 		std::array<std::vector<CommandPool>, QueueTypeCount> CommandPools;
 
+		QueryPool QueryPool;
 		std::array<std::vector<CommandBufferHandle>, QueueTypeCount> Submissions;
 		std::array<uint64_t, QueueTypeCount> TimelineValues;
+		std::vector<Timestamp> TimestampIntervals;
 
 		std::vector<VmaAllocation> AllocationsToFree;
 		std::vector<VmaAllocation> AllocationsToUnmap;
@@ -222,6 +237,8 @@ class Device : public VulkanObject<Device> {
 	void FreeAllocationNoLock(VmaAllocation allocation, bool mapped);
 	void FreeFence(vk::Fence fence);
 	void FreeSemaphore(vk::Semaphore semaphore);
+	TimestampInterval* GetTimestampTag(const std::string& name);
+	void RegisterTimeIntervalNoLock(QueryResultHandle start, QueryResultHandle end, const std::string& name);
 	void RecycleSemaphore(vk::Semaphore semaphore);
 	void RecycleSemaphoreNoLock(vk::Semaphore semaphore);
 	const Framebuffer& RequestFramebuffer(const RenderPassInfo& rpInfo);
@@ -229,6 +246,7 @@ class Device : public VulkanObject<Device> {
 	const RenderPass& RequestRenderPass(const RenderPassInfo& rpInfo, bool compatible = false);
 	void ResetFence(vk::Fence fence, bool observedWait);
 	void ResetFenceNoLock(vk::Fence fence, bool observedWait);
+	[[nodiscard]] QueryResultHandle WriteTimestampNoLock(vk::CommandBuffer cmd, vk::PipelineStageFlags2 stages);
 
 	/* =============================================
 	** ===== Private Synchronization Functions =====
@@ -254,6 +272,7 @@ class Device : public VulkanObject<Device> {
 	*  ==================================== */
 	uint64_t AllocateCookie();
 	void CreateFrameContexts(uint32_t count);
+	double ConvertDeviceTimestampDelta(uint64_t startTicks, uint64_t endTicks) const;
 	FrameContext& Frame();
 
 	const Extensions& _extensions;
@@ -285,6 +304,7 @@ class Device : public VulkanObject<Device> {
 	VulkanObjectPool<Fence> _fencePool;
 	VulkanObjectPool<Image> _imagePool;
 	VulkanObjectPool<ImageView> _imageViewPool;
+	VulkanObjectPool<QueryResult> _queryResultPool;
 	VulkanObjectPool<Sampler> _samplerPool;
 	VulkanObjectPool<Semaphore> _semaphorePool;
 
@@ -305,6 +325,7 @@ class Device : public VulkanObject<Device> {
 
 	TemporaryHashMap<FramebufferNode, 8, false> _framebuffers;
 	std::array<const ImmutableSampler*, StockSamplerCount> _stockSamplers;
+	IntrusiveHashMap<TimestampInterval> _timestamps;
 	TemporaryHashMap<TransientAttachmentNode, 8, false> _transientAttachments;
 };
 }  // namespace Vulkan

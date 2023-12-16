@@ -162,6 +162,11 @@ static void RendererUI() {
 		            stats->VisibleTriangles,
 		            State.RenderScene.TriangleCount,
 		            culledTrianglesPct);
+
+		ImGui::Spacing();
+
+		auto meshletCullReport = State.Device->GetTimestampReport("Meshlet Cull");
+		ImGui::Text("Meshlet Cull: %.2fms", meshletCullReport.TimePerFrameContext * 1'000.0);
 	}
 	ImGui::End();
 
@@ -171,10 +176,10 @@ static void RendererUI() {
 		                        glm::vec3(1, -1, 0),
 		                        glm::vec3(-1, 1, 0),
 		                        glm::vec3(1, 1, 0),
-		                        glm::vec3(-1, -1, 1),
-		                        glm::vec3(1, -1, 1),
-		                        glm::vec3(-1, 1, 1),
-		                        glm::vec3(1, 1, 1)};
+		                        glm::vec3(-1, -1, 1.0f - 1e-5),
+		                        glm::vec3(1, -1, 1.0f - 1e-5),
+		                        glm::vec3(-1, 1, 1.0f - 1e-5),
+		                        glm::vec3(1, 1, 1.0f - 1e-5)};
 		for (auto& corner : corners) {
 			glm::vec4 c = invVP * glm::vec4(corner, 1.0f);
 			corner      = c / c.w;

@@ -127,6 +127,10 @@ void CommandBuffer::EndThread() {
 	_commandBuffer.end();
 }
 
+QueryResultHandle CommandBuffer::WriteTimestamp(vk::PipelineStageFlags2 stages) {
+	return _device.WriteTimestamp(_commandBuffer, stages);
+}
+
 void CommandBuffer::Barrier(const vk::DependencyInfo& dependency) {
 	_commandBuffer.pipelineBarrier2(dependency);
 }
