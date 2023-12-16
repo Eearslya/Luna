@@ -22,4 +22,9 @@ struct SceneData {
   mat4 ViewProjection;
   vec4 CameraPosition;
   vec4 FrustumPlanes[6];
+  vec2 ViewportExtent;
 };
+
+bool RectIntersectRect(vec2 bottomLeft0, vec2 topRight0, vec2 bottomLeft1, vec2 topRight1) {
+  return !(any(lessThan(topRight0, bottomLeft1)) || any(greaterThan(bottomLeft0, topRight1)));
+}

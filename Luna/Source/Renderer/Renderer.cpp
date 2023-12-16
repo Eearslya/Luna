@@ -57,6 +57,7 @@ struct SceneData {
 	glm::mat4 ViewProjection;
 	glm::vec4 CameraPosition;
 	glm::vec4 FrustumPlanes[6];
+	glm::vec2 ViewportExtent;
 };
 
 struct ComputeUniforms {
@@ -502,6 +503,7 @@ void Renderer::Render() {
 	State.SceneData.View           = State.Camera.GetView();
 	State.SceneData.ViewProjection = State.SceneData.Projection * State.SceneData.View;
 	State.SceneData.CameraPosition = glm::vec4(State.Camera.GetPosition(), 1.0);
+	State.SceneData.ViewportExtent = glm::vec2(swapchainExtent.width, swapchainExtent.height);
 
 	auto& statsBuffer = State.VisBufferStatsBuffer.Get(sizeof(VisbufferStats));
 

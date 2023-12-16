@@ -84,6 +84,34 @@ bool CullMeshletFrustum(uint meshletId) {
   return true;
 }
 
+bool CullSmallTriangle(vec2 vertices[3]) {
+  const uint SubpixelBits = 8;
+  const uint SubpixelMask = 0xff;
+  const uint SubpixelSamples = 1 << SubpixelBits;
+
+  ivec2 minBB = ivec2(1 << 30, 1 << 30);
+  ivec2 maxBB = ivec2(-(1 << 30), -(1 << 30));
+
+  for (uint i = 0; i < 3; ++i) {
+    vec2 screenSpacePositionFP = vertices[i].xy * Scene.ViewportExtent;
+    if (screenSpacePositionFP.x < -(1 << 23) || screenSpacePositionFP.x > (1 << 23) || screenSpacePositionFP.y < -(1 << 23) || screenSpacePositionFP.y > (1 << 23)) { return true; }
+
+    ivec2 screenSpacePosition = ivec2(screenSpacePositionFP * SubpixelSamples);
+    minBB = min(screenSpacePosition, minBB);
+    maxBB = max(screenSpacePosition, maxBB);
+  }
+
+  return !(
+    (
+      ((minBB.x & SubpixelMask) > SubpixelSamples / 2)
+   && ((maxBB.x - ((minBB.x & ~SubpixelMask) + SubpixelSamples / 2)) < (SubpixelSamples - 1)))
+   || (
+      ((minBB.y & SubpixelMask) > SubpixelSamples / 2)
+   && ((maxBB.y - ((minBB.y & ~SubpixelMask) + SubpixelSamples / 2)) < (SubpixelSamples - 1))));
+
+  return true;
+}
+
 bool CullTriangle(Meshlet meshlet, uint localId) {
   uint primitiveId = localId * 3;
 
@@ -126,6 +154,13 @@ bool CullTriangle(Meshlet meshlet, uint localId) {
 
   bool anyBehind = posNdc0.z < 0 || posNdc1.z < 0 || posNdc2.z < 0;
   if (anyBehind) { return true; }
+
+  if (!RectIntersectRect(bboxNdcMin, bboxNdcMax, vec2(-1.0), vec2(1.0))) { return false; }
+
+  vec2 posUv0 = posNdc0.xy * 0.5 + 0.5;
+  vec2 posUv1 = posNdc1.xy * 0.5 + 0.5;
+  vec2 posUv2 = posNdc2.xy * 0.5 + 0.5;
+  if (!CullSmallTriangle(vec2[3](posUv0, posUv1, posUv2))) { return false; }
 
   return true;
 }
