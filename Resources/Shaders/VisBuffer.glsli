@@ -12,7 +12,8 @@ struct Meshlet {
   uint IndexCount;
   uint TriangleCount;
   uint InstanceID;
-  vec4 BoundingSphere;
+  vec3 AABBMin;
+  vec3 AABBMax;
 };
 
 struct VisBufferStats {

@@ -88,6 +88,7 @@ class Threading final {
 	static void AddDependency(TaskGroup& dependee, TaskGroup& dependency);
 	static TaskGroupHandle CreateTaskGroup();
 	static std::uint32_t GetThreadCount();
+	static void Sleep(uint32_t milliseconds);
 	static void Submit(TaskGroupHandle& group);
 	static void SubmitTasks(const std::vector<Task*>& tasks);
 	static void WaitIdle();

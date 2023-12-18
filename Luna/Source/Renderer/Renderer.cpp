@@ -13,11 +13,13 @@
 #include <Luna/Renderer/ShaderManager.hpp>
 #include <Luna/Renderer/Swapchain.hpp>
 #include <Luna/Renderer/UIManager.hpp>
+#include <Luna/Utility/Math.hpp>
 #include <Luna/Utility/Time.hpp>
 #include <Luna/Vulkan/Buffer.hpp>
 #include <Luna/Vulkan/CommandBuffer.hpp>
 #include <Luna/Vulkan/Context.hpp>
 #include <Luna/Vulkan/Device.hpp>
+#include <Luna/Vulkan/Image.hpp>
 #include <Luna/Vulkan/RenderPass.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
@@ -76,6 +78,28 @@ struct DebugLine {
 	glm::vec3 Color;
 };
 
+struct RenderResources {
+	~RenderResources() noexcept {
+		DrawIndirect.Reset();
+		MeshletIndices.Reset();
+		VisBufferStats.Reset();
+		DepthBuffer.Reset();
+		HiZBuffer.Reset();
+		HiZBufferMips.clear();
+	}
+
+	Vulkan::BufferHandle DrawIndirect;
+	Vulkan::BufferHandle MeshletIndices;
+	Vulkan::BufferHandle VisBufferStats;
+	Vulkan::ImageHandle DepthBuffer;
+	Vulkan::ImageHandle HiZBuffer;
+	std::vector<Vulkan::ImageViewHandle> HiZBufferMips;
+
+	ShaderProgramVariant* CullMeshlets;
+	ShaderProgramVariant* HzbCopy;
+	ShaderProgramVariant* HzbReduce;
+};
+
 static struct RendererState {
 	Vulkan::ContextHandle Context;
 	Vulkan::DeviceHandle Device;
@@ -97,6 +121,7 @@ static struct RendererState {
 	PerFrameBuffer TransformBuffer;
 	PerFrameBuffer DebugLinesBuffer;
 	PerFrameBuffer VisBufferStatsBuffer;
+	RenderResources Resources;
 
 	std::vector<DebugLine> DebugLines;
 	SceneData SceneData;
@@ -106,49 +131,18 @@ static struct RendererState {
 	bool ShowCullFrustum   = false;
 } State;
 
-static glm::vec2 WorldToPixel(const glm::mat4& viewProjection, const glm::vec3& worldPos, const glm::vec2& imageSize) {
-	glm::vec4 ndc = viewProjection * glm::vec4(worldPos, 1.0f);
-	ndc /= ndc.w;
-	glm::vec2 remap01 = glm::clamp((ndc + 1.0f) * 0.5f, 0.0f, 1.0f);
-	remap01.y         = 1.0f - remap01.y;
-
-	return glm::clamp(remap01 * imageSize, glm::vec2(0), imageSize);
-}
-
-static glm::vec3 UnprojectUV(const glm::mat4& invVP, float depth, glm::vec2 uv) {
-	const glm::vec4 ndc   = glm::vec4(uv * 2.0f - 1.0f, depth, 1.0f);
-	const glm::vec4 world = invVP * ndc;
-	return glm::vec3(world / world.w);
-}
-
-static void DrawLine(const glm::vec3& start,
-                     const glm::vec3& end,
-                     ImColor color = ImColor(255, 255, 255, 255),
-                     float width   = 1.0f) {
-	const auto& backbuffer     = State.Graph.GetTextureResource("Final");
-	const auto& backbufferDims = State.Graph.GetResourceDimensions(backbuffer);
-
-	const glm::vec2 offset(0, 0);
-	const glm::vec2 imageSize(backbufferDims.Width, backbufferDims.Height);
-
-	const auto startPixel = WorldToPixel(State.SceneData.ViewProjection, start, imageSize) + offset;
-	const auto endPixel   = WorldToPixel(State.SceneData.ViewProjection, end, imageSize) + offset;
-
-	auto* drawList = ImGui::GetBackgroundDrawList();
-	drawList->AddLine(ImVec2(startPixel.x, startPixel.y), ImVec2(endPixel.x, endPixel.y), color, width);
-}
-
 static void DrawDebugLine(const glm::vec3& start, const glm::vec3& end, const glm::vec3& color = glm::vec3(1)) {
 	State.DebugLines.emplace_back(start, end, color);
 }
 
 static void RendererUI() {
+	const auto& statsBuffer = State.VisBufferStatsBuffer.Get();
+	const auto* stats       = statsBuffer.Map<VisbufferStats>();
+
 	if (ImGui::Begin("Model")) {
 		ImGui::Checkbox("Freeze Culling Frustum", &State.FreezeCullFrustum);
 		ImGui::Checkbox("Show Culling Frustum", &State.ShowCullFrustum);
 
-		const auto& statsBuffer = State.VisBufferStatsBuffer.Get();
-		const auto* stats       = statsBuffer.Map<VisbufferStats>();
 		const double visibleMeshlets(stats->VisibleMeshlets);
 		const double totalMeshlets(State.RenderScene.Meshlets.size());
 		const double culledMeshletsPct = std::floor((1.0 - (visibleMeshlets / totalMeshlets)) * 100.0);
@@ -166,8 +160,12 @@ static void RendererUI() {
 
 		ImGui::Spacing();
 
-		auto meshletCullReport = State.Device->GetTimestampReport("Meshlet Cull");
+		auto meshletCullReport = State.Device->GetTimestampReport("Cull Meshlets");
 		ImGui::Text("Meshlet Cull: %.2fms", meshletCullReport.TimePerFrameContext * 1'000.0);
+		auto visbufferReport = State.Device->GetTimestampReport("VisBuffer");
+		ImGui::Text("VisBuffer: %.2fms", visbufferReport.TimePerFrameContext * 1'000.0);
+		auto hzbReport = State.Device->GetTimestampReport("Hi-Z Buffer");
+		ImGui::Text("Hi-Z: %.2fms", hzbReport.TimePerFrameContext * 1'000.0);
 	}
 	ImGui::End();
 
@@ -234,11 +232,34 @@ bool Renderer::Initialize() {
 		State.LastMousePosition = pos;
 	};
 
+	auto& res = State.Resources;
+
+	const Vulkan::BufferCreateInfo drawIndirect(Vulkan::BufferDomain::Device,
+	                                            MaxMeshletBatches * sizeof(vk::DrawIndexedIndirectCommand),
+	                                            vk::BufferUsageFlagBits::eIndirectBuffer |
+	                                              vk::BufferUsageFlagBits::eStorageBuffer |
+	                                              vk::BufferUsageFlagBits::eTransferDst);
+	res.DrawIndirect = State.Device->CreateBuffer(drawIndirect);
+
+	const Vulkan::BufferCreateInfo meshletIndices(
+		Vulkan::BufferDomain::Device,
+		MaxIndicesPerBatch * MaxMeshletBatches * sizeof(uint32_t),
+		vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eStorageBuffer);
+	res.MeshletIndices = State.Device->CreateBuffer(meshletIndices);
+
+	const Vulkan::BufferCreateInfo visBufferStats(Vulkan::BufferDomain::Device,
+	                                              sizeof(VisbufferStats),
+	                                              vk::BufferUsageFlagBits::eStorageBuffer |
+	                                                vk::BufferUsageFlagBits::eTransferDst |
+	                                                vk::BufferUsageFlagBits::eTransferSrc);
+	res.VisBufferStats = State.Device->CreateBuffer(visBufferStats);
+
 	return true;
 }
 
 void Renderer::Shutdown() {
 	State.Scene.Clear();
+	State.Resources.~RenderResources();
 	State.VisBufferStatsBuffer.Reset();
 	State.SceneBuffer.Reset();
 	State.DebugLinesBuffer.Reset();
@@ -268,159 +289,135 @@ static void BakeRenderGraph() {
 		.Format = swapchainFormat, .Width = swapchainExtent.width, .Height = swapchainExtent.height};
 	State.Graph.SetBackbufferDimensions(backbufferDimensions);
 
-	State.Program =
-		ShaderManager::RegisterGraphics("res://Shaders/StaticMesh.vert.glsl", "res://Shaders/StaticMesh.frag.glsl")
-			->RegisterVariant();
-
+	/*
 	{
-		auto& pass = State.Graph.AddPass("Meshlet Cull", RenderGraphQueueFlagBits::Compute);
+	  auto& pass = State.Graph.AddPass("Meshlet Cull", RenderGraphQueueFlagBits::Compute);
 
-		BufferInfo drawIndirectInfo = {.Size  = sizeof(vk::DrawIndexedIndirectCommand) * MaxMeshletBatches,
-		                               .Usage = vk::BufferUsageFlagBits::eStorageBuffer |
-		                                        vk::BufferUsageFlagBits::eIndirectBuffer |
-		                                        vk::BufferUsageFlagBits::eTransferDst};
-		auto& drawIndirectRes       = pass.AddStorageOutput("DrawIndirect", drawIndirectInfo);
+	  BufferInfo drawIndirectInfo = {.Size  = sizeof(vk::DrawIndexedIndirectCommand) * MaxMeshletBatches,
+	                                 .Usage = vk::BufferUsageFlagBits::eStorageBuffer |
+	                                          vk::BufferUsageFlagBits::eIndirectBuffer |
+	                                          vk::BufferUsageFlagBits::eTransferDst};
+	  auto& drawIndirectRes       = pass.AddStorageOutput("DrawIndirect", drawIndirectInfo);
 
-		BufferInfo meshletIndicesInfo = {.Size  = MaxIndicesPerBatch * MaxMeshletBatches * sizeof(uint32_t),
-		                                 .Usage = vk::BufferUsageFlagBits::eIndexBuffer};
-		auto& meshletIndicesRes       = pass.AddStorageOutput("MeshletIndices", meshletIndicesInfo);
+	  BufferInfo meshletIndicesInfo = {.Size  = MaxIndicesPerBatch * MaxMeshletBatches * sizeof(uint32_t),
+	                                   .Usage = vk::BufferUsageFlagBits::eIndexBuffer};
+	  auto& meshletIndicesRes       = pass.AddStorageOutput("MeshletIndices", meshletIndicesInfo);
 
-		BufferInfo statsInfo = {.Size  = sizeof(VisbufferStats),
-		                        .Usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc |
-		                                 vk::BufferUsageFlagBits::eTransferDst};
-		auto& statsRes       = pass.AddStorageOutput("VisBufferStats", statsInfo);
+	  BufferInfo statsInfo = {.Size  = sizeof(VisbufferStats),
+	                          .Usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc |
+	                                   vk::BufferUsageFlagBits::eTransferDst};
+	  auto& statsRes       = pass.AddStorageOutput("VisBufferStats", statsInfo);
 
-		pass.SetBuildRenderPass([&](Vulkan::CommandBuffer& cmd) {
-			auto& drawIndirect   = State.Graph.GetPhysicalBufferResource(drawIndirectRes);
-			auto& meshletIndices = State.Graph.GetPhysicalBufferResource(meshletIndicesRes);
-			auto& stats          = State.Graph.GetPhysicalBufferResource(statsRes);
+	  pass.SetBuildRenderPass([&](Vulkan::CommandBuffer& cmd) {
+	    auto& drawIndirect   = State.Graph.GetPhysicalBufferResource(drawIndirectRes);
+	    auto& meshletIndices = State.Graph.GetPhysicalBufferResource(meshletIndicesRes);
+	    auto& stats          = State.Graph.GetPhysicalBufferResource(statsRes);
 
-			// =====
-			// Initialize our indirect command buffers
-			// =====
-			std::array<vk::DrawIndexedIndirectCommand, MaxMeshletBatches> indirect;
-			indirect.fill(vk::DrawIndexedIndirectCommand(0, 1, 0, 0, 0));
-			for (int i = 0; i < MaxMeshletBatches; ++i) { indirect[i].firstIndex = i * MaxIndicesPerBatch; }
+	    // =====
+	    // Cull entire meshlets
+	    // =====
+	    cmd.SetProgram(
+	      ShaderManager::RegisterCompute("res://Shaders/CullMeshlets.comp.glsl")->RegisterVariant()->GetProgram());
+	    cmd.Dispatch(MaxMeshletsPerBatch, MaxMeshletBatches, 1);
 
-			cmd.FillBuffer(stats, 0);
-			cmd.UpdateBuffer(drawIndirect, sizeof(indirect[0]) * indirect.size(), indirect.data());
+	    // ====
+	    // Barrier storage buffers
+	    // ====
+	    const vk::BufferMemoryBarrier2 updateBarriers2[] = {
+	      vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eComputeShader,
+	                               vk::AccessFlagBits2::eShaderStorageWrite,
+	                               vk::PipelineStageFlagBits2::eTransfer,
+	                               vk::AccessFlagBits2::eTransferRead,
+	                               vk::QueueFamilyIgnored,
+	                               vk::QueueFamilyIgnored,
+	                               stats.GetBuffer(),
+	                               0,
+	                               vk::WholeSize)};
+	    const vk::DependencyInfo updateBarrier2({}, nullptr, updateBarriers2, nullptr);
+	    cmd.Barrier(updateBarrier);
 
-			const vk::BufferMemoryBarrier2 updateBarriers[] = {
-				vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eTransfer,
-			                           vk::AccessFlagBits2::eTransferWrite,
-			                           vk::PipelineStageFlagBits2::eComputeShader,
-			                           vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
-			                           vk::QueueFamilyIgnored,
-			                           vk::QueueFamilyIgnored,
-			                           stats.GetBuffer(),
-			                           0,
-			                           vk::WholeSize),
-				vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eTransfer,
-			                           vk::AccessFlagBits2::eTransferWrite,
-			                           vk::PipelineStageFlagBits2::eComputeShader,
-			                           vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
-			                           vk::QueueFamilyIgnored,
-			                           vk::QueueFamilyIgnored,
-			                           drawIndirect.GetBuffer(),
-			                           0,
-			                           vk::WholeSize)};
-			const vk::DependencyInfo updateBarrier({}, nullptr, updateBarriers, nullptr);
-			cmd.Barrier(updateBarrier);
-
-			// Read-Only
-			cmd.SetUniformBuffer(0, 0, State.SceneBuffer.Get());
-			cmd.SetUniformBuffer(1, 0, State.ComputeUniforms.Get());
-			cmd.SetStorageBuffer(1, 1, State.MeshletBuffer.Get());
-			cmd.SetStorageBuffer(1, 2, State.Scene.GetPositionBuffer());
-			cmd.SetStorageBuffer(1, 3, State.Scene.GetVertexBuffer());
-			cmd.SetStorageBuffer(1, 4, State.Scene.GetIndexBuffer());
-			cmd.SetStorageBuffer(1, 5, State.Scene.GetTriangleBuffer());
-			cmd.SetStorageBuffer(1, 6, State.TransformBuffer.Get());
-
-			// Write-Only
-			cmd.SetStorageBuffer(1, 7, drawIndirect);
-			cmd.SetStorageBuffer(1, 8, meshletIndices);
-			cmd.SetStorageBuffer(1, 9, stats);
-
-			// =====
-			// Cull entire meshlets
-			// =====
-			cmd.SetProgram(
-				ShaderManager::RegisterCompute("res://Shaders/CullMeshlets.comp.glsl")->RegisterVariant()->GetProgram());
-			cmd.Dispatch(MaxMeshletsPerBatch, MaxMeshletBatches, 1);
-
-			// ====
-			// Barrier storage buffers
-			// ====
-			const vk::BufferMemoryBarrier2 updateBarriers2[] = {
-				vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eComputeShader,
-			                           vk::AccessFlagBits2::eShaderStorageWrite,
-			                           vk::PipelineStageFlagBits2::eTransfer,
-			                           vk::AccessFlagBits2::eTransferRead,
-			                           vk::QueueFamilyIgnored,
-			                           vk::QueueFamilyIgnored,
-			                           stats.GetBuffer(),
-			                           0,
-			                           vk::WholeSize)};
-			const vk::DependencyInfo updateBarrier2({}, nullptr, updateBarriers2, nullptr);
-			cmd.Barrier(updateBarrier);
-
-			cmd.CopyBuffer(State.VisBufferStatsBuffer.Get(), stats);
-
-			// =====
-			// Cull individual triangles
-			// =====
-			/*
-			cmd.SetProgram(
-			  ShaderManager::RegisterCompute("res://Shaders/CullTriangles.comp.glsl")->RegisterVariant()->GetProgram());
-			cmd.Dispatch(MaxMeshletsPerBatch, MaxMeshletBatches, 1);
-			*/
-		});
+	    cmd.CopyBuffer(State.VisBufferStatsBuffer.Get(), stats);
+	  });
 	}
+	*/
 
-	AttachmentInfo main;
+	AttachmentInfo scene;
+	AttachmentInfo sceneDepth = scene.Copy().SetFormat(State.Device->GetDefaultDepthFormat());
+
+	/*
+	{
+	  auto& pass = State.Graph.AddPass("VisBuffer");
+
+	  pass.AddHistoryInput("HZB");
+	  pass.AddColorOutput("Scene", scene);
+	  pass.SetDepthStencilOutput("SceneDepth", sceneDepth);
+	  auto& drawIndirectRes   = pass.AddIndirectInput("DrawIndirect");
+	  auto& meshletIndicesRes = pass.AddIndexBufferInput("MeshletIndices");
+
+	  pass.SetGetClearColor([](uint32_t, vk::ClearColorValue* value) -> bool {
+	    if (value) { *value = vk::ClearColorValue(0.1f, 0.1f, 0.1f, 1.0f); }
+	    return true;
+	  });
+	  pass.SetGetClearDepthStencil([](vk::ClearDepthStencilValue* value) -> bool {
+	    if (value) { *value = vk::ClearDepthStencilValue(0.0f, 0); }
+	    return true;
+	  });
+	  pass.SetBuildRenderPass([&](Vulkan::CommandBuffer& cmd) {
+	    auto& drawIndirect   = State.Graph.GetPhysicalBufferResource(drawIndirectRes);
+	    auto& meshletIndices = State.Graph.GetPhysicalBufferResource(meshletIndicesRes);
+
+	    cmd.SetOpaqueState();
+	    cmd.SetProgram(State.Program->GetProgram());
+	    cmd.SetCullMode(vk::CullModeFlagBits::eBack);
+	    cmd.SetDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
+	    cmd.SetUniformBuffer(0, 0, State.SceneBuffer.Get());
+	    cmd.SetStorageBuffer(1, 1, State.MeshletBuffer.Get());
+	    cmd.SetStorageBuffer(1, 2, State.Scene.GetPositionBuffer());
+	    cmd.SetStorageBuffer(1, 3, State.Scene.GetVertexBuffer());
+	    cmd.SetStorageBuffer(1, 4, State.Scene.GetIndexBuffer());
+	    cmd.SetStorageBuffer(1, 5, State.Scene.GetTriangleBuffer());
+	    cmd.SetStorageBuffer(1, 6, State.TransformBuffer.Get());
+	    cmd.SetIndexBuffer(meshletIndices, 0, vk::IndexType::eUint32);
+	    cmd.DrawIndexedIndirect(drawIndirect, MaxMeshletBatches, 0);
+	  });
+	}
+	*/
 
 	{
-		auto& pass = State.Graph.AddPass("Main");
+		auto& pass = State.Graph.AddPass("Hi-Z Buffer", RenderGraphQueueFlagBits::Compute);
 
-		AttachmentInfo depth = main.Copy().SetFormat(State.Device->GetDefaultDepthFormat());
-		pass.AddColorOutput("Main", main);
-		pass.SetDepthStencilOutput("Depth", depth);
-		auto& drawIndirectRes   = pass.AddIndirectInput("DrawIndirect");
-		auto& meshletIndicesRes = pass.AddIndexBufferInput("MeshletIndices");
+		auto& sceneDepthRes       = pass.AddTextureInput("SceneDepth");
+		const auto& sceneDepthDim = State.Graph.GetResourceDimensions(sceneDepthRes);
 
-		pass.SetGetClearColor([](uint32_t, vk::ClearColorValue* value) -> bool {
-			if (value) { *value = vk::ClearColorValue(0.1f, 0.1f, 0.1f, 1.0f); }
-			return true;
-		});
-		pass.SetGetClearDepthStencil([](vk::ClearDepthStencilValue* value) -> bool {
-			if (value) { *value = vk::ClearDepthStencilValue(0.0f, 0); }
-			return true;
-		});
+		AttachmentInfo hzbInfo = AttachmentInfo().SetFormat(vk::Format::eR32Sfloat);
+		hzbInfo.SizeClass      = SizeClass::Absolute;
+		hzbInfo.Width          = float(PreviousPowerOfTwo(sceneDepthDim.Width));
+		hzbInfo.Height         = float(PreviousPowerOfTwo(sceneDepthDim.Height));
+		hzbInfo.MipLevels      = Vulkan::CalculateMipLevels(hzbInfo.Width, hzbInfo.Height, 1);
+		hzbInfo.Flags |= AttachmentInfoFlagBits::CreateMipViews;
+		auto& hzbRes = pass.AddStorageTextureOutput("HZB", hzbInfo);
+
 		pass.SetBuildRenderPass([&](Vulkan::CommandBuffer& cmd) {
-			auto& drawIndirect   = State.Graph.GetPhysicalBufferResource(drawIndirectRes);
-			auto& meshletIndices = State.Graph.GetPhysicalBufferResource(meshletIndicesRes);
+			const auto& hzbDim = State.Graph.GetResourceDimensions(hzbRes);
+			auto& sceneDepth   = State.Graph.GetPhysicalTextureResource(sceneDepthRes);
+			auto& hzb0         = State.Graph.GetPhysicalTextureResourceMip(hzbRes, 0);
+
+			auto hzbWidth  = hzbDim.Width;
+			auto hzbHeight = hzbDim.Height;
 
 			cmd.SetOpaqueState();
-			cmd.SetProgram(State.Program->GetProgram());
-			cmd.SetCullMode(vk::CullModeFlagBits::eBack);
-			cmd.SetDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
-			cmd.SetUniformBuffer(0, 0, State.SceneBuffer.Get());
-			cmd.SetStorageBuffer(1, 1, State.MeshletBuffer.Get());
-			cmd.SetStorageBuffer(1, 2, State.Scene.GetPositionBuffer());
-			cmd.SetStorageBuffer(1, 3, State.Scene.GetVertexBuffer());
-			cmd.SetStorageBuffer(1, 4, State.Scene.GetIndexBuffer());
-			cmd.SetStorageBuffer(1, 5, State.Scene.GetTriangleBuffer());
-			cmd.SetStorageBuffer(1, 6, State.TransformBuffer.Get());
-			cmd.SetIndexBuffer(meshletIndices, 0, vk::IndexType::eUint32);
-			cmd.DrawIndexedIndirect(drawIndirect, MaxMeshletBatches, 0);
+			cmd.SetProgram(
+				ShaderManager::RegisterCompute("res://Shaders/HzbCopy.comp.glsl")->RegisterVariant()->GetProgram());
+			cmd.SetTexture(0, 0, sceneDepth);
+			cmd.SetStorageTexture(0, 1, hzb0);
+			cmd.Dispatch((hzbWidth + 15) / 16, (hzbHeight + 15) / 16, 1);
 		});
 	}
 
 	{
 		auto& pass = State.Graph.AddPass("Debug Lines");
 
-		pass.AddColorOutput("Final", main, "Main");
+		pass.AddColorOutput("DebugLines", scene, "Scene");
 
 		pass.SetBuildRenderPass([&](Vulkan::CommandBuffer& cmd) {
 			if (State.DebugLines.empty()) { return; }
@@ -447,7 +444,7 @@ static void BakeRenderGraph() {
 
 		auto& ui = State.Graph.AddPass("UI");
 
-		ui.AddColorOutput("UI", uiColor, "Final");
+		ui.AddColorOutput("UI", uiColor, "DebugLines");
 
 		ui.SetGetClearColor([](uint32_t, vk::ClearColorValue* value) -> bool {
 			if (value) { *value = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f); }
@@ -473,7 +470,7 @@ void Renderer::Render() {
 	if (!acquired) { return; }
 
 	if (Engine::GetMainWindow()->GetSwapchainHash() != State.LastSwapchainHash) {
-		BakeRenderGraph();
+		// BakeRenderGraph();
 		State.LastSwapchainHash = Engine::GetMainWindow()->GetSwapchainHash();
 	}
 
@@ -544,10 +541,374 @@ void Renderer::Render() {
 	                        .IndicesPerBatch = MaxIndicesPerBatch};
 	State.ComputeUniforms.Get(sizeof(compute)).WriteData(&compute, sizeof(compute));
 
+	/*
 	TaskComposer composer;
 	State.Graph.SetupAttachments(*State.Device, &State.Device->GetSwapchainView());
 	State.Graph.EnqueueRenderPasses(*State.Device, composer);
 	composer.GetOutgoingTask()->Wait();
+	*/
+
+	auto& res = State.Resources;
+	if (!res.CullMeshlets) {
+		res.CullMeshlets = ShaderManager::RegisterCompute("res://Shaders/CullMeshlets.comp.glsl")->RegisterVariant();
+	}
+	if (!res.HzbCopy) {
+		res.HzbCopy = ShaderManager::RegisterCompute("res://Shaders/HzbCopy.comp.glsl")->RegisterVariant();
+	}
+	if (!res.HzbReduce) {
+		res.HzbReduce = ShaderManager::RegisterCompute("res://Shaders/HzbReduce.comp.glsl")->RegisterVariant();
+	}
+	// Depth Buffer
+	{
+		bool needDepthBuffer = true;
+		if (res.DepthBuffer && res.DepthBuffer->GetCreateInfo().Width == swapchainExtent.width &&
+		    res.DepthBuffer->GetCreateInfo().Height == swapchainExtent.height) {
+			needDepthBuffer = false;
+		}
+
+		if (needDepthBuffer) {
+			const Vulkan::ImageCreateInfo imageCI =
+				Vulkan::ImageCreateInfo()
+					.SetFormat(State.Device->GetDefaultDepthFormat())
+					.SetExtent(swapchainExtent)
+					.SetUsage(vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled);
+			res.DepthBuffer = State.Device->CreateImage(imageCI);
+		}
+	}
+	// HiZBuffer
+	{
+		const auto hzbWidth  = PreviousPowerOfTwo(swapchainExtent.width);
+		const auto hzbHeight = PreviousPowerOfTwo(swapchainExtent.height);
+		bool needHiZBuffer   = true;
+		if (res.HiZBuffer && res.HiZBuffer->GetCreateInfo().Width == hzbWidth &&
+		    res.HiZBuffer->GetCreateInfo().Height == hzbHeight) {
+			needHiZBuffer = false;
+		}
+
+		if (needHiZBuffer) {
+			const Vulkan::ImageCreateInfo imageCI =
+				Vulkan::ImageCreateInfo()
+					.SetFormat(vk::Format::eR32Sfloat)
+					.SetWidth(hzbWidth)
+					.SetHeight(hzbHeight)
+					.SetUsage(vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage)
+					.SetInitialLayout(vk::ImageLayout::eGeneral)
+					.SetMipLevels(Vulkan::CalculateMipLevels(hzbWidth, hzbHeight, 1));
+			res.HiZBuffer = State.Device->CreateImage(imageCI);
+
+			res.HiZBufferMips.clear();
+			Vulkan::ImageViewCreateInfo viewCI = {.Image       = res.HiZBuffer.Get(),
+			                                      .Format      = imageCI.Format,
+			                                      .BaseLevel   = 0,
+			                                      .MipLevels   = 1,
+			                                      .BaseLayer   = 0,
+			                                      .ArrayLayers = imageCI.ArrayLayers,
+			                                      .ViewType    = vk::ImageViewType::e2D};
+			for (uint32_t i = 0; i < imageCI.MipLevels; ++i) {
+				viewCI.BaseLevel = i;
+				res.HiZBufferMips.push_back(State.Device->CreateImageView(viewCI));
+			}
+		}
+	}
+
+	State.Program =
+		ShaderManager::RegisterGraphics("res://Shaders/StaticMesh.vert.glsl", "res://Shaders/StaticMesh.frag.glsl")
+			->RegisterVariant();
+
+	auto cmd = State.Device->RequestCommandBuffer();
+
+	// Meshlet Cull
+	{
+		auto start = cmd->WriteTimestamp(vk::PipelineStageFlagBits2::eComputeShader);
+
+		const vk::ImageMemoryBarrier2 imageInvalidates[]   = {vk::ImageMemoryBarrier2(
+      vk::PipelineStageFlagBits2::eComputeShader,
+      vk::AccessFlagBits2::eNone,
+      vk::PipelineStageFlagBits2::eComputeShader,
+      vk::AccessFlagBits2::eShaderSampledRead,
+      vk::ImageLayout::eGeneral,
+      vk::ImageLayout::eShaderReadOnlyOptimal,
+      vk::QueueFamilyIgnored,
+      vk::QueueFamilyIgnored,
+      res.HiZBuffer->GetImage(),
+      vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, vk::RemainingMipLevels, 0, 1))};
+		const vk::BufferMemoryBarrier2 bufferInvalidates[] = {
+			vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eHost,
+		                           vk::AccessFlagBits2::eNone,
+		                           vk::PipelineStageFlagBits2::eComputeShader,
+		                           vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
+		                           vk::QueueFamilyIgnored,
+		                           vk::QueueFamilyIgnored,
+		                           res.VisBufferStats->GetBuffer(),
+		                           0,
+		                           vk::WholeSize),
+			vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eDrawIndirect,
+		                           vk::AccessFlagBits2::eNone,
+		                           vk::PipelineStageFlagBits2::eComputeShader,
+		                           vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
+		                           vk::QueueFamilyIgnored,
+		                           vk::QueueFamilyIgnored,
+		                           res.DrawIndirect->GetBuffer(),
+		                           0,
+		                           vk::WholeSize),
+			vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eComputeShader,
+		                           vk::AccessFlagBits2::eNone,
+		                           vk::PipelineStageFlagBits2::eComputeShader,
+		                           vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
+		                           vk::QueueFamilyIgnored,
+		                           vk::QueueFamilyIgnored,
+		                           res.MeshletIndices->GetBuffer(),
+		                           0,
+		                           vk::WholeSize),
+		};
+		const vk::DependencyInfo invalidate({}, nullptr, bufferInvalidates, imageInvalidates);
+		cmd->Barrier(invalidate);
+
+		// =====
+		// Initialize our indirect command buffers
+		// =====
+		std::array<vk::DrawIndexedIndirectCommand, MaxMeshletBatches> indirect;
+		indirect.fill(vk::DrawIndexedIndirectCommand(0, 1, 0, 0, 0));
+		for (int i = 0; i < MaxMeshletBatches; ++i) { indirect[i].firstIndex = i * MaxIndicesPerBatch; }
+
+		cmd->FillBuffer(*res.VisBufferStats, 0);
+		cmd->UpdateBuffer(*res.DrawIndirect, sizeof(indirect[0]) * indirect.size(), indirect.data());
+
+		const vk::BufferMemoryBarrier2 bufferInitializes[] = {
+			vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eTransfer,
+		                           vk::AccessFlagBits2::eTransferWrite,
+		                           vk::PipelineStageFlagBits2::eComputeShader,
+		                           vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
+		                           vk::QueueFamilyIgnored,
+		                           vk::QueueFamilyIgnored,
+		                           res.VisBufferStats->GetBuffer(),
+		                           0,
+		                           vk::WholeSize),
+			vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eTransfer,
+		                           vk::AccessFlagBits2::eTransferWrite,
+		                           vk::PipelineStageFlagBits2::eComputeShader,
+		                           vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
+		                           vk::QueueFamilyIgnored,
+		                           vk::QueueFamilyIgnored,
+		                           res.DrawIndirect->GetBuffer(),
+		                           0,
+		                           vk::WholeSize)};
+		const vk::DependencyInfo bufferInitial({}, nullptr, bufferInitializes, nullptr);
+		cmd->Barrier(bufferInitial);
+
+		// Read-Only
+		cmd->SetUniformBuffer(0, 0, State.SceneBuffer.Get());
+		cmd->SetUniformBuffer(1, 0, State.ComputeUniforms.Get());
+		cmd->SetStorageBuffer(1, 1, State.MeshletBuffer.Get());
+		cmd->SetStorageBuffer(1, 2, State.Scene.GetPositionBuffer());
+		cmd->SetStorageBuffer(1, 3, State.Scene.GetVertexBuffer());
+		cmd->SetStorageBuffer(1, 4, State.Scene.GetIndexBuffer());
+		cmd->SetStorageBuffer(1, 5, State.Scene.GetTriangleBuffer());
+		cmd->SetStorageBuffer(1, 6, State.TransformBuffer.Get());
+		cmd->SetTexture(1, 7, res.HiZBuffer->GetView(), Vulkan::StockSampler::NearestClamp);
+
+		// Write-Only
+		cmd->SetStorageBuffer(1, 8, *res.DrawIndirect);
+		cmd->SetStorageBuffer(1, 9, *res.MeshletIndices);
+		cmd->SetStorageBuffer(1, 10, *res.VisBufferStats);
+
+		cmd->SetProgram(res.CullMeshlets->GetProgram());
+		cmd->Dispatch(MaxMeshletsPerBatch, MaxMeshletBatches, 1);
+
+		const vk::BufferMemoryBarrier2 flushes[] = {
+			vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eComputeShader,
+		                           vk::AccessFlagBits2::eShaderStorageWrite,
+		                           vk::PipelineStageFlagBits2::eTransfer,
+		                           vk::AccessFlagBits2::eTransferRead,
+		                           vk::QueueFamilyIgnored,
+		                           vk::QueueFamilyIgnored,
+		                           res.VisBufferStats->GetBuffer(),
+		                           0,
+		                           vk::WholeSize),
+			vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eComputeShader,
+		                           vk::AccessFlagBits2::eShaderStorageWrite,
+		                           vk::PipelineStageFlagBits2::eDrawIndirect,
+		                           vk::AccessFlagBits2::eIndirectCommandRead,
+		                           vk::QueueFamilyIgnored,
+		                           vk::QueueFamilyIgnored,
+		                           res.DrawIndirect->GetBuffer(),
+		                           0,
+		                           vk::WholeSize),
+			vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eComputeShader,
+		                           vk::AccessFlagBits2::eShaderStorageWrite,
+		                           vk::PipelineStageFlagBits2::eVertexInput,
+		                           vk::AccessFlagBits2::eIndexRead,
+		                           vk::QueueFamilyIgnored,
+		                           vk::QueueFamilyIgnored,
+		                           res.MeshletIndices->GetBuffer(),
+		                           0,
+		                           vk::WholeSize),
+		};
+		const vk::DependencyInfo flush({}, nullptr, flushes, nullptr);
+		cmd->Barrier(flush);
+
+		cmd->CopyBuffer(State.VisBufferStatsBuffer.Get(), *res.VisBufferStats);
+
+		auto end = cmd->WriteTimestamp(vk::PipelineStageFlagBits2::eComputeShader);
+		State.Device->RegisterTimeInterval(start, end, "Cull Meshlets");
+	}
+
+	// VisBuffer Render
+	{
+		auto start = cmd->WriteTimestamp(vk::PipelineStageFlagBits2::eVertexShader);
+
+		const vk::ImageMemoryBarrier2 imageInvalidates[] = {vk::ImageMemoryBarrier2(
+			vk::PipelineStageFlagBits2::eComputeShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+				vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::AccessFlagBits2::eNone,
+			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eDepthStencilAttachmentOptimal,
+			vk::QueueFamilyIgnored,
+			vk::QueueFamilyIgnored,
+			res.DepthBuffer->GetImage(),
+			vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1))};
+		const vk::DependencyInfo invalidate({}, nullptr, nullptr, imageInvalidates);
+		cmd->Barrier(invalidate);
+
+		auto rpInfo  = State.Device->GetSwapchainRenderPass();
+		rpInfo.Flags = Vulkan::RenderPassFlagBits::ClearDepthStencil | Vulkan::RenderPassFlagBits::StoreDepthStencil;
+		rpInfo.DepthStencilAttachment = &res.DepthBuffer->GetView();
+		rpInfo.ClearAttachmentMask    = 1u << 0;
+		rpInfo.StoreAttachmentMask    = 1u << 0;
+		rpInfo.ClearColors[0]         = vk::ClearColorValue(0.1f, 0.1f, 0.1f, 1.0f);
+		rpInfo.ClearDepthStencil      = vk::ClearDepthStencilValue(0.0f, 0);
+		cmd->BeginRenderPass(rpInfo);
+
+		cmd->SetOpaqueState();
+		cmd->SetProgram(State.Program->GetProgram());
+		cmd->SetCullMode(vk::CullModeFlagBits::eBack);
+		cmd->SetDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
+		cmd->SetUniformBuffer(0, 0, State.SceneBuffer.Get());
+		cmd->SetStorageBuffer(1, 1, State.MeshletBuffer.Get());
+		cmd->SetStorageBuffer(1, 2, State.Scene.GetPositionBuffer());
+		cmd->SetStorageBuffer(1, 3, State.Scene.GetVertexBuffer());
+		cmd->SetStorageBuffer(1, 4, State.Scene.GetIndexBuffer());
+		cmd->SetStorageBuffer(1, 5, State.Scene.GetTriangleBuffer());
+		cmd->SetStorageBuffer(1, 6, State.TransformBuffer.Get());
+		cmd->SetIndexBuffer(*res.MeshletIndices, 0, vk::IndexType::eUint32);
+		cmd->DrawIndexedIndirect(*res.DrawIndirect, MaxMeshletBatches, 0);
+
+		cmd->EndRenderPass();
+
+		auto end = cmd->WriteTimestamp(vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+		State.Device->RegisterTimeInterval(start, end, "VisBuffer");
+	}
+
+	// Hi-Z Buffer
+	{
+		auto start = cmd->WriteTimestamp(vk::PipelineStageFlagBits2::eComputeShader);
+
+		const vk::ImageMemoryBarrier2 imageInvalidates[] = {
+			vk::ImageMemoryBarrier2(
+				vk::PipelineStageFlagBits2::eComputeShader,
+				vk::AccessFlagBits2::eNone,
+				vk::PipelineStageFlagBits2::eComputeShader,
+				vk::AccessFlagBits2::eShaderStorageWrite,
+				vk::ImageLayout::eShaderReadOnlyOptimal,
+				vk::ImageLayout::eGeneral,
+				vk::QueueFamilyIgnored,
+				vk::QueueFamilyIgnored,
+				res.HiZBuffer->GetImage(),
+				vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, vk::RemainingMipLevels, 0, 1)),
+			vk::ImageMemoryBarrier2(
+				vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+				vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+				vk::PipelineStageFlagBits2::eComputeShader,
+				vk::AccessFlagBits2::eShaderSampledRead,
+				vk::ImageLayout::eDepthStencilAttachmentOptimal,
+				vk::ImageLayout::eShaderReadOnlyOptimal,
+				vk::QueueFamilyIgnored,
+				vk::QueueFamilyIgnored,
+				res.DepthBuffer->GetImage(),
+				vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1)),
+		};
+		const vk::DependencyInfo invalidate({}, nullptr, nullptr, imageInvalidates);
+		cmd->Barrier(invalidate);
+
+		auto hzbWidth  = res.HiZBuffer->GetCreateInfo().Width;
+		auto hzbHeight = res.HiZBuffer->GetCreateInfo().Height;
+
+		cmd->SetOpaqueState();
+		cmd->SetProgram(res.HzbCopy->GetProgram());
+		cmd->SetTexture(0, 0, res.DepthBuffer->GetView(), Vulkan::StockSampler::NearestClamp);
+		cmd->SetStorageTexture(0, 1, *res.HiZBufferMips[0]);
+		cmd->Dispatch((hzbWidth + 15) / 16, (hzbHeight + 15) / 16, 1);
+
+		cmd->SetProgram(res.HzbReduce->GetProgram());
+
+		vk::ImageMemoryBarrier2 hzbBarrier(
+			vk::PipelineStageFlagBits2::eComputeShader,
+			vk::AccessFlagBits2::eShaderStorageWrite,
+			vk::PipelineStageFlagBits2::eComputeShader,
+			vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
+			vk::ImageLayout::eGeneral,
+			vk::ImageLayout::eGeneral,
+			vk::QueueFamilyIgnored,
+			vk::QueueFamilyIgnored,
+			res.HiZBuffer->GetImage(),
+			vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+
+		for (uint32_t i = 1; i < res.HiZBuffer->GetCreateInfo().MipLevels; ++i) {
+			hzbBarrier.subresourceRange.baseMipLevel = i - 1;
+			cmd->ImageBarriers({hzbBarrier});
+
+			hzbWidth  = std::max(1u, hzbWidth >> 1);
+			hzbHeight = std::max(1u, hzbHeight >> 1);
+
+			cmd->SetStorageTexture(0, 0, *res.HiZBufferMips[i - 1]);
+			cmd->SetStorageTexture(0, 1, *res.HiZBufferMips[i]);
+			cmd->Dispatch((hzbWidth + 15) / 16, (hzbHeight + 15) / 16, 1);
+		}
+
+		hzbBarrier.subresourceRange.baseMipLevel = res.HiZBuffer->GetCreateInfo().MipLevels - 1;
+		cmd->ImageBarriers({hzbBarrier});
+
+		auto end = cmd->WriteTimestamp(vk::PipelineStageFlagBits2::eComputeShader);
+		State.Device->RegisterTimeInterval(start, end, "Hi-Z Buffer");
+	}
+
+	// Debug Lines
+	{
+		auto rpInfo                = State.Device->GetSwapchainRenderPass();
+		rpInfo.ClearAttachmentMask = 0;
+		rpInfo.LoadAttachmentMask  = 1u << 0;
+		rpInfo.StoreAttachmentMask = 1u << 0;
+		cmd->BeginRenderPass(rpInfo);
+
+		cmd->SetOpaqueState();
+		cmd->SetProgram(
+			ShaderManager::RegisterGraphics("res://Shaders/DebugLines.vert.glsl", "res://Shaders/DebugLines.frag.glsl")
+				->RegisterVariant()
+				->GetProgram());
+		cmd->SetPrimitiveTopology(vk::PrimitiveTopology::eLineList);
+		cmd->SetUniformBuffer(0, 0, State.SceneBuffer.Get());
+		cmd->SetStorageBuffer(1, 0, State.DebugLinesBuffer.Get());
+		cmd->Draw(State.DebugLines.size() * 2, 1, 0, 0);
+
+		cmd->EndRenderPass();
+	}
+
+	// UI Render
+	{
+		auto rpInfo                = State.Device->GetSwapchainRenderPass();
+		rpInfo.ClearAttachmentMask = 0;
+		rpInfo.LoadAttachmentMask  = 1u << 0;
+		rpInfo.StoreAttachmentMask = 1u << 0;
+		cmd->BeginRenderPass(rpInfo);
+
+		UIManager::Render(*cmd);
+
+		cmd->EndRenderPass();
+	}
+
+	State.Device->Submit(cmd);
 
 	Engine::GetMainWindow()->GetSwapchain().Present();
 }

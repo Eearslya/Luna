@@ -9,6 +9,7 @@ enum class AttachmentInfoFlagBits {
 	UnormSrgbAlias    = 1 << 1,
 	SupportsPrerotate = 1 << 2,
 	GenerateMips      = 1 << 3,
+	CreateMipViews    = 1 << 4,
 	InternalTransient = 1 << 16,
 	InternalProxy     = 1 << 17,
 };

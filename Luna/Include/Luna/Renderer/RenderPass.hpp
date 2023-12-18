@@ -183,14 +183,20 @@ class RenderPass {
 		return _fakeResourceAliases;
 	}
 
+	RenderTextureResource& AddHistoryInput(const std::string& name);
 	RenderBufferResource& AddIndexBufferInput(const std::string& name);
 	RenderBufferResource& AddIndirectInput(const std::string& name);
+	void AddProxyInput(const std::string& name, vk::PipelineStageFlags2 stages);
 	RenderBufferResource& AddStorageInput(const std::string& name, vk::PipelineStageFlags2 stages = {});
 	RenderTextureResource& AddTextureInput(const std::string& name, vk::PipelineStageFlags2 stages = {});
 
 	RenderTextureResource& AddColorOutput(const std::string& name,
 	                                      const AttachmentInfo& info,
 	                                      const std::string& input = "");
+	void AddProxyOutput(const std::string& name, vk::PipelineStageFlags2 stages);
+	RenderTextureResource& AddStorageTextureOutput(const std::string& name,
+	                                               const AttachmentInfo& info,
+	                                               const std::string& input = "");
 	RenderBufferResource& AddStorageOutput(const std::string& name,
 	                                       const BufferInfo& info,
 	                                       const std::string& input = "");

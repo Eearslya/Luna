@@ -105,9 +105,8 @@ RenderPass::RenderPass(Hash hash, Device& device, const RenderPassInfo& rpInfo)
 		const auto& image = rpInfo.DepthStencilAttachment->GetImage();
 		auto& att         = attachments[rpInfo.ColorAttachmentCount];
 
-		depthStencilLayout =
-			image.GetLayout(depthStencilReadOnly ? vk::ImageLayout::eDepthStencilReadOnlyOptimal
-		                                       : vk::ImageLayout::eDepthReadOnlyStencilAttachmentOptimal);
+		depthStencilLayout = image.GetLayout(depthStencilReadOnly ? vk::ImageLayout::eDepthStencilReadOnlyOptimal
+		                                                          : vk::ImageLayout::eDepthStencilAttachmentOptimal);
 
 		if (rpInfo.Flags & RenderPassFlagBits::ClearDepthStencil) {
 			depthStencilLoad = vk::AttachmentLoadOp::eClear;

@@ -286,6 +286,9 @@ class ImageView : public VulkanObject<ImageView, ImageViewDeleter>, public Cooki
  public:
 	~ImageView() noexcept;
 
+	[[nodiscard]] const ImageViewCreateInfo& GetCreateInfo() const noexcept {
+		return _createInfo;
+	}
 	[[nodiscard]] vk::Format GetFormat() const noexcept {
 		return _createInfo.Format;
 	}

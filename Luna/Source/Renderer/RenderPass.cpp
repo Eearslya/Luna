@@ -38,6 +38,15 @@ void RenderPassInterface::EnqueuePrepareRenderPass(RenderGraph& graph, TaskCompo
 RenderPass::RenderPass(RenderGraph& graph, uint32_t index, RenderGraphQueueFlagBits queue)
 		: _graph(graph), _index(index), _queue(queue) {}
 
+RenderTextureResource& RenderPass::AddHistoryInput(const std::string& name) {
+	auto& res = _graph.GetTextureResource(name);
+	res.AddQueue(_queue);
+	res.AddImageUsage(vk::ImageUsageFlagBits::eSampled);
+	_historyInputs.push_back(&res);
+
+	return res;
+}
+
 RenderBufferResource& RenderPass::AddIndexBufferInput(const std::string& name) {
 	return AddGenericBufferInput(name,
 	                             vk::PipelineStageFlagBits2::eVertexInput,
@@ -50,6 +59,18 @@ RenderBufferResource& RenderPass::AddIndirectInput(const std::string& name) {
 	                             vk::PipelineStageFlagBits2::eDrawIndirect,
 	                             vk::AccessFlagBits2::eIndirectCommandRead,
 	                             vk::BufferUsageFlagBits::eIndirectBuffer);
+}
+
+void RenderPass::AddProxyInput(const std::string& name, vk::PipelineStageFlags2 stages) {
+	auto& res = _graph.GetProxyResource(name);
+	res.AddQueue(_queue);
+	res.ReadInPass(_index);
+
+	AccessedProxyResource proxy;
+	proxy.Proxy  = &res;
+	proxy.Layout = vk::ImageLayout::eGeneral;
+	proxy.Stages = stages;
+	_proxyInputs.push_back(proxy);
 }
 
 RenderBufferResource& RenderPass::AddStorageInput(const std::string& name, vk::PipelineStageFlags2 stages) {
@@ -115,6 +136,40 @@ RenderTextureResource& RenderPass::AddColorOutput(const std::string& name,
 	} else {
 		_colorInputs.push_back(nullptr);
 		_colorScaleInputs.push_back(nullptr);
+	}
+
+	return res;
+}
+
+void RenderPass::AddProxyOutput(const std::string& name, vk::PipelineStageFlags2 stages) {
+	auto& res = _graph.GetProxyResource(name);
+	res.AddQueue(_queue);
+	res.WrittenInPass(_index);
+
+	AccessedProxyResource proxy;
+	proxy.Proxy  = &res;
+	proxy.Layout = vk::ImageLayout::eGeneral;
+	proxy.Stages = stages;
+	_proxyInputs.push_back(proxy);
+}
+
+RenderTextureResource& RenderPass::AddStorageTextureOutput(const std::string& name,
+                                                           const AttachmentInfo& info,
+                                                           const std::string& input) {
+	auto& res = _graph.GetTextureResource(name);
+	res.AddQueue(_queue);
+	res.WrittenInPass(_index);
+	res.SetAttachmentInfo(info);
+	res.AddImageUsage(vk::ImageUsageFlagBits::eStorage);
+	_storageTextureOutputs.push_back(&res);
+
+	if (!input.empty()) {
+		auto& inputRes = _graph.GetTextureResource(input);
+		inputRes.ReadInPass(_index);
+		inputRes.AddImageUsage(vk::ImageUsageFlagBits::eStorage);
+		_storageTextureInputs.push_back(&inputRes);
+	} else {
+		_storageTextureInputs.push_back(nullptr);
 	}
 
 	return res;

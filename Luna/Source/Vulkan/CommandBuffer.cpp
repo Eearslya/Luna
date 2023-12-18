@@ -579,6 +579,15 @@ void CommandBuffer::SetSrgbTexture(uint32_t set, uint32_t binding, const ImageVi
 	SetSampler(set, binding, sampler);
 }
 
+void CommandBuffer::SetStorageTexture(uint32_t set, uint32_t binding, const ImageView& view) {
+	SetTexture(set,
+	           binding,
+	           view.GetFloatView(),
+	           view.GetIntegerView(),
+	           view.GetImage().GetLayout(vk::ImageLayout::eGeneral),
+	           view.GetCookie());
+}
+
 void CommandBuffer::SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view) {
 	const auto unormView = view.GetUnormView();
 	SetTexture(set,
@@ -1071,6 +1080,7 @@ void CommandBuffer::FlushDescriptorSet(uint32_t set) {
 		auto arraySize = setLayout.ArraySizes[binding];
 		for (uint32_t i = 0; i < arraySize; ++i) {
 			h(_resources.Bindings[set][binding + i].Cookie);
+			h(_resources.Bindings[set][binding + i].SecondaryCookie);
 			h(_resources.Bindings[set][binding + i].Image.Float.imageLayout);
 		}
 	});

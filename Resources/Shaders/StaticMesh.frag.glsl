@@ -32,6 +32,6 @@ vec3 hueShift(vec3 color, float hueAdjust) {
 
 void main() {
   vec3 color = hueShift(vec3(0.9, 0.0, 0.0), 0.84 * inMeshlet);
-  //color = inNormal * 0.5 + 0.5;
+  color = inNormal * 0.5 + 0.5;
   outColor = vec4(color, 1.0);
 }

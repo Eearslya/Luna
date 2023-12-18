@@ -275,6 +275,19 @@ ImageHandle Device::CreateImage(const ImageCreateInfo& createInfo,
 	return handle;
 }
 
+ImageViewHandle Device::CreateImageView(const ImageViewCreateInfo& createInfo, const std::string& debugName) {
+	ImageViewHandle handle;
+	try {
+		handle = ImageViewHandle(_imageViewPool.Allocate(*this, createInfo));
+	} catch (const std::exception& e) {
+		Log::Error("Vulkan", "Failed to create image view: {}", e.what());
+
+		return {};
+	}
+
+	return handle;
+}
+
 SamplerHandle Device::CreateSampler(const SamplerCreateInfo& samplerCI, const std::string& debugName) {
 	try {
 		return SamplerHandle(_samplerPool.Allocate(*this, samplerCI, false));
@@ -289,7 +302,7 @@ const Sampler& Device::GetStockSampler(StockSampler type) const {
 	return _stockSamplers[int(type)]->GetSampler();
 }
 
-RenderPassInfo Device::GetSwapchainRenderPass(SwapchainRenderPassType type) const noexcept {
+RenderPassInfo Device::GetSwapchainRenderPass(SwapchainRenderPassType type) {
 	RenderPassInfo info       = {};
 	info.ColorAttachmentCount = 1;
 	info.ColorAttachments[0]  = &GetSwapchainView();
@@ -302,7 +315,13 @@ RenderPassInfo Device::GetSwapchainRenderPass(SwapchainRenderPassType type) cons
 	const vk::Extent2D extent(imageCI.Width, imageCI.Height);
 
 	if (type == SwapchainRenderPassType::Depth) {
+		info.Flags |= RenderPassFlagBits::ClearDepthStencil;
+		auto depth                  = RequestTransientAttachment(extent, GetDefaultDepthFormat());
+		info.DepthStencilAttachment = &depth->GetView();
 	} else if (type == SwapchainRenderPassType::DepthStencil) {
+		info.Flags |= RenderPassFlagBits::ClearDepthStencil;
+		auto depthStencil           = RequestTransientAttachment(extent, GetDefaultDepthStencilFormat());
+		info.DepthStencilAttachment = &depthStencil->GetView();
 	}
 
 	return info;

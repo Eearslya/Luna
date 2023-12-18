@@ -71,10 +71,12 @@ class Device : public VulkanObject<Device> {
 	[[nodiscard]] ImageHandle CreateImage(const ImageCreateInfo& createInfo,
 	                                      const ImageInitialData* initialData = nullptr,
 	                                      const std::string& debugName        = "");
+	[[nodiscard]] ImageViewHandle CreateImageView(const ImageViewCreateInfo& createInfo,
+	                                              const std::string& debugName = "");
 	[[nodiscard]] SamplerHandle CreateSampler(const SamplerCreateInfo& samplerCI, const std::string& debugName = "");
 	[[nodiscard]] const Sampler& GetStockSampler(StockSampler type) const;
 	[[nodiscard]] RenderPassInfo GetSwapchainRenderPass(
-		SwapchainRenderPassType type = SwapchainRenderPassType::ColorOnly) const noexcept;
+		SwapchainRenderPassType type = SwapchainRenderPassType::ColorOnly);
 	[[nodiscard]] ImageView& GetSwapchainView();
 	[[nodiscard]] const ImageView& GetSwapchainView() const;
 	[[nodiscard]] ImageView& GetSwapchainView(uint32_t index);

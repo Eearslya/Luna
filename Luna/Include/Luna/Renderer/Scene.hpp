@@ -39,7 +39,8 @@ struct Meshlet {
 	uint32_t IndexCount;
 	uint32_t TriangleCount;
 	uint32_t InstanceID;
-	glm::vec4 BoundingSphere;
+	glm::vec3 AABBMin;
+	glm::vec3 AABBMax;
 };
 
 struct Mesh {

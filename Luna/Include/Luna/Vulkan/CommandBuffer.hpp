@@ -265,6 +265,7 @@ class CommandBuffer : public VulkanObject<CommandBuffer, CommandBufferDeleter> {
 	void SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view);
 	void SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler);
 	void SetSrgbTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler);
+	void SetStorageTexture(uint32_t set, uint32_t binding, const ImageView& view);
 	void SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view);
 	void SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view, const Sampler& sampler);
 	void SetUnormTexture(uint32_t set, uint32_t binding, const ImageView& view, StockSampler sampler);

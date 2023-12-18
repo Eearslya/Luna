@@ -56,6 +56,7 @@ void RenderGraph::EnqueueRenderPasses(Vulkan::Device& device, TaskComposer& comp
 void RenderGraph::SetupAttachments(Vulkan::Device& device, Vulkan::ImageView* backbuffer) {
 	_physicalAttachments.clear();
 	_physicalAttachments.resize(_physicalDimensions.size());
+	_physicalAttachmentMips.resize(_physicalDimensions.size());
 	_physicalBuffers.resize(_physicalDimensions.size());
 	_physicalImages.resize(_physicalDimensions.size());
 	_physicalHistoryImages.resize(_physicalDimensions.size());
@@ -398,6 +399,42 @@ Vulkan::Buffer& RenderGraph::GetPhysicalBufferResource(const RenderBufferResourc
 
 Vulkan::Buffer& RenderGraph::GetPhysicalBufferResource(uint32_t index) {
 	return *_physicalBuffers[index];
+}
+
+Vulkan::ImageView& RenderGraph::GetPhysicalTextureResource(const RenderTextureResource& resource) {
+	return GetPhysicalTextureResource(resource.GetPhysicalIndex());
+}
+
+Vulkan::ImageView& RenderGraph::GetPhysicalTextureResource(uint32_t index) {
+	return *_physicalAttachments[index];
+}
+
+Vulkan::ImageView& RenderGraph::GetPhysicalTextureResourceMip(const RenderTextureResource& resource, uint32_t mip) {
+	return GetPhysicalTextureResourceMip(resource.GetPhysicalIndex(), mip);
+}
+
+Vulkan::ImageView& RenderGraph::GetPhysicalTextureResourceMip(uint32_t index, uint32_t mip) {
+	Log::Assert(!_physicalAttachmentMips[index].empty(),
+	            "RenderGraph",
+	            "GetPhysicalTextureResourceMip called on an attachment that was not created with mip views!");
+
+	return *_physicalAttachmentMips[index][mip];
+}
+
+RenderResource& RenderGraph::GetProxyResource(const std::string& name) {
+	auto it = _resourceToIndex.find(name);
+	if (it != _resourceToIndex.end()) {
+		assert(_resources[it->second]->GetType() == RenderResource::Type::Proxy);
+
+		return *_resources[it->second];
+	}
+
+	uint32_t index = _resources.size();
+	_resources.emplace_back(new RenderResource(RenderResource::Type::Proxy, index));
+	_resources.back()->SetName(name);
+	_resourceToIndex[name] = index;
+
+	return *_resources.back();
 }
 
 ResourceDimensions RenderGraph::GetResourceDimensions(const RenderBufferResource& resource) const {
@@ -1858,6 +1895,18 @@ void RenderGraph::SetupPhysicalImage(Vulkan::Device& device, uint32_t physicalIn
 	}
 
 	_physicalAttachments[physicalIndex] = &_physicalImages[physicalIndex]->GetView();
+
+	if (att.Flags & AttachmentInfoFlagBits::CreateMipViews) {
+		auto& image = _physicalAttachments[physicalIndex]->GetImage();
+
+		auto viewCI      = image.GetView().GetCreateInfo();
+		viewCI.MipLevels = 1;
+
+		for (uint32_t i = 0; i < att.MipLevels; ++i) {
+			viewCI.BaseLevel = i;
+			_physicalAttachmentMips[physicalIndex].push_back(device.CreateImageView(viewCI));
+		}
+	}
 }
 
 void RenderGraph::GetQueueType(Vulkan::CommandBufferType& cmdType,

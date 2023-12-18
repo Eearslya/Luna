@@ -1,4 +1,5 @@
 #include <Luna/Core/Filesystem.hpp>
+#include <Luna/Core/Threading.hpp>
 #include <Luna/Renderer/Renderer.hpp>
 #include <Luna/Renderer/ShaderCompiler.hpp>
 #include <Luna/Renderer/ShaderManager.hpp>
@@ -71,6 +72,11 @@ static void PromoteReadWriteCachesToReadOnly() {
 static void Recompile(const FileNotifyInfo& info) {
 	if (info.Type == FileNotifyType::FileDeleted) { return; }
 
+	// A lot of the time when we get a notification, the file is still locked for writing.
+	// Therefore, we introduce a small delay here to allow the file to unlock before trying
+	// to read it.
+	Threading::Sleep(100);
+
 	std::lock_guard lock(State.DependencyLock);
 	for (auto& dep : State.Dependees[info.Path]) {
 		Log::Debug("ShaderManager", "Recompiling shader '{}'...", dep->GetPath());
@@ -93,7 +99,9 @@ static void RegisterDependencyNoLock(ShaderTemplate* shader, const Path& depende
 	auto* backend = Filesystem::GetBackend(baseDir.Protocol());
 	if (!backend) { return; }
 
-	FileNotifyHandle handle = backend->WatchFile(baseDir.FilePath(), [](const FileNotifyInfo& info) { Recompile(info); });
+	FileNotifyHandle handle = backend->WatchFile(baseDir.FilePath(), [](const FileNotifyInfo& info) {
+		Threading::CreateTaskGroup()->Enqueue([=]() { Recompile(info); });
+	});
 	if (handle >= 0) { State.DirectoryWatches[baseDir] = {backend, handle}; }
 }
 

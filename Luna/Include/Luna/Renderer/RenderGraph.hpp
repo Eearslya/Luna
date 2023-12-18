@@ -32,6 +32,11 @@ class RenderGraph {
 	[[nodiscard]] RenderBufferResource& GetBufferResource(const std::string& name);
 	[[nodiscard]] Vulkan::Buffer& GetPhysicalBufferResource(const RenderBufferResource& resource);
 	[[nodiscard]] Vulkan::Buffer& GetPhysicalBufferResource(uint32_t index);
+	[[nodiscard]] Vulkan::ImageView& GetPhysicalTextureResource(const RenderTextureResource& resource);
+	[[nodiscard]] Vulkan::ImageView& GetPhysicalTextureResource(uint32_t index);
+	[[nodiscard]] Vulkan::ImageView& GetPhysicalTextureResourceMip(const RenderTextureResource& resource, uint32_t mip);
+	[[nodiscard]] Vulkan::ImageView& GetPhysicalTextureResourceMip(uint32_t index, uint32_t mip);
+	[[nodiscard]] RenderResource& GetProxyResource(const std::string& name);
 	[[nodiscard]] ResourceDimensions GetResourceDimensions(const RenderBufferResource& resource) const;
 	[[nodiscard]] ResourceDimensions GetResourceDimensions(const RenderTextureResource& resource) const;
 	[[nodiscard]] RenderTextureResource& GetTextureResource(const std::string& name);
@@ -199,6 +204,7 @@ class RenderGraph {
 	std::vector<uint32_t> _passStack;
 	std::vector<uint32_t> _physicalAliases;
 	std::vector<Vulkan::ImageView*> _physicalAttachments;
+	std::vector<std::vector<Vulkan::ImageViewHandle>> _physicalAttachmentMips;
 	std::vector<Vulkan::BufferHandle> _physicalBuffers;
 	std::vector<ResourceDimensions> _physicalDimensions;
 	std::vector<PipelineEvent> _physicalEvents;

@@ -4,6 +4,12 @@
 #include <sstream>
 #include <thread>
 
+#ifdef _WIN32
+#	define NOMINMAX
+#	define WIN32_LEAN_AND_MEAN
+#	include <Windows.h>
+#endif
+
 namespace Luna {
 static struct ThreadingState {
 	ThreadSafeObjectPool<Task> TaskPool;
@@ -215,6 +221,12 @@ TaskGroupHandle Threading::CreateTaskGroup() {
 
 std::uint32_t Threading::GetThreadCount() {
 	return static_cast<std::uint32_t>(State.WorkerThreads.size());
+}
+
+void Threading::Sleep(uint32_t milliseconds) {
+#ifdef _WIN32
+	::Sleep(milliseconds);
+#endif
 }
 
 void Threading::Submit(TaskGroupHandle& group) {
