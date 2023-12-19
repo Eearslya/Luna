@@ -392,6 +392,7 @@ void Context::CreateDevice(const std::vector<const char*>& requiredExtensions) {
 	TryFeature(Vulkan12.hostQueryReset, "Host Query Reset");
 	TryFeature(Core.multiDrawIndirect, "Multi Draw Indirect");
 	TryFeature(Core.samplerAnisotropy, "Sampler Anisotropy");
+	TryFeature(Vulkan12.samplerFilterMinmax, "Sampler Min/Max");
 	TryFeature(Vulkan12.scalarBlockLayout, "Scalar Block Layout");
 	TryFeature(Vulkan12.storageBuffer8BitAccess, "Storage Buffer 8-bit Access");
 	TryFeature(Vulkan12.timelineSemaphore, "Timeline Semaphores");

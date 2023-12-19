@@ -150,6 +150,8 @@ Device::Device(Context& context)
 			case StockSampler::LinearWrap:
 			case StockSampler::TrilinearClamp:
 			case StockSampler::TrilinearWrap:
+			case StockSampler::LinearMin:
+			case StockSampler::LinearMax:
 				info.MagFilter = vk::Filter::eLinear;
 				info.MinFilter = vk::Filter::eLinear;
 				break;
@@ -167,6 +169,8 @@ Device::Device(Context& context)
 			case StockSampler::NearestClamp:
 			case StockSampler::NearestShadow:
 			case StockSampler::TrilinearClamp:
+			case StockSampler::LinearMin:
+			case StockSampler::LinearMax:
 				info.AddressModeU = vk::SamplerAddressMode::eClampToEdge;
 				info.AddressModeV = vk::SamplerAddressMode::eClampToEdge;
 				info.AddressModeW = vk::SamplerAddressMode::eClampToEdge;
@@ -186,6 +190,19 @@ Device::Device(Context& context)
 					info.MaxAnisotropy    = std::min(16.0f, _deviceInfo.Properties.Core.limits.maxSamplerAnisotropy);
 				}
 				info.MipLodBias = 0.0f;
+				break;
+
+			default:
+				break;
+		}
+
+		switch (type) {
+			case StockSampler::LinearMin:
+				info.ReductionMode = vk::SamplerReductionMode::eMin;
+				break;
+
+			case StockSampler::LinearMax:
+				info.ReductionMode = vk::SamplerReductionMode::eMax;
 				break;
 
 			default:

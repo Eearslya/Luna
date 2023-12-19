@@ -1,3 +1,9 @@
+struct DispatchIndirectCommand {
+  uint x;
+  uint y;
+  uint z;
+};
+
 struct DrawIndexedIndirectCommand {
   uint IndexCount;
   uint InstanceCount;

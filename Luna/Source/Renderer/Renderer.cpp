@@ -30,6 +30,15 @@ constexpr static unsigned int MaxMeshletBatches    = MaxMeshlets / MaxMeshletsPe
 constexpr static unsigned int MaxTrianglesPerBatch = MaxMeshletsPerBatch * 64;
 constexpr static unsigned int MaxIndicesPerBatch   = MaxTrianglesPerBatch * 3;
 
+enum class CullFlagBits : uint32_t {
+	MeshletFrustum   = 1 << 0,
+	MeshletHiZ       = 1 << 1,
+	TriangleBackface = 1 << 2,
+};
+template <>
+struct EnableBitmaskOperators<CullFlagBits> : std::true_type {};
+using CullFlags = Bitmask<CullFlagBits>;
+
 struct PerFrameBuffer {
 	Vulkan::Buffer& Get(vk::DeviceSize size = vk::WholeSize) {
 		const auto frameIndex = Renderer::GetDevice().GetFrameIndex();
@@ -63,8 +72,10 @@ struct SceneData {
 };
 
 struct ComputeUniforms {
-	uint32_t MeshletCount    = 0;
-	uint32_t IndicesPerBatch = 0;
+	uint32_t CullingFlags     = 0;
+	uint32_t MeshletCount     = 0;
+	uint32_t MeshletsPerBatch = MaxMeshletsPerBatch;
+	uint32_t IndicesPerBatch  = 0;
 };
 
 struct VisbufferStats {
@@ -80,6 +91,8 @@ struct DebugLine {
 
 struct RenderResources {
 	~RenderResources() noexcept {
+		VisibleMeshlets.Reset();
+		CullTriangleDispatch.Reset();
 		DrawIndirect.Reset();
 		MeshletIndices.Reset();
 		VisBufferStats.Reset();
@@ -88,6 +101,8 @@ struct RenderResources {
 		HiZBufferMips.clear();
 	}
 
+	Vulkan::BufferHandle VisibleMeshlets;
+	Vulkan::BufferHandle CullTriangleDispatch;
 	Vulkan::BufferHandle DrawIndirect;
 	Vulkan::BufferHandle MeshletIndices;
 	Vulkan::BufferHandle VisBufferStats;
@@ -95,9 +110,10 @@ struct RenderResources {
 	Vulkan::ImageHandle HiZBuffer;
 	std::vector<Vulkan::ImageViewHandle> HiZBufferMips;
 
-	ShaderProgramVariant* CullMeshlets;
-	ShaderProgramVariant* HzbCopy;
-	ShaderProgramVariant* HzbReduce;
+	ShaderProgramVariant* CullMeshlets  = nullptr;
+	ShaderProgramVariant* CullTriangles = nullptr;
+	ShaderProgramVariant* HzbCopy       = nullptr;
+	ShaderProgramVariant* HzbReduce     = nullptr;
 };
 
 static struct RendererState {
@@ -129,6 +145,10 @@ static struct RendererState {
 
 	bool FreezeCullFrustum = false;
 	bool ShowCullFrustum   = false;
+
+	bool CullMeshletsFrustum   = true;
+	bool CullMeshletsHiZ       = true;
+	bool CullTrianglesBackface = true;
 } State;
 
 static void DrawDebugLine(const glm::vec3& start, const glm::vec3& end, const glm::vec3& color = glm::vec3(1)) {
@@ -142,6 +162,12 @@ static void RendererUI() {
 	if (ImGui::Begin("Model")) {
 		ImGui::Checkbox("Freeze Culling Frustum", &State.FreezeCullFrustum);
 		ImGui::Checkbox("Show Culling Frustum", &State.ShowCullFrustum);
+
+		ImGui::Spacing();
+
+		ImGui::Checkbox("Meshlet Frustum Cull", &State.CullMeshletsFrustum);
+		ImGui::Checkbox("Meshlet Occlusion Cull", &State.CullMeshletsHiZ);
+		ImGui::Checkbox("Triangle Backface Cull", &State.CullTrianglesBackface);
 
 		const double visibleMeshlets(stats->VisibleMeshlets);
 		const double totalMeshlets(State.RenderScene.Meshlets.size());
@@ -162,6 +188,8 @@ static void RendererUI() {
 
 		auto meshletCullReport = State.Device->GetTimestampReport("Cull Meshlets");
 		ImGui::Text("Meshlet Cull: %.2fms", meshletCullReport.TimePerFrameContext * 1'000.0);
+		auto triangleCullReport = State.Device->GetTimestampReport("Cull Triangles");
+		ImGui::Text("Triangle Cull: %.2fms", triangleCullReport.TimePerFrameContext * 1'000.0);
 		auto visbufferReport = State.Device->GetTimestampReport("VisBuffer");
 		ImGui::Text("VisBuffer: %.2fms", visbufferReport.TimePerFrameContext * 1'000.0);
 		auto hzbReport = State.Device->GetTimestampReport("Hi-Z Buffer");
@@ -233,6 +261,17 @@ bool Renderer::Initialize() {
 	};
 
 	auto& res = State.Resources;
+
+	const Vulkan::BufferCreateInfo visibleMeshlets(
+		Vulkan::BufferDomain::Device, MaxMeshlets * sizeof(uint32_t), vk::BufferUsageFlagBits::eStorageBuffer);
+	res.VisibleMeshlets = State.Device->CreateBuffer(visibleMeshlets);
+
+	const Vulkan::BufferCreateInfo cullTriangleDispatch(Vulkan::BufferDomain::Device,
+	                                                    MaxMeshletBatches * sizeof(vk::DispatchIndirectCommand),
+	                                                    vk::BufferUsageFlagBits::eIndirectBuffer |
+	                                                      vk::BufferUsageFlagBits::eStorageBuffer |
+	                                                      vk::BufferUsageFlagBits::eTransferDst);
+	res.CullTriangleDispatch = State.Device->CreateBuffer(cullTriangleDispatch);
 
 	const Vulkan::BufferCreateInfo drawIndirect(Vulkan::BufferDomain::Device,
 	                                            MaxMeshletBatches * sizeof(vk::DrawIndexedIndirectCommand),
@@ -539,6 +578,10 @@ void Renderer::Render() {
 
 	ComputeUniforms compute{.MeshletCount    = uint32_t(State.RenderScene.Meshlets.size()),
 	                        .IndicesPerBatch = MaxIndicesPerBatch};
+	compute.CullingFlags = 0;
+	if (State.CullMeshletsFrustum) { compute.CullingFlags |= uint32_t(CullFlagBits::MeshletFrustum); }
+	if (State.CullMeshletsHiZ) { compute.CullingFlags |= uint32_t(CullFlagBits::MeshletHiZ); }
+	if (State.CullTrianglesBackface) { compute.CullingFlags |= uint32_t(CullFlagBits::TriangleBackface); }
 	State.ComputeUniforms.Get(sizeof(compute)).WriteData(&compute, sizeof(compute));
 
 	/*
@@ -551,6 +594,9 @@ void Renderer::Render() {
 	auto& res = State.Resources;
 	if (!res.CullMeshlets) {
 		res.CullMeshlets = ShaderManager::RegisterCompute("res://Shaders/CullMeshlets.comp.glsl")->RegisterVariant();
+	}
+	if (!res.CullTriangles) {
+		res.CullTriangles = ShaderManager::RegisterCompute("res://Shaders/CullTriangles.comp.glsl")->RegisterVariant();
 	}
 	if (!res.HzbCopy) {
 		res.HzbCopy = ShaderManager::RegisterCompute("res://Shaders/HzbCopy.comp.glsl")->RegisterVariant();
@@ -595,6 +641,7 @@ void Renderer::Render() {
 					.SetInitialLayout(vk::ImageLayout::eGeneral)
 					.SetMipLevels(Vulkan::CalculateMipLevels(hzbWidth, hzbHeight, 1));
 			res.HiZBuffer = State.Device->CreateImage(imageCI);
+			res.HiZBuffer->SetLayoutType(Vulkan::ImageLayoutType::General);
 
 			res.HiZBufferMips.clear();
 			Vulkan::ImageViewCreateInfo viewCI = {.Image       = res.HiZBuffer.Get(),
@@ -615,24 +662,42 @@ void Renderer::Render() {
 		ShaderManager::RegisterGraphics("res://Shaders/StaticMesh.vert.glsl", "res://Shaders/StaticMesh.frag.glsl")
 			->RegisterVariant();
 
+	const uint32_t meshletBatches = (State.RenderScene.Meshlets.size() + (MaxMeshletsPerBatch - 1)) / MaxMeshletsPerBatch;
+
 	auto cmd = State.Device->RequestCommandBuffer();
 
-	// Meshlet Cull
+	// Compute Prep
 	{
-		auto start = cmd->WriteTimestamp(vk::PipelineStageFlagBits2::eComputeShader);
-
 		const vk::ImageMemoryBarrier2 imageInvalidates[]   = {vk::ImageMemoryBarrier2(
       vk::PipelineStageFlagBits2::eComputeShader,
       vk::AccessFlagBits2::eNone,
       vk::PipelineStageFlagBits2::eComputeShader,
       vk::AccessFlagBits2::eShaderSampledRead,
       vk::ImageLayout::eGeneral,
-      vk::ImageLayout::eShaderReadOnlyOptimal,
+      vk::ImageLayout::eGeneral,
       vk::QueueFamilyIgnored,
       vk::QueueFamilyIgnored,
       res.HiZBuffer->GetImage(),
       vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, vk::RemainingMipLevels, 0, 1))};
 		const vk::BufferMemoryBarrier2 bufferInvalidates[] = {
+			vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eComputeShader,
+		                           vk::AccessFlagBits2::eNone,
+		                           vk::PipelineStageFlagBits2::eComputeShader,
+		                           vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
+		                           vk::QueueFamilyIgnored,
+		                           vk::QueueFamilyIgnored,
+		                           res.VisibleMeshlets->GetBuffer(),
+		                           0,
+		                           vk::WholeSize),
+			vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eDrawIndirect,
+		                           vk::AccessFlagBits2::eNone,
+		                           vk::PipelineStageFlagBits2::eComputeShader,
+		                           vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
+		                           vk::QueueFamilyIgnored,
+		                           vk::QueueFamilyIgnored,
+		                           res.CullTriangleDispatch->GetBuffer(),
+		                           0,
+		                           vk::WholeSize),
 			vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eHost,
 		                           vk::AccessFlagBits2::eNone,
 		                           vk::PipelineStageFlagBits2::eComputeShader,
@@ -667,14 +732,27 @@ void Renderer::Render() {
 		// =====
 		// Initialize our indirect command buffers
 		// =====
-		std::array<vk::DrawIndexedIndirectCommand, MaxMeshletBatches> indirect;
-		indirect.fill(vk::DrawIndexedIndirectCommand(0, 1, 0, 0, 0));
-		for (int i = 0; i < MaxMeshletBatches; ++i) { indirect[i].firstIndex = i * MaxIndicesPerBatch; }
+		std::array<vk::DispatchIndirectCommand, MaxMeshletBatches> dispatchIndirect;
+		dispatchIndirect.fill(vk::DispatchIndirectCommand(0, 1, 1));
+		std::array<vk::DrawIndexedIndirectCommand, MaxMeshletBatches> drawIndirect;
+		drawIndirect.fill(vk::DrawIndexedIndirectCommand(0, 1, 0, 0, 0));
+		for (int i = 0; i < MaxMeshletBatches; ++i) { drawIndirect[i].firstIndex = i * MaxIndicesPerBatch; }
 
 		cmd->FillBuffer(*res.VisBufferStats, 0);
-		cmd->UpdateBuffer(*res.DrawIndirect, sizeof(indirect[0]) * indirect.size(), indirect.data());
+		cmd->UpdateBuffer(
+			*res.CullTriangleDispatch, sizeof(dispatchIndirect[0]) * dispatchIndirect.size(), dispatchIndirect.data());
+		cmd->UpdateBuffer(*res.DrawIndirect, sizeof(drawIndirect[0]) * drawIndirect.size(), drawIndirect.data());
 
 		const vk::BufferMemoryBarrier2 bufferInitializes[] = {
+			vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eTransfer,
+		                           vk::AccessFlagBits2::eTransferWrite,
+		                           vk::PipelineStageFlagBits2::eComputeShader,
+		                           vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite,
+		                           vk::QueueFamilyIgnored,
+		                           vk::QueueFamilyIgnored,
+		                           res.CullTriangleDispatch->GetBuffer(),
+		                           0,
+		                           vk::WholeSize),
 			vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eTransfer,
 		                           vk::AccessFlagBits2::eTransferWrite,
 		                           vk::PipelineStageFlagBits2::eComputeShader,
@@ -695,6 +773,57 @@ void Renderer::Render() {
 		                           vk::WholeSize)};
 		const vk::DependencyInfo bufferInitial({}, nullptr, bufferInitializes, nullptr);
 		cmd->Barrier(bufferInitial);
+	}
+
+	// Meshlet Cull
+	{
+		auto start = cmd->WriteTimestamp(vk::PipelineStageFlagBits2::eComputeShader);
+
+		// Read-Only
+		cmd->SetUniformBuffer(0, 0, State.SceneBuffer.Get());
+		cmd->SetUniformBuffer(1, 0, State.ComputeUniforms.Get());
+		cmd->SetStorageBuffer(1, 1, State.MeshletBuffer.Get());
+		cmd->SetStorageBuffer(1, 2, State.TransformBuffer.Get());
+		cmd->SetTexture(1, 3, res.HiZBuffer->GetView(), Vulkan::StockSampler::LinearMin);
+
+		// Write-Only
+		cmd->SetStorageBuffer(1, 4, *res.VisibleMeshlets);
+		cmd->SetStorageBuffer(1, 5, *res.CullTriangleDispatch);
+		cmd->SetStorageBuffer(1, 6, *res.VisBufferStats);
+
+		cmd->SetProgram(res.CullMeshlets->GetProgram());
+		cmd->Dispatch(MaxMeshletsPerBatch, meshletBatches, 1);
+
+		const vk::BufferMemoryBarrier2 flushes[] = {
+			vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eComputeShader,
+		                           vk::AccessFlagBits2::eShaderStorageWrite,
+		                           vk::PipelineStageFlagBits2::eComputeShader,
+		                           vk::AccessFlagBits2::eShaderStorageRead,
+		                           vk::QueueFamilyIgnored,
+		                           vk::QueueFamilyIgnored,
+		                           res.VisibleMeshlets->GetBuffer(),
+		                           0,
+		                           vk::WholeSize),
+			vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eComputeShader,
+		                           vk::AccessFlagBits2::eShaderStorageWrite,
+		                           vk::PipelineStageFlagBits2::eDrawIndirect,
+		                           vk::AccessFlagBits2::eIndirectCommandRead,
+		                           vk::QueueFamilyIgnored,
+		                           vk::QueueFamilyIgnored,
+		                           res.CullTriangleDispatch->GetBuffer(),
+		                           0,
+		                           vk::WholeSize),
+		};
+		const vk::DependencyInfo flush({}, nullptr, flushes, nullptr);
+		cmd->Barrier(flush);
+
+		auto end = cmd->WriteTimestamp(vk::PipelineStageFlagBits2::eComputeShader);
+		State.Device->RegisterTimeInterval(start, end, "Cull Meshlets");
+	}
+
+	// Triangle Cull
+	{
+		auto start = cmd->WriteTimestamp(vk::PipelineStageFlagBits2::eComputeShader);
 
 		// Read-Only
 		cmd->SetUniformBuffer(0, 0, State.SceneBuffer.Get());
@@ -706,14 +835,24 @@ void Renderer::Render() {
 		cmd->SetStorageBuffer(1, 5, State.Scene.GetTriangleBuffer());
 		cmd->SetStorageBuffer(1, 6, State.TransformBuffer.Get());
 		cmd->SetTexture(1, 7, res.HiZBuffer->GetView(), Vulkan::StockSampler::NearestClamp);
+		cmd->SetStorageBuffer(1, 8, *res.VisibleMeshlets);
 
 		// Write-Only
-		cmd->SetStorageBuffer(1, 8, *res.DrawIndirect);
-		cmd->SetStorageBuffer(1, 9, *res.MeshletIndices);
-		cmd->SetStorageBuffer(1, 10, *res.VisBufferStats);
+		cmd->SetStorageBuffer(1, 9, *res.DrawIndirect);
+		cmd->SetStorageBuffer(1, 10, *res.MeshletIndices);
+		cmd->SetStorageBuffer(1, 11, *res.VisBufferStats);
 
-		cmd->SetProgram(res.CullMeshlets->GetProgram());
-		cmd->Dispatch(MaxMeshletsPerBatch, MaxMeshletBatches, 1);
+		struct PushConstant {
+			uint32_t BatchID = 0;
+		};
+		PushConstant pc;
+
+		cmd->SetProgram(res.CullTriangles->GetProgram());
+		for (uint32_t i = 0; i < meshletBatches; ++i) {
+			pc.BatchID = i;
+			cmd->PushConstants(pc);
+			cmd->DispatchIndirect(*res.CullTriangleDispatch, sizeof(vk::DispatchIndirectCommand) * i);
+		}
 
 		const vk::BufferMemoryBarrier2 flushes[] = {
 			vk::BufferMemoryBarrier2(vk::PipelineStageFlagBits2::eComputeShader,
@@ -750,7 +889,7 @@ void Renderer::Render() {
 		cmd->CopyBuffer(State.VisBufferStatsBuffer.Get(), *res.VisBufferStats);
 
 		auto end = cmd->WriteTimestamp(vk::PipelineStageFlagBits2::eComputeShader);
-		State.Device->RegisterTimeInterval(start, end, "Cull Meshlets");
+		State.Device->RegisterTimeInterval(start, end, "Cull Triangles");
 	}
 
 	// VisBuffer Render
@@ -793,7 +932,7 @@ void Renderer::Render() {
 		cmd->SetStorageBuffer(1, 5, State.Scene.GetTriangleBuffer());
 		cmd->SetStorageBuffer(1, 6, State.TransformBuffer.Get());
 		cmd->SetIndexBuffer(*res.MeshletIndices, 0, vk::IndexType::eUint32);
-		cmd->DrawIndexedIndirect(*res.DrawIndirect, MaxMeshletBatches, 0);
+		cmd->DrawIndexedIndirect(*res.DrawIndirect, meshletBatches, 0);
 
 		cmd->EndRenderPass();
 
@@ -811,7 +950,7 @@ void Renderer::Render() {
 				vk::AccessFlagBits2::eNone,
 				vk::PipelineStageFlagBits2::eComputeShader,
 				vk::AccessFlagBits2::eShaderStorageWrite,
-				vk::ImageLayout::eShaderReadOnlyOptimal,
+				vk::ImageLayout::eGeneral,
 				vk::ImageLayout::eGeneral,
 				vk::QueueFamilyIgnored,
 				vk::QueueFamilyIgnored,
@@ -837,11 +976,6 @@ void Renderer::Render() {
 
 		cmd->SetOpaqueState();
 		cmd->SetProgram(res.HzbCopy->GetProgram());
-		cmd->SetTexture(0, 0, res.DepthBuffer->GetView(), Vulkan::StockSampler::NearestClamp);
-		cmd->SetStorageTexture(0, 1, *res.HiZBufferMips[0]);
-		cmd->Dispatch((hzbWidth + 15) / 16, (hzbHeight + 15) / 16, 1);
-
-		cmd->SetProgram(res.HzbReduce->GetProgram());
 
 		vk::ImageMemoryBarrier2 hzbBarrier(
 			vk::PipelineStageFlagBits2::eComputeShader,
@@ -855,16 +989,22 @@ void Renderer::Render() {
 			res.HiZBuffer->GetImage(),
 			vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
 
-		for (uint32_t i = 1; i < res.HiZBuffer->GetCreateInfo().MipLevels; ++i) {
-			hzbBarrier.subresourceRange.baseMipLevel = i - 1;
-			cmd->ImageBarriers({hzbBarrier});
+		for (uint32_t i = 0; i < res.HiZBuffer->GetCreateInfo().MipLevels; ++i) {
+			if (i > 0) {
+				hzbBarrier.subresourceRange.baseMipLevel = i - 1;
+				cmd->ImageBarriers({hzbBarrier});
+			}
+
+			if (i == 0) {
+				cmd->SetTexture(0, 0, res.DepthBuffer->GetView(), Vulkan::StockSampler::LinearMin);
+			} else {
+				cmd->SetTexture(0, 0, *res.HiZBufferMips[i - 1], Vulkan::StockSampler::LinearMin);
+			}
+			cmd->SetStorageTexture(0, 1, *res.HiZBufferMips[i]);
+			cmd->Dispatch((hzbWidth + 15) / 16, (hzbHeight + 15) / 16, 1);
 
 			hzbWidth  = std::max(1u, hzbWidth >> 1);
 			hzbHeight = std::max(1u, hzbHeight >> 1);
-
-			cmd->SetStorageTexture(0, 0, *res.HiZBufferMips[i - 1]);
-			cmd->SetStorageTexture(0, 1, *res.HiZBufferMips[i]);
-			cmd->Dispatch((hzbWidth + 15) / 16, (hzbHeight + 15) / 16, 1);
 		}
 
 		hzbBarrier.subresourceRange.baseMipLevel = res.HiZBuffer->GetCreateInfo().MipLevels - 1;
@@ -875,7 +1015,7 @@ void Renderer::Render() {
 	}
 
 	// Debug Lines
-	{
+	if (State.DebugLines.size() > 0) {
 		auto rpInfo                = State.Device->GetSwapchainRenderPass();
 		rpInfo.ClearAttachmentMask = 0;
 		rpInfo.LoadAttachmentMask  = 1u << 0;

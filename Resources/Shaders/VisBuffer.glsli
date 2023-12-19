@@ -5,6 +5,17 @@
 #define MeshletIdMask ((1u << MeshletIdBits) - 1u)
 #define MeshletPrimitiveMask ((1u << MeshletPrimitiveBits) - 1u)
 
+#define CullMeshletFrustumBit   (1 << 0)
+#define CullMeshletHiZBit       (1 << 1)
+#define CullTriangleBackfaceBit (1 << 2)
+
+struct CullUniforms {
+  uint Flags;
+  uint MeshletCount;
+  uint MeshletsPerBatch;
+  uint IndicesPerBatch;
+};
+
 struct Meshlet {
   uint VertexOffset;
   uint IndexOffset;

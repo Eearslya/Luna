@@ -5,21 +5,22 @@
 namespace Luna {
 namespace Vulkan {
 struct SamplerCreateInfo {
-	vk::Filter MagFilter                = vk::Filter::eNearest;
-	vk::Filter MinFilter                = vk::Filter::eNearest;
-	vk::SamplerMipmapMode MipmapMode    = vk::SamplerMipmapMode::eNearest;
-	vk::SamplerAddressMode AddressModeU = vk::SamplerAddressMode::eRepeat;
-	vk::SamplerAddressMode AddressModeV = vk::SamplerAddressMode::eRepeat;
-	vk::SamplerAddressMode AddressModeW = vk::SamplerAddressMode::eRepeat;
-	float MipLodBias                    = 0.0f;
-	vk::Bool32 AnisotropyEnable         = VK_FALSE;
-	float MaxAnisotropy                 = 0.0f;
-	vk::Bool32 CompareEnable            = VK_FALSE;
-	vk::CompareOp CompareOp             = vk::CompareOp::eNever;
-	float MinLod                        = 0.0f;
-	float MaxLod                        = 0.0f;
-	vk::BorderColor BorderColor         = vk::BorderColor::eFloatTransparentBlack;
-	vk::Bool32 UnnormalizedCoordinates  = VK_FALSE;
+	vk::Filter MagFilter                   = vk::Filter::eNearest;
+	vk::Filter MinFilter                   = vk::Filter::eNearest;
+	vk::SamplerMipmapMode MipmapMode       = vk::SamplerMipmapMode::eNearest;
+	vk::SamplerAddressMode AddressModeU    = vk::SamplerAddressMode::eRepeat;
+	vk::SamplerAddressMode AddressModeV    = vk::SamplerAddressMode::eRepeat;
+	vk::SamplerAddressMode AddressModeW    = vk::SamplerAddressMode::eRepeat;
+	float MipLodBias                       = 0.0f;
+	vk::Bool32 AnisotropyEnable            = VK_FALSE;
+	float MaxAnisotropy                    = 0.0f;
+	vk::Bool32 CompareEnable               = VK_FALSE;
+	vk::CompareOp CompareOp                = vk::CompareOp::eNever;
+	float MinLod                           = 0.0f;
+	float MaxLod                           = 0.0f;
+	vk::BorderColor BorderColor            = vk::BorderColor::eFloatTransparentBlack;
+	vk::Bool32 UnnormalizedCoordinates     = VK_FALSE;
+	vk::SamplerReductionMode ReductionMode = vk::SamplerReductionMode::eWeightedAverage;
 };
 
 struct SamplerDeleter {
@@ -85,6 +86,7 @@ struct std::hash<Luna::Vulkan::SamplerCreateInfo> {
 		h(info.MaxLod);
 		h(info.BorderColor);
 		h(info.UnnormalizedCoordinates);
+		h(info.ReductionMode);
 
 		return static_cast<size_t>(h.Get());
 	}

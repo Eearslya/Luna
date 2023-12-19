@@ -9,6 +9,8 @@ void SamplerDeleter::operator()(Sampler* sampler) {
 
 Sampler::Sampler(Device& device, const SamplerCreateInfo& info, bool immutable)
 		: Cookie(device), _device(device), _createInfo(info), _immutable(immutable) {
+	const vk::SamplerReductionModeCreateInfo reduction(info.ReductionMode);
+
 	const vk::SamplerCreateInfo samplerCI({},
 	                                      info.MagFilter,
 	                                      info.MinFilter,
@@ -25,7 +27,9 @@ Sampler::Sampler(Device& device, const SamplerCreateInfo& info, bool immutable)
 	                                      info.MaxLod,
 	                                      info.BorderColor,
 	                                      info.UnnormalizedCoordinates);
-	_sampler = _device.GetDevice().createSampler(samplerCI);
+
+	const vk::StructureChain chain(samplerCI, reduction);
+	_sampler = _device.GetDevice().createSampler(chain.get());
 
 	Log::Trace("Vulkan", "{} created.", _immutable ? "Immutable Sampler" : "Sampler");
 }
