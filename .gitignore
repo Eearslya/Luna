@@ -7,6 +7,7 @@
 /[Cc]ache/
 /Examples/
 /[Pp]roject/
+/Resources/Models/
 
 *~
 .dir-locals.el
