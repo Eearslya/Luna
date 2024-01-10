@@ -212,6 +212,35 @@ Device::Device(Context& context)
 		_stockSamplers[i] = RequestImmutableSampler(info);
 	}
 
+	// Create resource descriptors
+	{
+		const vk::DescriptorPoolSize poolSizes[] = {vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, MaxBuffers),
+		                                            vk::DescriptorPoolSize(vk::DescriptorType::eStorageImage, MaxImages),
+		                                            vk::DescriptorPoolSize(vk::DescriptorType::eSampledImage, MaxImages),
+		                                            vk::DescriptorPoolSize(vk::DescriptorType::eSampler, MaxSamplers)};
+		const vk::DescriptorPoolCreateInfo poolCI(vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind, 1, poolSizes);
+		_resources.DescriptorPool = _device.createDescriptorPool(poolCI);
+		SetObjectName(_resources.DescriptorPool, "Master Descriptor Pool");
+
+		const vk::DescriptorSetLayoutBinding bindings[] = {
+			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eStorageBuffer, MaxBuffers, vk::ShaderStageFlagBits::eAll),
+			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eStorageImage, MaxImages, vk::ShaderStageFlagBits::eAll),
+			vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eSampledImage, MaxImages, vk::ShaderStageFlagBits::eAll),
+			vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eSampler, MaxSamplers, vk::ShaderStageFlagBits::eAll)};
+		const vk::DescriptorBindingFlags bindingFlags[4] = {vk::DescriptorBindingFlagBits::ePartiallyBound |
+		                                                    vk::DescriptorBindingFlagBits::eUpdateAfterBind};
+		const vk::DescriptorSetLayoutBindingFlagsCreateInfo flagsCI(bindingFlags);
+		const vk::DescriptorSetLayoutCreateInfo layoutCI(
+			vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool, bindings, &flagsCI);
+		_resources.DescriptorSetLayout = _device.createDescriptorSetLayout(layoutCI);
+		SetObjectName(_resources.DescriptorSetLayout, "Master Descriptor Set Layout");
+
+		const vk::DescriptorSetAllocateInfo setAI(_resources.DescriptorPool, _resources.DescriptorSetLayout);
+		auto sets                = _device.allocateDescriptorSets(setAI);
+		_resources.DescriptorSet = sets[0];
+		SetObjectName(_resources.DescriptorSet, "Master Descriptor Set");
+	}
+
 	// Create Frame Contexts
 	CreateFrameContexts(2);
 }

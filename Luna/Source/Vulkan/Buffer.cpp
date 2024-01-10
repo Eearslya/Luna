@@ -21,8 +21,16 @@ Buffer::Buffer(Device& device,
 	VkBufferCreateInfo bufferCI = {};
 	bufferCI.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	bufferCI.size               = createInfo.Size;
+	/*
 	bufferCI.usage = static_cast<VkBufferCreateFlags>(createInfo.Usage | vk::BufferUsageFlagBits::eTransferDst |
 	                                                  vk::BufferUsageFlagBits::eTransferSrc);
+	*/
+	bufferCI.usage = static_cast<VkBufferUsageFlags>(
+		vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst |
+		vk::BufferUsageFlagBits::eUniformTexelBuffer | vk::BufferUsageFlagBits::eStorageTexelBuffer |
+		vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eStorageBuffer |
+		vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eVertexBuffer |
+		vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress);
 	if (queueFamilies.size() > 1) {
 		bufferCI.sharingMode           = VK_SHARING_MODE_CONCURRENT;
 		bufferCI.queueFamilyIndexCount = queueFamilies.size();
@@ -62,6 +70,9 @@ Buffer::Buffer(Device& device,
 		vmaSetAllocationName(_device._allocator, _allocation, _debugName.c_str());
 		Log::Trace("Vulkan", "Buffer \"{}\" created. ({})", _debugName, Size(createInfo.Size));
 	}
+
+	const vk::BufferDeviceAddressInfo addressInfo(_buffer);
+	_deviceAddress = _device.GetDevice().getBufferAddress(addressInfo);
 
 	// If able, map the buffer memory
 	const auto& memoryType = _device._deviceInfo.Memory.memoryTypes[allocationInfo.memoryType];

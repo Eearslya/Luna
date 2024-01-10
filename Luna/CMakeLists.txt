@@ -1,4 +1,4 @@
-project(Luna-Engine LANGUAGES CXX)
+project(Luna-Engine LANGUAGES CXX C)
 
 include(FetchContent)
 include(FindVulkan)
@@ -33,6 +33,17 @@ set(SKIP_GLSLANG_INSTALL     ON CACHE BOOL "" FORCE)
 FetchContent_Declare(imgui
   GIT_REPOSITORY https://github.com/ocornut/imgui
   GIT_TAG 96b5b1724b677aa03ca4a3d720367beba9a980a3)
+
+FetchContent_Declare(ktx
+  GIT_REPOSITORY https://github.com/KhronosGroup/KTX-Software.git
+  GIT_TAG d3ef5ed8b4d443804fc07b348cc503b30f7da938)
+set(KTX_FEATURE_DOC            OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_GL_UPLOAD      OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_JNI            OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_PY             OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_STATIC_LIBRARY  ON CACHE BOOL "" FORCE)
+set(KTX_FEATURE_TOOLS          OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_TESTS          OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(meshopt
   GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
@@ -83,7 +94,7 @@ FetchContent_Declare(vma
 set(VMA_DYNAMIC_VULKAN_FUNCTIONS OFF CACHE BOOL "" FORCE)
 set(VMA_STATIC_VULKAN_FUNCTIONS  OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(fastgltf glfw glm imgui meshopt spdlog spirv-headers spirv-tools spirv-cross glslang shaderc vma)
+FetchContent_MakeAvailable(fastgltf glfw glm imgui ktx meshopt spdlog spirv-headers spirv-tools spirv-cross glslang shaderc vma)
 
 set_target_properties(glslc                         PROPERTIES EXCLUDE_FROM_ALL ON EXCLUDE_FROM_DEFAULT_BUILD ON)
 set_target_properties(glslc_exe                     PROPERTIES EXCLUDE_FROM_ALL ON EXCLUDE_FROM_DEFAULT_BUILD ON)
@@ -97,6 +108,14 @@ set_target_properties(spirv-cross-reflect           PROPERTIES EXCLUDE_FROM_ALL 
 set_target_properties(spirv-cross-util              PROPERTIES EXCLUDE_FROM_ALL ON EXCLUDE_FROM_DEFAULT_BUILD ON)
 set_target_properties(SPIRV-Tools-shared            PROPERTIES EXCLUDE_FROM_ALL ON EXCLUDE_FROM_DEFAULT_BUILD ON)
 set_target_properties(SPVRemapper                   PROPERTIES EXCLUDE_FROM_ALL ON EXCLUDE_FROM_DEFAULT_BUILD ON)
+
+target_compile_options(ktx
+  PRIVATE
+  $<$<OR:$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:
+  -Wno-everything>
+  $<$<CXX_COMPILER_ID:MSVC>:
+  -w>
+)
 
 add_library(imgui STATIC)
 target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
@@ -115,7 +134,7 @@ target_compile_definitions(Luna
 target_include_directories(Luna PUBLIC "Include")
 target_link_libraries(Luna
   PUBLIC imgui glm spdlog Vulkan::Headers VulkanMemoryAllocator
-  PRIVATE fastgltf glfw meshoptimizer shaderc spirv-cross-cpp)
+  PRIVATE fastgltf glfw ktx meshoptimizer shaderc spirv-cross-cpp)
 target_precompile_headers(Luna PRIVATE "Include/Luna/Common.hpp")
 
 add_subdirectory(Source)

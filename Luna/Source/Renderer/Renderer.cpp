@@ -160,6 +160,7 @@ static void RendererUI() {
 	const auto* stats       = statsBuffer.Map<VisbufferStats>();
 
 	if (ImGui::Begin("Model")) {
+		ImGui::TableNextColumn();
 		ImGui::Checkbox("Freeze Culling Frustum", &State.FreezeCullFrustum);
 		ImGui::Checkbox("Show Culling Frustum", &State.ShowCullFrustum);
 

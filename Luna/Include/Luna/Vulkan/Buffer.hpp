@@ -74,6 +74,9 @@ class Buffer : public VulkanObject<Buffer, BufferDeleter>, public Cookie, public
 	[[nodiscard]] vk::DeviceAddress GetDeviceAddress() const noexcept {
 		return _deviceAddress;
 	}
+	[[nodiscard]] vk::DeviceSize GetSize() const noexcept {
+		return _createInfo.Size;
+	}
 
 	template <typename T = void>
 	[[nodiscard]] T* Map() const {
@@ -90,8 +93,9 @@ class Buffer : public VulkanObject<Buffer, BufferDeleter>, public Cookie, public
 	Buffer(Device& device, const BufferCreateInfo& createInfo, const void* initialData, const std::string& debugName);
 
 	Device& _device;
-	std::string _debugName;
 	BufferCreateInfo _createInfo;
+	std::string _debugName;
+
 	vk::Buffer _buffer;
 	VmaAllocation _allocation;
 	vk::DeviceAddress _deviceAddress = 0;

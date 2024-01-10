@@ -162,6 +162,10 @@ class Device : public VulkanObject<Device> {
 	void WaitIdle();
 
  private:
+	constexpr static int MaxBuffers  = 1024;
+	constexpr static int MaxImages   = 1024;
+	constexpr static int MaxSamplers = 128;
+
 	struct FrameContext {
 		FrameContext(Device& parent, uint32_t frameIndex);
 		FrameContext(const FrameContext&)            = delete;
@@ -214,6 +218,24 @@ class Device : public VulkanObject<Device> {
 		uint64_t TimelineValue = 0;
 		std::vector<SemaphoreHandle> WaitSemaphores;
 		std::vector<vk::PipelineStageFlags2> WaitStages;
+	};
+
+	template <typename ResourceT>
+	struct ResourcePool {
+		constexpr static uint32_t MaxResources = 1u << 20;
+		constexpr static uint32_t PageBits     = 10;
+		constexpr static uint32_t PageSize     = 1u << PageBits;
+		constexpr static uint32_t PageMask     = PageSize - 1;
+		constexpr static uint32_t PageCount    = MaxResources / PageSize;
+
+		std::vector<uint32_t> FreeIndices;
+		uint32_t NextIndex = 0;
+	};
+
+	struct Resources {
+		vk::DescriptorPool DescriptorPool;
+		vk::DescriptorSetLayout DescriptorSetLayout;
+		vk::DescriptorSet DescriptorSet;
 	};
 
 	/* ===============================================
@@ -300,6 +322,7 @@ class Device : public VulkanObject<Device> {
 	VmaAllocator _allocator = nullptr;
 	std::vector<vk::Fence> _availableFences;
 	std::vector<vk::Semaphore> _availableSemaphores;
+	Resources _resources;
 
 	VulkanObjectPool<Buffer> _bufferPool;
 	VulkanObjectPool<CommandBuffer> _commandBufferPool;

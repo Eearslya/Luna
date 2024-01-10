@@ -1,0 +1,8 @@
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_buffer_reference : enable
+#extension GL_EXT_scalar_block_layout : enable
+
+#define LunaStorageBufferBinding 0
+#define LunaStorageImageBinding  1
+#define LunaSampledImageBinding  2
+#define LunaSamplerBinding       3
