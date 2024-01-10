@@ -392,10 +392,7 @@ void UIManager::Render(Vulkan::CommandBuffer& cmd) {
 	if (frameIndex >= State.Buffers.size()) { State.Buffers.resize(frameIndex + 1); }
 	auto& buffer = State.Buffers[frameIndex];
 	if (!buffer || buffer->GetCreateInfo().Size < bufferSize) {
-		const Vulkan::BufferCreateInfo bufferCI(
-			Vulkan::BufferDomain::Host,
-			bufferSize,
-			vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer);
+		const Vulkan::BufferCreateInfo bufferCI(Vulkan::BufferDomain::Host, bufferSize);
 		buffer = Renderer::GetDevice().CreateBuffer(bufferCI);
 	}
 	uint8_t* bufferData  = static_cast<uint8_t*>(buffer->Map());

@@ -21,16 +21,12 @@ Buffer::Buffer(Device& device,
 	VkBufferCreateInfo bufferCI = {};
 	bufferCI.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	bufferCI.size               = createInfo.Size;
-	/*
-	bufferCI.usage = static_cast<VkBufferCreateFlags>(createInfo.Usage | vk::BufferUsageFlagBits::eTransferDst |
-	                                                  vk::BufferUsageFlagBits::eTransferSrc);
-	*/
-	bufferCI.usage = static_cast<VkBufferUsageFlags>(
-		vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst |
-		vk::BufferUsageFlagBits::eUniformTexelBuffer | vk::BufferUsageFlagBits::eStorageTexelBuffer |
-		vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eStorageBuffer |
-		vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eVertexBuffer |
-		vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress);
+	bufferCI.usage              = static_cast<VkBufferUsageFlags>(
+    vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst |
+    vk::BufferUsageFlagBits::eUniformTexelBuffer | vk::BufferUsageFlagBits::eStorageTexelBuffer |
+    vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eStorageBuffer |
+    vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eVertexBuffer |
+    vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress);
 	if (queueFamilies.size() > 1) {
 		bufferCI.sharingMode           = VK_SHARING_MODE_CONCURRENT;
 		bufferCI.queueFamilyIndexCount = queueFamilies.size();
@@ -132,7 +128,7 @@ void Buffer::WriteData(const void* data, vk::DeviceSize dataSize, vk::DeviceSize
 		CommandBufferHandle cmd;
 
 		auto stagingCreateInfo = _createInfo;
-		stagingCreateInfo.SetDomain(BufferDomain::Host).AddUsage(vk::BufferUsageFlagBits::eTransferSrc);
+		stagingCreateInfo.SetDomain(BufferDomain::Host);
 
 		const std::string stagingBufferName =
 			_debugName.empty() ? "Staging Buffer" : std::format("{} [Staging]", _debugName);
@@ -145,45 +141,6 @@ void Buffer::WriteData(const void* data, vk::DeviceSize dataSize, vk::DeviceSize
 
 		_device.SubmitStaging(cmd, {}, true);
 	}
-}
-
-vk::AccessFlags2 Buffer::UsageToAccess(vk::BufferUsageFlags usage) {
-	vk::AccessFlags2 access;
-
-	if (usage & vk::BufferUsageFlagBits::eTransferSrc) { access |= vk::AccessFlagBits2::eTransferRead; }
-	if (usage & vk::BufferUsageFlagBits::eTransferDst) { access |= vk::AccessFlagBits2::eTransferWrite; }
-	if (usage & (vk::BufferUsageFlagBits::eUniformTexelBuffer | vk::BufferUsageFlagBits::eUniformBuffer)) {
-		access |= vk::AccessFlagBits2::eUniformRead;
-	}
-	if (usage & (vk::BufferUsageFlagBits::eStorageTexelBuffer | vk::BufferUsageFlagBits::eStorageBuffer)) {
-		access |= vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite;
-	}
-	if (usage & vk::BufferUsageFlagBits::eIndexBuffer) { access |= vk::AccessFlagBits2::eIndexRead; }
-	if (usage & vk::BufferUsageFlagBits::eVertexBuffer) { access |= vk::AccessFlagBits2::eVertexAttributeRead; }
-	if (usage & vk::BufferUsageFlagBits::eIndirectBuffer) { access |= vk::AccessFlagBits2::eIndirectCommandRead; }
-	if (usage & vk::BufferUsageFlagBits::eShaderDeviceAddress) {
-		access |= vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite;
-	}
-
-	return access;
-}
-
-vk::PipelineStageFlags2 Buffer::UsageToStages(vk::BufferUsageFlags usage) {
-	vk::PipelineStageFlags2 stages;
-
-	if (usage & (vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst)) {
-		stages |= vk::PipelineStageFlagBits2::eTransfer;
-	}
-	if (usage & (vk::BufferUsageFlagBits::eUniformTexelBuffer | vk::BufferUsageFlagBits::eStorageTexelBuffer |
-	             vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eStorageBuffer |
-	             vk::BufferUsageFlagBits::eShaderDeviceAddress)) {
-		stages |= vk::PipelineStageFlagBits2::eAllGraphics | vk::PipelineStageFlagBits2::eComputeShader;
-	}
-	if (usage & vk::BufferUsageFlagBits::eIndexBuffer) { stages |= vk::PipelineStageFlagBits2::eIndexInput; }
-	if (usage & vk::BufferUsageFlagBits::eVertexBuffer) { stages |= vk::PipelineStageFlagBits2::eVertexAttributeInput; }
-	if (usage & vk::BufferUsageFlagBits::eIndirectBuffer) { stages |= vk::PipelineStageFlagBits2::eDrawIndirect; }
-
-	return stages;
 }
 }  // namespace Vulkan
 }  // namespace Luna

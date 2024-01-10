@@ -1819,14 +1819,13 @@ void RenderGraph::RecordGraphicsCommands(const PhysicalPass& physicalPass, PassS
 void RenderGraph::SetupPhysicalBuffer(Vulkan::Device& device, uint32_t physicalIndex) {
 	auto& att = _physicalDimensions[physicalIndex];
 
-	Vulkan::BufferCreateInfo bufferCI(Vulkan::BufferDomain::Device, att.BufferInfo.Size, att.BufferInfo.Usage);
+	Vulkan::BufferCreateInfo bufferCI(Vulkan::BufferDomain::Device, att.BufferInfo.Size);
 	bufferCI.Flags |= Vulkan::BufferCreateFlagBits::ZeroInitialize;
 
 	// First check if we already have a suitable buffer.
 	if (_physicalBuffers[physicalIndex]) {
 		if (att.Flags & AttachmentInfoFlagBits::Persistent &&
-		    _physicalBuffers[physicalIndex]->GetCreateInfo().Size == bufferCI.Size &&
-		    (_physicalBuffers[physicalIndex]->GetCreateInfo().Usage & bufferCI.Usage) == bufferCI.Usage) {
+		    _physicalBuffers[physicalIndex]->GetCreateInfo().Size == bufferCI.Size) {
 			return;
 		}
 	}

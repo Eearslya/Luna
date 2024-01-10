@@ -6,8 +6,7 @@ namespace Luna {
 namespace Vulkan {
 struct BufferCreateInfo {
 	constexpr BufferCreateInfo() noexcept = default;
-	constexpr BufferCreateInfo(BufferDomain domain, vk::DeviceSize size, vk::BufferUsageFlags usage) noexcept
-			: Domain(domain), Size(size), Usage(usage) {}
+	constexpr BufferCreateInfo(BufferDomain domain, vk::DeviceSize size) noexcept : Domain(domain), Size(size) {}
 
 	constexpr BufferCreateInfo& SetDomain(BufferDomain domain) noexcept {
 		Domain = domain;
@@ -16,16 +15,6 @@ struct BufferCreateInfo {
 	}
 	constexpr BufferCreateInfo& SetSize(vk::DeviceSize size) noexcept {
 		Size = size;
-
-		return *this;
-	}
-	constexpr BufferCreateInfo& SetUsage(vk::BufferUsageFlags usage) noexcept {
-		Usage = usage;
-
-		return *this;
-	}
-	constexpr BufferCreateInfo& AddUsage(vk::BufferUsageFlags usage) noexcept {
-		Usage |= usage;
 
 		return *this;
 	}
@@ -47,7 +36,6 @@ struct BufferCreateInfo {
 
 	BufferDomain Domain = BufferDomain::Device;
 	vk::DeviceSize Size = 0;
-	vk::BufferUsageFlags Usage;
 	BufferCreateFlags Flags;
 };
 
@@ -85,9 +73,6 @@ class Buffer : public VulkanObject<Buffer, BufferDeleter>, public Cookie, public
 
 	void FillData(uint8_t data, vk::DeviceSize dataSize, vk::DeviceSize offset = 0);
 	void WriteData(const void* data, vk::DeviceSize dataSize, vk::DeviceSize offset = 0);
-
-	[[nodiscard]] static vk::AccessFlags2 UsageToAccess(vk::BufferUsageFlags usage);
-	[[nodiscard]] static vk::PipelineStageFlags2 UsageToStages(vk::BufferUsageFlags usage);
 
  private:
 	Buffer(Device& device, const BufferCreateInfo& createInfo, const void* initialData, const std::string& debugName);

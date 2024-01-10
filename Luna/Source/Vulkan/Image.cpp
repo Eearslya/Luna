@@ -313,8 +313,7 @@ Image::Image(Device& device,
 					throw std::logic_error("Cannot upload initial image data");
 			}
 
-			const BufferCreateInfo bufferCI{
-				BufferDomain::Host, layout.GetRequiredSize(), vk::BufferUsageFlagBits::eTransferSrc};
+			const BufferCreateInfo bufferCI{BufferDomain::Host, layout.GetRequiredSize()};
 			stagingBuffer = _device.CreateBuffer(bufferCI);
 
 			uint32_t index = 0;

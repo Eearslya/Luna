@@ -674,20 +674,16 @@ void Scene::LoadModel(const Path& gltfFile) {
 
 	composer.GetOutgoingTask()->Wait();
 
-	Vulkan::BufferCreateInfo positionCI(
-		Vulkan::BufferDomain::Device, sizeof(glm::vec3) * _positions.size(), vk::BufferUsageFlagBits::eStorageBuffer);
+	Vulkan::BufferCreateInfo positionCI(Vulkan::BufferDomain::Device, sizeof(glm::vec3) * _positions.size());
 	_positionBuffer = Renderer::GetDevice().CreateBuffer(positionCI, _positions.data());
 
-	Vulkan::BufferCreateInfo vertexCI(
-		Vulkan::BufferDomain::Device, sizeof(Vertex) * _vertices.size(), vk::BufferUsageFlagBits::eStorageBuffer);
+	Vulkan::BufferCreateInfo vertexCI(Vulkan::BufferDomain::Device, sizeof(Vertex) * _vertices.size());
 	_vertexBuffer = Renderer::GetDevice().CreateBuffer(vertexCI, _vertices.data());
 
-	Vulkan::BufferCreateInfo indexCI(
-		Vulkan::BufferDomain::Device, sizeof(uint32_t) * _indices.size(), vk::BufferUsageFlagBits::eStorageBuffer);
+	Vulkan::BufferCreateInfo indexCI(Vulkan::BufferDomain::Device, sizeof(uint32_t) * _indices.size());
 	_indexBuffer = Renderer::GetDevice().CreateBuffer(indexCI, _indices.data());
 
-	Vulkan::BufferCreateInfo triangleCI(
-		Vulkan::BufferDomain::Device, sizeof(uint8_t) * _triangles.size(), vk::BufferUsageFlagBits::eStorageBuffer);
+	Vulkan::BufferCreateInfo triangleCI(Vulkan::BufferDomain::Device, sizeof(uint8_t) * _triangles.size());
 	_triangleBuffer = Renderer::GetDevice().CreateBuffer(triangleCI, _triangles.data());
 }
 
